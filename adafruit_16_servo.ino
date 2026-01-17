@@ -36,6 +36,16 @@ unsigned long servoMoveStart[NUM_SERVOS];  // When move started (millis)
 uint16_t servoMoveDuration[NUM_SERVOS];    // Duration in ms (0 = instant)
 bool servoMoving[NUM_SERVOS];        // Is this servo currently animating?
 
+// Wave pattern state
+bool waveActive = false;
+uint8_t waveStartServo = 0;
+uint8_t waveEndServo = 7;
+uint16_t waveSpeed = 50;        // Period in ms per degree
+uint8_t wavePhaseOffset = 30;   // Degrees offset between adjacent servos
+uint8_t waveAmplitude = 90;     // Degrees of motion (center +/- amplitude/2)
+uint8_t waveCenter = 90;        // Center position in degrees
+unsigned long waveStartTime = 0;
+
 // Default calibration values
 #define DEFAULT_MIN 150
 #define DEFAULT_MAX 600
@@ -152,6 +162,32 @@ void updateAnimations() {
         servoPos[i] = newPos;
         pwm.setPWM(i, 0, newPos);
       }
+    }
+  }
+}
+
+// Update wave pattern - call from loop()
+void updateWave() {
+  if (!waveActive) return;
+
+  unsigned long elapsed = millis() - waveStartTime;
+
+  for (uint8_t i = waveStartServo; i <= waveEndServo; i++) {
+    // Calculate phase for this servo
+    uint8_t servoIndex = i - waveStartServo;
+    float phase = (float)(elapsed) / (float)(waveSpeed * 360 / 1000);
+    phase += (float)(servoIndex * wavePhaseOffset) / 360.0f;
+
+    // Sine wave: -1 to 1
+    float sineVal = sin(phase * 2.0f * PI);
+
+    // Map to servo position
+    float degrees = waveCenter + (sineVal * (float)waveAmplitude / 2.0f);
+    uint16_t pulse = degreesToPulse(i, (uint8_t)constrain(degrees, 0, 180));
+
+    if (pulse != servoPos[i]) {
+      servoPos[i] = pulse;
+      pwm.setPWM(i, 0, pulse);
     }
   }
 }
@@ -318,6 +354,7 @@ void processCommand(String cmd) {
 
 void loop() {
   updateAnimations();
+  updateWave();
 
   // Read serial input
   while (Serial.available()) {
