@@ -37,6 +37,39 @@ Interactive Serial interface for the Adafruit PCA9685 16-channel PWM/Servo drive
 | `STATUS` | `STATUS` | Show all servo calibrations |
 | `HELP` | `HELP` | Show available commands |
 
+## Animation Commands
+
+| Command | Example | Description |
+|---------|---------|-------------|
+| `MOVE <n> <deg> <ms>` | `MOVE 0 180 2000` | Smooth animated move with easing |
+| `WAVE <s> <e> [spd] [off] [amp]` | `WAVE 0 7 50 30 90` | Start sine wave pattern |
+| `PLAY <n> [LOOP]` | `PLAY 1 LOOP` | Play keyframe sequence |
+| `STOP` | `STOP` | Stop wave or sequence |
+
+### Wave Parameters
+
+- `s`, `e`: Start and end servo numbers
+- `spd`: Speed (ms per cycle, default 50)
+- `off`: Phase offset between servos in degrees (default 30)
+- `amp`: Amplitude in degrees (default 90)
+
+### Creating Custom Sequences
+
+Edit the `sequence1` array in the code to define your own keyframe animations:
+
+```cpp
+Keyframe sequence1[MAX_KEYFRAMES] = {
+  {servo, degrees, time_ms, duration_ms},
+  // ...
+  {255, 0, 0, 0}  // End marker
+};
+```
+
+- `servo`: Which servo (0-15)
+- `degrees`: Target position (0-180)
+- `time_ms`: When to start this move (ms from sequence start)
+- `duration_ms`: How long the move takes
+
 ## Calibration Guide
 
 Each servo has different physical limits. Calibration finds the safe pulse range.
