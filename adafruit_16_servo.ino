@@ -63,6 +63,23 @@ uint16_t degreesToPulse(uint8_t servo, uint8_t degrees) {
   return map(degrees, 0, 180, servoMin[servo], servoMax[servo]);
 }
 
+// Easing function: ease-in-out cubic for smooth organic motion
+// t = progress (0.0 to 1.0), returns eased value (0.0 to 1.0)
+float easeInOutCubic(float t) {
+  if (t < 0.5f) {
+    return 4.0f * t * t * t;
+  } else {
+    float f = (2.0f * t) - 2.0f;
+    return 0.5f * f * f * f + 1.0f;
+  }
+}
+
+// Linear interpolation with easing
+uint16_t lerpEased(uint16_t start, uint16_t end, float progress) {
+  float easedProgress = easeInOutCubic(progress);
+  return start + (uint16_t)((float)(end - start) * easedProgress);
+}
+
 // Move servo to a pulse value
 void setServoPulse(uint8_t servo, uint16_t pulse) {
   if (servo >= NUM_SERVOS) {
