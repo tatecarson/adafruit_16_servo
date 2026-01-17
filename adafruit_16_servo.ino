@@ -12,6 +12,8 @@
     CENTER <n>     - Move servo n to center (90 degrees)
     OFF <n>        - Turn off servo n
     MOVE <n> <deg> <ms> - Animated move with easing
+    WAVE <start> <end> [speed] [offset] [amp] - Wave pattern
+    STOP               - Stop wave pattern
     STATUS         - Show all servo calibrations
     HELP           - Show commands
  ****************************************************/
@@ -265,6 +267,8 @@ void showHelp() {
   Serial.println(F("CENTER <n>       Move to center (90 deg)"));
   Serial.println(F("OFF <n>          Turn off servo n"));
   Serial.println(F("MOVE <n> <deg> <ms>  Animated move (eased)"));
+  Serial.println(F("WAVE <s> <e> [spd] [off] [amp]  Start wave pattern"));
+  Serial.println(F("STOP                 Stop wave pattern"));
   Serial.println(F("STATUS           Show all servos"));
   Serial.println();
 }
@@ -340,6 +344,42 @@ void processCommand(String cmd) {
       Serial.print(F(" deg over ")); Serial.print(duration);
       Serial.println(F("ms"));
     }
+  }
+  else if (cmd.startsWith("WAVE")) {
+    // WAVE <start> <end> <speed> <offset> <amplitude>
+    // Example: WAVE 0 7 50 30 90
+    int idx = 5;
+    int s1 = cmd.indexOf(' ', idx);
+    int s2 = cmd.indexOf(' ', s1 + 1);
+    int s3 = cmd.indexOf(' ', s2 + 1);
+    int s4 = cmd.indexOf(' ', s3 + 1);
+
+    if (s1 > 0 && s2 > 0) {
+      waveStartServo = cmd.substring(idx, s1).toInt();
+      waveEndServo = cmd.substring(s1 + 1, s2).toInt();
+
+      if (s3 > 0) waveSpeed = cmd.substring(s2 + 1, s3).toInt();
+      else waveSpeed = 50;
+
+      if (s4 > 0) wavePhaseOffset = cmd.substring(s3 + 1, s4).toInt();
+      else wavePhaseOffset = 30;
+
+      if (s4 > 0) waveAmplitude = cmd.substring(s4 + 1).toInt();
+      else waveAmplitude = 90;
+
+      waveStartTime = millis();
+      waveActive = true;
+
+      Serial.print(F("Wave: servos ")); Serial.print(waveStartServo);
+      Serial.print(F("-")); Serial.print(waveEndServo);
+      Serial.print(F(" speed=")); Serial.print(waveSpeed);
+      Serial.print(F(" offset=")); Serial.print(wavePhaseOffset);
+      Serial.print(F(" amp=")); Serial.println(waveAmplitude);
+    }
+  }
+  else if (cmd.startsWith("STOP")) {
+    waveActive = false;
+    Serial.println(F("Wave stopped"));
   }
   else if (cmd.startsWith("STATUS")) {
     showStatus();
