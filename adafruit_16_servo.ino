@@ -48,6 +48,38 @@ uint8_t waveAmplitude = 90;     // Degrees of motion (center +/- amplitude/2)
 uint8_t waveCenter = 90;        // Center position in degrees
 unsigned long waveStartTime = 0;
 
+// Keyframe sequence structure
+struct Keyframe {
+  uint8_t servo;      // Which servo (255 = all servos use same pos)
+  uint8_t degrees;    // Target position
+  uint16_t time;      // Time offset from sequence start (ms)
+  uint16_t duration;  // Move duration (ms)
+};
+
+// Example sequence storage (modify for your choreography)
+#define MAX_KEYFRAMES 32
+Keyframe sequence1[MAX_KEYFRAMES] = {
+  {0, 0, 0, 500},       // Servo 0 to 0° at t=0, over 500ms
+  {1, 0, 100, 500},     // Servo 1 to 0° at t=100ms
+  {2, 0, 200, 500},     // Servo 2 to 0° at t=200ms
+  {0, 180, 1000, 500},  // Servo 0 to 180° at t=1s
+  {1, 180, 1100, 500},
+  {2, 180, 1200, 500},
+  {0, 90, 2000, 500},   // Return to center
+  {1, 90, 2100, 500},
+  {2, 90, 2200, 500},
+  {255, 0, 0, 0}        // End marker (servo=255)
+};
+uint8_t sequence1Length = 9;
+
+// Sequence playback state
+bool sequenceActive = false;
+bool sequenceLoop = false;
+Keyframe* currentSequence = nullptr;
+uint8_t currentSequenceLength = 0;
+unsigned long sequenceStartTime = 0;
+uint8_t lastTriggeredKeyframe = 0;
+
 // Default calibration values
 #define DEFAULT_MIN 150
 #define DEFAULT_MAX 600
