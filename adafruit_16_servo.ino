@@ -226,6 +226,38 @@ void updateWave() {
   }
 }
 
+// Update sequence playback - call from loop()
+void updateSequence() {
+  if (!sequenceActive || currentSequence == nullptr) return;
+
+  unsigned long elapsed = millis() - sequenceStartTime;
+
+  // Find keyframes to trigger
+  for (uint8_t i = lastTriggeredKeyframe; i < currentSequenceLength; i++) {
+    Keyframe* kf = &currentSequence[i];
+
+    // End marker check
+    if (kf->servo == 255) {
+      if (sequenceLoop) {
+        // Restart sequence
+        sequenceStartTime = millis();
+        lastTriggeredKeyframe = 0;
+        Serial.println(F("Sequence looping"));
+      } else {
+        sequenceActive = false;
+        Serial.println(F("Sequence complete"));
+      }
+      return;
+    }
+
+    // Trigger keyframe if time reached
+    if (elapsed >= kf->time && i >= lastTriggeredKeyframe) {
+      moveServoDegrees(kf->servo, kf->degrees, kf->duration);
+      lastTriggeredKeyframe = i + 1;
+    }
+  }
+}
+
 // Sweep a servo through its full range
 void sweepServo(uint8_t servo) {
   if (servo >= NUM_SERVOS) {
@@ -427,6 +459,7 @@ void processCommand(String cmd) {
 void loop() {
   updateAnimations();
   updateWave();
+  updateSequence();
 
   // Read serial input
   while (Serial.available()) {
