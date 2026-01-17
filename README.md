@@ -45,6 +45,8 @@ Interactive Serial interface for the Adafruit PCA9685 16-channel PWM/Servo drive
 | `WAVE <s> <e> [spd] [off] [amp]` | `WAVE 0 7 50 30 90` | Start sine wave pattern |
 | `PLAY <n> [LOOP]` | `PLAY 1 LOOP` | Play keyframe sequence |
 | `STOP` | `STOP` | Stop wave or sequence |
+| `MODE <n> STD\|CONT` | `MODE 0 CONT` | Set servo to standard or continuous |
+| `SPEED <n> <spd>` | `SPEED 0 50` | Set continuous servo speed (-100 to 100) |
 
 ### Wave Parameters
 
@@ -113,6 +115,38 @@ Each servo has different physical limits. Calibration finds the safe pulse range
 | `DEFAULT_MAX` | 600 | Maximum pulse (180°) |
 | `SERVO_FREQ` | 50 Hz | Standard servo frequency |
 | `NUM_SERVOS` | 16 | Total servo channels |
+
+## Continuous Servo Mode
+
+Continuous rotation servos spin instead of moving to positions. The PWM signal controls speed and direction rather than angle.
+
+1. **Set servo to continuous mode**
+   ```
+   MODE 0 CONT
+   ```
+
+2. **Control speed** (-100 to 100, 0 = stop)
+   ```
+   SPEED 0 50     # 50% speed forward
+   SPEED 0 -50    # 50% speed reverse
+   SPEED 0 0      # Stop
+   ```
+
+3. **Stop the servo**
+   ```
+   CENTER 0       # Same as SPEED 0 0
+   STOP           # Stops all continuous servos
+   ```
+
+4. **Calibration for continuous servos**
+   - `CAL` sets the speed range (min = full reverse, max = full forward)
+   - The stop pulse is auto-calculated as the midpoint
+   - Use `P<n> <pulse>` to find the exact stop point, then adjust calibration
+
+5. **Switch back to standard mode**
+   ```
+   MODE 0 STD
+   ```
 
 ## Notes
 

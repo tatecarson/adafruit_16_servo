@@ -15,6 +15,8 @@
     WAVE <start> <end> [speed] [offset] [amp] - Wave pattern
     PLAY <n> [LOOP]    - Play keyframe sequence
     STOP               - Stop wave/sequence
+    MODE <n> STD|CONT  - Set servo mode (standard/continuous)
+    SPEED <n> <-100 to 100> - Set continuous servo speed
     STATUS         - Show all servo calibrations
     HELP           - Show commands
  ****************************************************/
@@ -31,6 +33,8 @@ Adafruit_PWMServoDriver pwm = Adafruit_PWMServoDriver();
 uint16_t servoMin[NUM_SERVOS];
 uint16_t servoMax[NUM_SERVOS];
 uint16_t servoPos[NUM_SERVOS];  // Current position (pulse)
+bool servoContinuous[NUM_SERVOS];  // true = continuous rotation servo
+uint16_t servoStopPulse[NUM_SERVOS];  // Center/stop pulse for continuous servos
 
 // Animation state per servo
 uint16_t servoTarget[NUM_SERVOS];    // Target position
@@ -105,6 +109,8 @@ void setup() {
     servoMoveStart[i] = 0;
     servoMoveDuration[i] = 0;
     servoMoving[i] = false;
+    servoContinuous[i] = false;
+    servoStopPulse[i] = (DEFAULT_MIN + DEFAULT_MAX) / 2;
   }
 
   pwm.begin();
@@ -119,6 +125,22 @@ void setup() {
 uint16_t degreesToPulse(uint8_t servo, uint8_t degrees) {
   degrees = constrain(degrees, 0, 180);
   return map(degrees, 0, 180, servoMin[servo], servoMax[servo]);
+}
+
+// Convert speed (-100 to 100) to pulse for continuous servo
+// 0 = stop, negative = one direction, positive = other direction
+uint16_t speedToPulse(uint8_t servo, int8_t speed) {
+  speed = constrain(speed, -100, 100);
+  uint16_t stopPulse = servoStopPulse[servo];
+  if (speed == 0) {
+    return stopPulse;
+  } else if (speed > 0) {
+    // Map 1-100 to stopPulse+1 to servoMax
+    return map(speed, 0, 100, stopPulse, servoMax[servo]);
+  } else {
+    // Map -100 to -1 to servoMin to stopPulse-1
+    return map(speed, -100, 0, servoMin[servo], stopPulse);
+  }
 }
 
 // Easing function: ease-in-out cubic for smooth organic motion
@@ -155,6 +177,24 @@ void setServoPulse(uint8_t servo, uint16_t pulse) {
 void setServoDegrees(uint8_t servo, uint8_t degrees) {
   uint16_t pulse = degreesToPulse(servo, degrees);
   setServoPulse(servo, pulse);
+}
+
+// Set continuous servo speed (-100 to 100, 0 = stop)
+void setServoSpeed(uint8_t servo, int8_t speed) {
+  if (servo >= NUM_SERVOS) {
+    Serial.println(F("Invalid servo"));
+    return;
+  }
+  if (!servoContinuous[servo]) {
+    Serial.println(F("Not a continuous servo (use MODE command)"));
+    return;
+  }
+  uint16_t pulse = speedToPulse(servo, speed);
+  servoPos[servo] = pulse;
+  pwm.setPWM(servo, 0, pulse);
+  Serial.print(F("Servo ")); Serial.print(servo);
+  Serial.print(F(" speed ")); Serial.print(speed);
+  Serial.print(F("% -> pulse ")); Serial.println(pulse);
 }
 
 // Start an animated move to target position over duration ms
@@ -316,9 +356,14 @@ void showStatus() {
   Serial.println(F("\n--- Servo Status ---"));
   for (uint8_t i = 0; i < NUM_SERVOS; i++) {
     Serial.print(F("Servo ")); Serial.print(i);
+    Serial.print(servoContinuous[i] ? F(" [CONT]") : F(" [STD] "));
     Serial.print(F(": min=")); Serial.print(servoMin[i]);
     Serial.print(F(" max=")); Serial.print(servoMax[i]);
-    Serial.print(F(" pos=")); Serial.println(servoPos[i]);
+    Serial.print(F(" pos=")); Serial.print(servoPos[i]);
+    if (servoContinuous[i]) {
+      Serial.print(F(" stop=")); Serial.print(servoStopPulse[i]);
+    }
+    Serial.println();
   }
   Serial.println();
 }
@@ -329,12 +374,14 @@ void showHelp() {
   Serial.println(F("P<n> <pulse>     Move servo n to raw pulse"));
   Serial.println(F("CAL <n> <min> <max>  Set calibration"));
   Serial.println(F("SWEEP <n>        Test sweep servo n"));
-  Serial.println(F("CENTER <n>       Move to center (90 deg)"));
+  Serial.println(F("CENTER <n>       Move to center (90 deg) / stop"));
   Serial.println(F("OFF <n>          Turn off servo n"));
   Serial.println(F("MOVE <n> <deg> <ms>  Animated move (eased)"));
   Serial.println(F("WAVE <s> <e> [spd] [off] [amp]  Start wave pattern"));
   Serial.println(F("PLAY <n> [LOOP]      Play sequence n"));
   Serial.println(F("STOP                 Stop wave/sequence"));
+  Serial.println(F("MODE <n> STD|CONT    Set servo mode"));
+  Serial.println(F("SPEED <n> <-100:100> Continuous servo speed"));
   Serial.println(F("STATUS           Show all servos"));
   Serial.println();
 }
@@ -343,8 +390,8 @@ void processCommand(String cmd) {
   cmd.trim();
   cmd.toUpperCase();
 
-  if (cmd.startsWith("S") && cmd.charAt(1) != 'T' && cmd.charAt(1) != 'W') {
-    // S<n> <degrees> - move servo to degrees
+  if (cmd.startsWith("S") && cmd.charAt(1) >= '0' && cmd.charAt(1) <= '9') {
+    // S<n> <degrees> - move servo to degrees (S0, S1, ... S15)
     int space = cmd.indexOf(' ');
     if (space > 1) {
       uint8_t servo = cmd.substring(1, space).toInt();
@@ -384,7 +431,15 @@ void processCommand(String cmd) {
     int space = cmd.indexOf(' ');
     if (space > 0) {
       uint8_t servo = cmd.substring(space + 1).toInt();
-      setServoDegrees(servo, 90);
+      if (servo < NUM_SERVOS && servoContinuous[servo]) {
+        // For continuous servo, center = stop
+        pwm.setPWM(servo, 0, servoStopPulse[servo]);
+        servoPos[servo] = servoStopPulse[servo];
+        Serial.print(F("Servo ")); Serial.print(servo);
+        Serial.println(F(" stopped"));
+      } else {
+        setServoDegrees(servo, 90);
+      }
     }
   }
   else if (cmd.startsWith("OFF")) {
@@ -472,7 +527,52 @@ void processCommand(String cmd) {
   else if (cmd.startsWith("STOP")) {
     waveActive = false;
     sequenceActive = false;
+    // Stop all continuous servos
+    for (uint8_t i = 0; i < NUM_SERVOS; i++) {
+      if (servoContinuous[i]) {
+        pwm.setPWM(i, 0, servoStopPulse[i]);
+        servoPos[i] = servoStopPulse[i];
+      }
+    }
     Serial.println(F("Stopped"));
+  }
+  else if (cmd.startsWith("MODE")) {
+    // MODE <n> STD|CONT
+    int space = cmd.indexOf(' ');
+    if (space > 0) {
+      uint8_t servo = cmd.substring(space + 1).toInt();
+      if (servo >= NUM_SERVOS) {
+        Serial.println(F("Invalid servo"));
+      } else if (cmd.indexOf("CONT") > 0) {
+        servoContinuous[servo] = true;
+        servoStopPulse[servo] = (servoMin[servo] + servoMax[servo]) / 2;
+        pwm.setPWM(servo, 0, servoStopPulse[servo]);
+        servoPos[servo] = servoStopPulse[servo];
+        Serial.print(F("Servo ")); Serial.print(servo);
+        Serial.print(F(" set to CONTINUOUS (stop="));
+        Serial.print(servoStopPulse[servo]); Serial.println(F(")"));
+      } else if (cmd.indexOf("STD") > 0) {
+        servoContinuous[servo] = false;
+        Serial.print(F("Servo ")); Serial.print(servo);
+        Serial.println(F(" set to STANDARD"));
+      } else {
+        Serial.println(F("Use: MODE <n> STD or MODE <n> CONT"));
+      }
+    }
+  }
+  else if (cmd.startsWith("SPEED")) {
+    // SPEED <n> <-100 to 100>
+    // Parse: "SPEED 0 50" or "SPEED 0 -50" or "SPEED 0 0"
+    String args = cmd.substring(6);  // Skip "SPEED "
+    args.trim();
+    int sp = args.indexOf(' ');
+    if (sp > 0) {
+      uint8_t servo = args.substring(0, sp).toInt();
+      int16_t speed = args.substring(sp + 1).toInt();
+      setServoSpeed(servo, (int8_t)constrain(speed, -100, 100));
+    } else {
+      Serial.println(F("Use: SPEED <n> <-100 to 100>"));
+    }
   }
   else if (cmd.startsWith("STATUS")) {
     showStatus();
