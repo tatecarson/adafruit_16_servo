@@ -135,11 +135,11 @@ uint16_t speedToPulse(uint8_t servo, int8_t speed) {
   if (speed == 0) {
     return stopPulse;
   } else if (speed > 0) {
-    // Map 1-100 to stopPulse+1 to servoMax
-    return map(speed, 0, 100, stopPulse, servoMax[servo]);
+    // Map 1-100 to range from stopPulse to servoMax
+    return map(speed, 1, 100, stopPulse + 1, servoMax[servo]);
   } else {
-    // Map -100 to -1 to servoMin to stopPulse-1
-    return map(speed, -100, 0, servoMin[servo], stopPulse);
+    // Map -100 to -1 to range from servoMin to stopPulse
+    return map(speed, -100, -1, servoMin[servo], stopPulse - 1);
   }
 }
 
@@ -546,11 +546,12 @@ void processCommand(String cmd) {
       } else if (cmd.indexOf("CONT") > 0) {
         servoContinuous[servo] = true;
         servoStopPulse[servo] = (servoMin[servo] + servoMax[servo]) / 2;
-        pwm.setPWM(servo, 0, servoStopPulse[servo]);
-        servoPos[servo] = servoStopPulse[servo];
+        // Don't send PWM - let user set speed manually
+        // The calculated stop pulse may not be the servo's actual stop point
         Serial.print(F("Servo ")); Serial.print(servo);
         Serial.print(F(" set to CONTINUOUS (stop="));
-        Serial.print(servoStopPulse[servo]); Serial.println(F(")"));
+        Serial.print(servoStopPulse[servo]);
+        Serial.println(F(") - use SPEED to control"));
       } else if (cmd.indexOf("STD") > 0) {
         servoContinuous[servo] = false;
         Serial.print(F("Servo ")); Serial.print(servo);
@@ -563,12 +564,11 @@ void processCommand(String cmd) {
   else if (cmd.startsWith("SPEED")) {
     // SPEED <n> <-100 to 100>
     // Parse: "SPEED 0 50" or "SPEED 0 -50" or "SPEED 0 0"
-    String args = cmd.substring(6);  // Skip "SPEED "
-    args.trim();
-    int sp = args.indexOf(' ');
-    if (sp > 0) {
-      uint8_t servo = args.substring(0, sp).toInt();
-      int16_t speed = args.substring(sp + 1).toInt();
+    int idx = 6;  // Skip "SPEED "
+    int space1 = cmd.indexOf(' ', idx);
+    if (space1 > 0) {
+      uint8_t servo = cmd.substring(idx).toInt();
+      int16_t speed = cmd.substring(space1 + 1).toInt();
       setServoSpeed(servo, (int8_t)constrain(speed, -100, 100));
     } else {
       Serial.println(F("Use: SPEED <n> <-100 to 100>"));
