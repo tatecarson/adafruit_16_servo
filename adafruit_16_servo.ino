@@ -11,6 +11,7 @@
     SWEEP <n>      - Test sweep servo n
     CENTER <n>     - Move servo n to center (90 degrees)
     OFF <n>        - Turn off servo n
+    MOVE <n> <deg> <ms> - Animated move with easing
     STATUS         - Show all servo calibrations
     HELP           - Show commands
  ****************************************************/
@@ -227,6 +228,7 @@ void showHelp() {
   Serial.println(F("SWEEP <n>        Test sweep servo n"));
   Serial.println(F("CENTER <n>       Move to center (90 deg)"));
   Serial.println(F("OFF <n>          Turn off servo n"));
+  Serial.println(F("MOVE <n> <deg> <ms>  Animated move (eased)"));
   Serial.println(F("STATUS           Show all servos"));
   Serial.println();
 }
@@ -284,6 +286,23 @@ void processCommand(String cmd) {
     if (space > 0) {
       uint8_t servo = cmd.substring(space + 1).toInt();
       servoOff(servo);
+    }
+  }
+  else if (cmd.startsWith("MOVE") || cmd.startsWith("M ")) {
+    // MOVE <servo> <degrees> <duration_ms>
+    // or M <servo> <degrees> <duration_ms>
+    int idx = cmd.startsWith("MOVE") ? 5 : 2;
+    int space1 = cmd.indexOf(' ', idx);
+    int space2 = cmd.indexOf(' ', space1 + 1);
+    if (space1 > 0 && space2 > 0) {
+      uint8_t servo = cmd.substring(idx, space1).toInt();
+      uint8_t degrees = cmd.substring(space1 + 1, space2).toInt();
+      uint16_t duration = cmd.substring(space2 + 1).toInt();
+      moveServoDegrees(servo, degrees, duration);
+      Serial.print(F("Moving servo ")); Serial.print(servo);
+      Serial.print(F(" to ")); Serial.print(degrees);
+      Serial.print(F(" deg over ")); Serial.print(duration);
+      Serial.println(F("ms"));
     }
   }
   else if (cmd.startsWith("STATUS")) {
