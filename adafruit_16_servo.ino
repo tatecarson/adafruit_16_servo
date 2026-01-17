@@ -13,7 +13,8 @@
     OFF <n>        - Turn off servo n
     MOVE <n> <deg> <ms> - Animated move with easing
     WAVE <start> <end> [speed] [offset] [amp] - Wave pattern
-    STOP               - Stop wave pattern
+    PLAY <n> [LOOP]    - Play keyframe sequence
+    STOP               - Stop wave/sequence
     STATUS         - Show all servo calibrations
     HELP           - Show commands
  ****************************************************/
@@ -332,7 +333,8 @@ void showHelp() {
   Serial.println(F("OFF <n>          Turn off servo n"));
   Serial.println(F("MOVE <n> <deg> <ms>  Animated move (eased)"));
   Serial.println(F("WAVE <s> <e> [spd] [off] [amp]  Start wave pattern"));
-  Serial.println(F("STOP                 Stop wave pattern"));
+  Serial.println(F("PLAY <n> [LOOP]      Play sequence n"));
+  Serial.println(F("STOP                 Stop wave/sequence"));
   Serial.println(F("STATUS           Show all servos"));
   Serial.println();
 }
@@ -441,9 +443,36 @@ void processCommand(String cmd) {
       Serial.print(F(" amp=")); Serial.println(waveAmplitude);
     }
   }
+  else if (cmd.startsWith("PLAY")) {
+    // PLAY <sequence_num> [LOOP]
+    int space = cmd.indexOf(' ');
+    if (space > 0) {
+      uint8_t seqNum = cmd.substring(space + 1).toInt();
+      sequenceLoop = (cmd.indexOf("LOOP") > 0);
+
+      // Select sequence (add more sequences as needed)
+      if (seqNum == 1) {
+        currentSequence = sequence1;
+        currentSequenceLength = sequence1Length;
+      } else {
+        Serial.println(F("Unknown sequence"));
+        return;
+      }
+
+      sequenceStartTime = millis();
+      lastTriggeredKeyframe = 0;
+      sequenceActive = true;
+      waveActive = false;  // Stop wave if running
+
+      Serial.print(F("Playing sequence ")); Serial.print(seqNum);
+      if (sequenceLoop) Serial.print(F(" (looping)"));
+      Serial.println();
+    }
+  }
   else if (cmd.startsWith("STOP")) {
     waveActive = false;
-    Serial.println(F("Wave stopped"));
+    sequenceActive = false;
+    Serial.println(F("Stopped"));
   }
   else if (cmd.startsWith("STATUS")) {
     showStatus();
