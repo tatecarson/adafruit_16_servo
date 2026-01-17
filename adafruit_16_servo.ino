@@ -28,6 +28,13 @@ uint16_t servoMin[NUM_SERVOS];
 uint16_t servoMax[NUM_SERVOS];
 uint16_t servoPos[NUM_SERVOS];  // Current position (pulse)
 
+// Animation state per servo
+uint16_t servoTarget[NUM_SERVOS];    // Target position
+uint16_t servoStart[NUM_SERVOS];     // Starting position for current move
+unsigned long servoMoveStart[NUM_SERVOS];  // When move started (millis)
+uint16_t servoMoveDuration[NUM_SERVOS];    // Duration in ms (0 = instant)
+bool servoMoving[NUM_SERVOS];        // Is this servo currently animating?
+
 // Default calibration values
 #define DEFAULT_MIN 150
 #define DEFAULT_MAX 600
@@ -47,6 +54,11 @@ void setup() {
     servoMin[i] = DEFAULT_MIN;
     servoMax[i] = DEFAULT_MAX;
     servoPos[i] = (DEFAULT_MIN + DEFAULT_MAX) / 2;
+    servoTarget[i] = servoPos[i];
+    servoStart[i] = servoPos[i];
+    servoMoveStart[i] = 0;
+    servoMoveDuration[i] = 0;
+    servoMoving[i] = false;
   }
 
   pwm.begin();
@@ -97,6 +109,50 @@ void setServoPulse(uint8_t servo, uint16_t pulse) {
 void setServoDegrees(uint8_t servo, uint8_t degrees) {
   uint16_t pulse = degreesToPulse(servo, degrees);
   setServoPulse(servo, pulse);
+}
+
+// Start an animated move to target position over duration ms
+void moveServoAnimated(uint8_t servo, uint16_t targetPulse, uint16_t duration) {
+  if (servo >= NUM_SERVOS) return;
+  targetPulse = constrain(targetPulse, servoMin[servo], servoMax[servo]);
+
+  servoStart[servo] = servoPos[servo];
+  servoTarget[servo] = targetPulse;
+  servoMoveDuration[servo] = duration;
+  servoMoveStart[servo] = millis();
+  servoMoving[servo] = true;
+}
+
+// Animated move using degrees
+void moveServoDegrees(uint8_t servo, uint8_t degrees, uint16_t duration) {
+  uint16_t pulse = degreesToPulse(servo, degrees);
+  moveServoAnimated(servo, pulse, duration);
+}
+
+// Update all servo animations - call from loop()
+void updateAnimations() {
+  unsigned long now = millis();
+
+  for (uint8_t i = 0; i < NUM_SERVOS; i++) {
+    if (!servoMoving[i]) continue;
+
+    unsigned long elapsed = now - servoMoveStart[i];
+
+    if (elapsed >= servoMoveDuration[i]) {
+      // Animation complete
+      servoPos[i] = servoTarget[i];
+      pwm.setPWM(i, 0, servoPos[i]);
+      servoMoving[i] = false;
+    } else {
+      // Interpolate position
+      float progress = (float)elapsed / (float)servoMoveDuration[i];
+      uint16_t newPos = lerpEased(servoStart[i], servoTarget[i], progress);
+      if (newPos != servoPos[i]) {
+        servoPos[i] = newPos;
+        pwm.setPWM(i, 0, newPos);
+      }
+    }
+  }
 }
 
 // Sweep a servo through its full range
@@ -242,6 +298,8 @@ void processCommand(String cmd) {
 }
 
 void loop() {
+  updateAnimations();
+
   // Read serial input
   while (Serial.available()) {
     char c = (char)Serial.read();
