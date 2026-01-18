@@ -31,6 +31,17 @@ static Keyframe sequence1[] = {
 
 static const uint8_t sequence1Length = sizeof(sequence1) / sizeof(sequence1[0]);
 
+/**
+ * Select a stored positional keyframe sequence by its sequence number.
+ *
+ * If the sequence exists, sets `outSeq` to point to the sequence array and
+ * `outLen` to its element count.
+ *
+ * @param seqNum Sequence identifier to select.
+ * @param outSeq Output pointer that will be set to the sequence array when found.
+ * @param outLen Output value that will be set to the sequence length when found.
+ * @returns `true` if a matching sequence was found and outputs were set, `false` otherwise.
+ */
 inline bool selectPositionSequence(uint8_t seqNum, Keyframe*& outSeq, uint8_t& outLen) {
   if (seqNum == 1) {
     outSeq = sequence1;
@@ -56,6 +67,14 @@ static SpeedFrame speedSeq1[] = {
 
 static const uint8_t speedSeq1Length = sizeof(speedSeq1) / sizeof(speedSeq1[0]);
 
+/**
+ * Selects a predefined speed sequence by number and returns its pointer and length.
+ *
+ * @param seqNum Sequence number to select.
+ * @param outSeq Output pointer set to the sequence array when a match is found.
+ * @param outLen Output set to the number of frames in the sequence when a match is found.
+ * @returns `true` if a matching sequence was selected and outputs populated, `false` otherwise.
+ */
 inline bool selectSpeedSequence(uint8_t seqNum, SpeedFrame*& outSeq, uint8_t& outLen) {
   if (seqNum == 1) {
     outSeq = speedSeq1;
@@ -64,4 +83,3 @@ inline bool selectSpeedSequence(uint8_t seqNum, SpeedFrame*& outSeq, uint8_t& ou
   }
   return false;
 }
-
