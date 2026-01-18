@@ -20,7 +20,7 @@ Servo calibration and control system for the Adafruit PCA9685 16-channel PWM dri
 - **Keyframe sequences** - Pre-programmed choreography with `PLAY 1 LOOP`
 - **STOP command** - Halts all animations
 
-### 3. Continuous Servo Mode (Partially Complete)
+### 3. Continuous Servo Mode (Complete)
 - `MODE <n> CONT` - Marks a servo as continuous rotation
 - `MODE <n> STD` - Switches back to standard positional servo
 - `SPEED <n> <-100 to 100>` - Speed control command
@@ -28,38 +28,13 @@ Servo calibration and control system for the Adafruit PCA9685 16-channel PWM dri
 - `CENTER <n>` - Stops a continuous servo (sends stop pulse)
 - STATUS shows `[CONT]` or `[STD]` for each servo
 
-## Current Issue: Continuous Servo Speed Control
-
-**Problem:** The `SPEED` command parses correctly and outputs different pulse values, but the servo doesn't respond to different speeds.
-
-**Symptoms:**
-- `SPEED 1 10` → outputs `Servo 1 speed 10% -> pulse 398`
-- `SPEED 1 50` → outputs `Servo 1 speed 50% -> pulse 489`
-- `SPEED 1 100` → outputs `Servo 1 speed 100% -> pulse 600`
-- Servo behavior doesn't change between these pulse values
-
-**Possible Causes:**
-1. The servo's actual speed range may be narrower than 150-600
-2. The stop pulse (375) may not match the servo's true dead zone
-3. Hardware issue with the specific servo
-
-**Suggested Next Steps:**
-1. Test with raw pulse commands to verify servo responds:
-   ```
-   P1 375    # Should stop (or close to it)
-   P1 400    # Should spin slowly one direction
-   P1 500    # Should spin faster
-   P1 600    # Should spin at max speed
-   P1 350    # Should spin slowly other direction
-   P1 150    # Should spin at max speed other direction
-   ```
-2. If servo only responds in a narrow range (e.g., 360-390), adjust calibration:
-   ```
-   CAL 1 360 390
-   MODE 1 CONT
-   SPEED 1 50
-   ```
-3. The continuous servo's dead band (stop zone) varies by servo - some need precise calibration
+### 4. Speed Sequences for Continuous Servos (Complete)
+- `SpeedFrame` struct for timed speed changes with ramping
+- `rampServoSpeed()` for eased speed transitions
+- `updateSpeedRamps()` engine in loop() for smooth interpolation
+- `updateSpeedSequence()` playback engine for choreography
+- `SPLAY <n> [LOOP]` command for speed sequence playback
+- Cubic ease-in-out for organic speed ramping
 
 ## File Structure
 
@@ -70,7 +45,9 @@ adafruit_16_servo/
 ├── AGENTS.md                 # AI assistant context
 └── docs/
     ├── plans/
-    │   └── 2026-01-17-animation-system.md  # Implementation plan (all tasks done)
+    │   ├── 2026-01-17-animation-system.md  # Animation implementation plan (done)
+    │   └── 2026-01-18-continuous-servo-sequences.md  # Speed sequences plan (done)
+    ├── TESTING.md            # Manual test results
     └── PROGRESS.md           # This file
 ```
 
@@ -90,6 +67,15 @@ adafruit_16_servo/
 
 10. `feat: add continuous servo mode and speed control commands`
 11. `fix: adjust speed mapping for continuous servos and update command feedback`
+
+## Git Commits (Speed Sequences)
+
+12. `feat: add SpeedFrame data structure for continuous servo sequences`
+13. `feat: add rampServoSpeed function for eased speed transitions`
+14. `feat: add updateSpeedRamps for smooth speed transitions in loop`
+15. `feat: add updateSpeedSequence engine for continuous servo choreography`
+16. `feat: add SPLAY command for speed sequence playback`
+17. `docs: add speed sequence documentation`
 
 ## Future Features
 

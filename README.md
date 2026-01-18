@@ -44,6 +44,7 @@ Interactive Serial interface for the Adafruit PCA9685 16-channel PWM/Servo drive
 | `MOVE <n> <deg> <ms>` | `MOVE 0 180 2000` | Smooth animated move with easing |
 | `WAVE <s> <e> [spd] [off] [amp]` | `WAVE 0 7 50 30 90` | Start sine wave pattern |
 | `PLAY <n> [LOOP]` | `PLAY 1 LOOP` | Play keyframe sequence |
+| `SPLAY <n> [LOOP]` | `SPLAY 1 LOOP` | Play speed sequence (continuous servos) |
 | `STOP` | `STOP` | Stop wave or sequence |
 | `MODE <n> STD\|CONT` | `MODE 0 CONT` | Set servo to standard or continuous |
 | `SPEED <n> <spd>` | `SPEED 0 50` | Set continuous servo speed (-100 to 100) |
@@ -71,6 +72,31 @@ Keyframe sequence1[MAX_KEYFRAMES] = {
 - `degrees`: Target position (0-180)
 - `time_ms`: When to start this move (ms from sequence start)
 - `duration_ms`: How long the move takes
+
+### Speed Sequences (Continuous Servos)
+
+Speed sequences choreograph continuous servos with timed speed changes and ramping:
+
+```
+SPLAY 1        # Play speed sequence 1 once
+SPLAY 1 LOOP   # Loop speed sequence 1
+STOP           # Stop sequence
+```
+
+Edit the `speedSeq1` array in the code to define speed sequences:
+
+```cpp
+SpeedFrame speedSeq1[MAX_SPEEDFRAMES] = {
+  {servo, speed, time_ms, ramp_ms},
+  // ...
+  {255, 0, 0, 0}  // End marker
+};
+```
+
+- `servo`: Which continuous servo (0-15)
+- `speed`: Target speed (-100 to 100, 0 = stop)
+- `time_ms`: When to start this speed change (ms from sequence start)
+- `ramp_ms`: How long to ramp to the target speed (0 = instant)
 
 ## Calibration Guide
 
