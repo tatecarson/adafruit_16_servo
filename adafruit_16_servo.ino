@@ -115,12 +115,18 @@ void setup() {
 
   // === CUSTOM SERVO CALIBRATIONS ===
   // Add your servo-specific calibrations here so they persist across uploads
+
   // Servo 0: SM-S4303R continuous rotation (stop pulse = 295)
   servoMin[0] = 150;
   servoMax[0] = 440;
   servoContinuous[0] = true;
   servoStopPulse[0] = 295;
   servoPos[0] = 295;
+
+  // Servo 4: Hitec HS-805BB+ mega quarter scale (standard positional)
+  servoMin[4] = 150;
+  servoMax[4] = 450;
+
   // === END CUSTOM CALIBRATIONS ===
 
   pwm.begin();

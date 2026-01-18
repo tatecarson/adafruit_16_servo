@@ -35,18 +35,19 @@
 
 ## Test 3: Basic Servo Movement (Degrees)
 
-**Commands:**
-1. `S0 90` - Move servo 0 to center
-2. `S0 0` - Move servo 0 to minimum
-3. `S0 180` - Move servo 0 to maximum
+**Commands (using servo 4 - standard positional):**
+1. `CAL 4 150 450` - Set calibration first
+2. `S4 90` - Move servo 4 to center
+3. `S4 0` - Move servo 4 to minimum
+4. `S4 180` - Move servo 4 to maximum
 
 **Expected:** Servo physically moves to each position, Serial confirms each move
 
 **Result:**
-- [ ] Pass
-- [x] Fail - Servo 0 is a continuous rotation servo, not positional. Continuously rotates instead of stopping at position.
+- [x] Pass (servo 4 with calibration)
+- [ ] Fail - describe:
 
-**Note:** Servo 0 needs to use MODE/SPEED commands instead. Test positional commands on servo 1 or 4.
+**Note:** Servo 0 is continuous rotation - use MODE/SPEED commands instead.
 
 ---
 
@@ -212,5 +213,5 @@
 |---------|-------------|------|------------|-------------|
 | 0 | SM-S4303R | Continuous | 295 | `CAL 0 150 440` then `MODE 0 CONT` |
 | 1 | | | | |
-| 4 | | | | |
+| 4 | Hitec HS-805BB+ | Standard | N/A | `CAL 4 150 450` |
 
