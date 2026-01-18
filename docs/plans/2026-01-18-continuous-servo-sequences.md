@@ -461,7 +461,7 @@ Add new test section:
 **Expected:** Servos 0 and 1 execute choreographed speed changes with ramping
 
 **Result:**
-- [ ] Pass
+- [x] Pass
 - [ ] Fail - describe:
 ```
 
