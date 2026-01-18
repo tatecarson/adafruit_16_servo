@@ -14,6 +14,7 @@
     MOVE <n> <deg> <ms> - Animated move with easing
     WAVE <start> <end> [speed] [offset] [amp] - Wave pattern
     PLAY <n> [LOOP]    - Play keyframe sequence
+    SPLAY <n> [LOOP]   - Play speed sequence (continuous servos)
     STOP               - Stop wave/sequence
     MODE <n> STD|CONT  - Set servo mode (standard/continuous)
     SPEED <n> <-100 to 100> - Set continuous servo speed
@@ -558,6 +559,7 @@ void showHelp() {
   Serial.println(F("MOVE <n> <deg> <ms>  Animated move (eased)"));
   Serial.println(F("WAVE <s> <e> [spd] [off] [amp]  Start wave pattern"));
   Serial.println(F("PLAY <n> [LOOP]      Play sequence n"));
+  Serial.println(F("SPLAY <n> [LOOP]     Speed sequence (continuous)"));
   Serial.println(F("STOP                 Stop wave/sequence"));
   Serial.println(F("MODE <n> STD|CONT    Set servo mode"));
   Serial.println(F("SPEED <n> <-100:100> Continuous servo speed"));
@@ -703,14 +705,51 @@ void processCommand(String cmd) {
       Serial.println();
     }
   }
+  else if (cmd.startsWith("SPLAY")) {
+    // SPLAY <sequence_num> [LOOP]
+    int spaceIdx = cmd.indexOf(' ', 6);
+    int seqNum;
+    bool loop = false;
+
+    if (spaceIdx > 0) {
+      seqNum = cmd.substring(6, spaceIdx).toInt();
+      if (cmd.indexOf("LOOP") > 0) loop = true;
+    } else {
+      seqNum = cmd.substring(6).toInt();
+    }
+
+    // Stop any running sequences
+    speedSeqActive = false;
+    sequenceActive = false;
+    waveActive = false;
+
+    // Select speed sequence
+    if (seqNum == 1) {
+      currentSpeedSeq = speedSeq1;
+      currentSpeedSeqLength = speedSeq1Length;
+    } else {
+      Serial.println(F("Unknown speed sequence"));
+      return;
+    }
+
+    speedSeqActive = true;
+    speedSeqLoop = loop;
+    speedSeqStartTime = millis();
+    lastTriggeredSpeedFrame = 0;
+
+    Serial.print(F("Playing speed sequence ")); Serial.print(seqNum);
+    if (loop) Serial.print(F(" (looping)"));
+    Serial.println();
+  }
   else if (cmd.startsWith("STOP")) {
     waveActive = false;
     sequenceActive = false;
-    // Stop all continuous servos
+    speedSeqActive = false;
+    // Stop all speed ramps
     for (uint8_t i = 0; i < NUM_SERVOS; i++) {
+      servoSpeedRamping[i] = false;
       if (servoContinuous[i]) {
-        pwm.setPWM(i, 0, servoStopPulse[i]);
-        servoPos[i] = servoStopPulse[i];
+        setServoSpeed(i, 0);
       }
     }
     Serial.println(F("Stopped"));
