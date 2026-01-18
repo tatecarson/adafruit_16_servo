@@ -132,10 +132,11 @@ When adding features:
 4. Add command parsing in `processCommand()` (around line 389)
 5. Update `showHelp()` in the sketch
 
-## Documentation Updates
+## Before Committing
 
-**Always update these files after making changes:**
+**Always do these before committing changes:**
 
-1. **README.md** - Update command tables if adding/changing commands
-2. **docs/PROGRESS.md** - Add new commits to the Git Commits section, update "Current Issue" if relevant
-3. **AGENTS.md** (this file) - Update line numbers in "Code Organization" section if code structure changes significantly
+1. **Manual test** - Use the `arduino-manual-testing` skill to create and execute test cases. Upload to Arduino and verify via Serial Monitor.
+2. **Update README.md** - Update command tables if adding/changing commands
+3. **Update docs/PROGRESS.md** - Add new commits to the Git Commits section, update "Current Issue" if relevant
+4. **Update AGENTS.md** (this file) - Update line numbers in "Code Organization" section if code structure changes significantly
