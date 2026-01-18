@@ -21,8 +21,9 @@ Interactive Serial interface for the Adafruit PCA9685 16-channel PWM/Servo drive
 ## Installation
 
 1. Install the [Adafruit PWM Servo Driver Library](https://github.com/adafruit/Adafruit-PWM-Servo-Driver-Library) via Arduino Library Manager
-2. Upload `adafruit_16_servo.ino` to your Arduino
-3. Open Serial Monitor at 9600 baud
+2. Edit `servo_setup.h` to match your servos (min/max pulses, standard vs continuous, stop pulse)
+3. Upload `adafruit_16_servo.ino` to your Arduino
+4. Open Serial Monitor at 9600 baud
 
 ## Commands
 
@@ -58,10 +59,10 @@ Interactive Serial interface for the Adafruit PCA9685 16-channel PWM/Servo drive
 
 ### Creating Custom Sequences
 
-Edit the `sequence1` array in the code to define your own keyframe animations:
+Edit `sequence_setup.h` to define your own keyframe animations:
 
 ```cpp
-Keyframe sequence1[MAX_KEYFRAMES] = {
+Keyframe sequence1[] = {
   {servo, degrees, time_ms, duration_ms},
   // ...
   {255, 0, 0, 0}  // End marker
@@ -83,10 +84,10 @@ SPLAY 1 LOOP   # Loop speed sequence 1
 STOP           # Stop sequence
 ```
 
-Edit the `speedSeq1` array in the code to define speed sequences:
+Edit `sequence_setup.h` to define speed sequences:
 
 ```cpp
-SpeedFrame speedSeq1[MAX_SPEEDFRAMES] = {
+SpeedFrame speedSeq1[] = {
   {servo, speed, time_ms, ramp_ms},
   // ...
   {255, 0, 0, 0}  // End marker
