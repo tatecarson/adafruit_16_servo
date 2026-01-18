@@ -97,9 +97,9 @@ SpeedFrame speedSeq1[MAX_SPEEDFRAMES] = {
   {1, 50, 4000, 500},
   {0, 0, 7000, 500},     // Stop
   {1, 0, 7000, 500},
-  {255, 0, 0, 0}         // End marker
+  {255, 0, 7500, 0}      // End marker (triggers after last frame completes)
 };
-uint8_t speedSeq1Length = 8;
+uint8_t speedSeq1Length = 9;  // Includes end marker
 
 // Sequence playback state
 bool sequenceActive = false;
@@ -451,28 +451,29 @@ void updateSpeedSequence() {
   for (uint8_t i = lastTriggeredSpeedFrame; i < currentSpeedSeqLength; i++) {
     SpeedFrame* sf = &currentSpeedSeq[i];
 
-    // End marker check
-    if (sf->servo == 255) {
-      if (speedSeqLoop) {
-        // Restart sequence
-        speedSeqStartTime = millis();
-        lastTriggeredSpeedFrame = 0;
-        Serial.println(F("Speed sequence looping"));
-      } else {
-        speedSeqActive = false;
-        // Stop all continuous servos
-        for (uint8_t j = 0; j < NUM_SERVOS; j++) {
-          if (servoContinuous[j]) {
-            setServoSpeed(j, 0);
-          }
-        }
-        Serial.println(F("Speed sequence complete"));
-      }
-      return;
-    }
-
     // Trigger speed frame if time reached
-    if (elapsed >= sf->time && i >= lastTriggeredSpeedFrame) {
+    if (elapsed >= sf->time) {
+      // End marker check
+      if (sf->servo == 255) {
+        if (speedSeqLoop) {
+          // Restart sequence
+          speedSeqStartTime = millis();
+          lastTriggeredSpeedFrame = 0;
+          Serial.println(F("Speed sequence looping"));
+        } else {
+          speedSeqActive = false;
+          // Stop all continuous servos
+          for (uint8_t j = 0; j < NUM_SERVOS; j++) {
+            if (servoContinuous[j]) {
+              setServoSpeed(j, 0);
+            }
+          }
+          Serial.println(F("Speed sequence complete"));
+        }
+        return;
+      }
+
+      // Trigger regular speed frame
       rampServoSpeed(sf->servo, sf->speed, sf->rampMs);
       lastTriggeredSpeedFrame = i + 1;
     }
@@ -707,39 +708,34 @@ void processCommand(String cmd) {
   }
   else if (cmd.startsWith("SPLAY")) {
     // SPLAY <sequence_num> [LOOP]
-    int spaceIdx = cmd.indexOf(' ', 6);
-    int seqNum;
-    bool loop = false;
+    int space = cmd.indexOf(' ');
+    if (space > 0) {
+      uint8_t seqNum = cmd.substring(space + 1).toInt();
+      bool loop = (cmd.indexOf("LOOP") > 0);
 
-    if (spaceIdx > 0) {
-      seqNum = cmd.substring(6, spaceIdx).toInt();
-      if (cmd.indexOf("LOOP") > 0) loop = true;
-    } else {
-      seqNum = cmd.substring(6).toInt();
+      // Stop any running sequences
+      speedSeqActive = false;
+      sequenceActive = false;
+      waveActive = false;
+
+      // Select speed sequence
+      if (seqNum == 1) {
+        currentSpeedSeq = speedSeq1;
+        currentSpeedSeqLength = speedSeq1Length;
+      } else {
+        Serial.println(F("Unknown speed sequence"));
+        return;
+      }
+
+      speedSeqActive = true;
+      speedSeqLoop = loop;
+      speedSeqStartTime = millis();
+      lastTriggeredSpeedFrame = 0;
+
+      Serial.print(F("Playing speed sequence ")); Serial.print(seqNum);
+      if (loop) Serial.print(F(" (looping)"));
+      Serial.println();
     }
-
-    // Stop any running sequences
-    speedSeqActive = false;
-    sequenceActive = false;
-    waveActive = false;
-
-    // Select speed sequence
-    if (seqNum == 1) {
-      currentSpeedSeq = speedSeq1;
-      currentSpeedSeqLength = speedSeq1Length;
-    } else {
-      Serial.println(F("Unknown speed sequence"));
-      return;
-    }
-
-    speedSeqActive = true;
-    speedSeqLoop = loop;
-    speedSeqStartTime = millis();
-    lastTriggeredSpeedFrame = 0;
-
-    Serial.print(F("Playing speed sequence ")); Serial.print(seqNum);
-    if (loop) Serial.print(F(" (looping)"));
-    Serial.println();
   }
   else if (cmd.startsWith("STOP")) {
     waveActive = false;

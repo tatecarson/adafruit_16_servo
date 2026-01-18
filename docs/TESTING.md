@@ -207,6 +207,45 @@
 
 ---
 
+## Test 14: Speed Sequences (Continuous Servos)
+
+**Setup:** Servos 0 and 1 must be configured as continuous (already hardcoded in sketch)
+
+**Commands:**
+1. `SPLAY 1` - Play speed sequence 1 once
+
+**Expected:**
+- t=0: Servos 0 and 1 start ramping (opposite directions, 500ms ramp)
+- t=3s: Both ramp to stop
+- t=4s: Both ramp to opposite speeds (reversed)
+- t=7s: Both stop
+- Serial shows "Playing speed sequence 1" then ramp messages, then "Speed sequence complete"
+
+**Result:**
+- [x] Pass
+- [ ] Fail - describe:
+
+---
+
+## Test 15: Speed Sequence Loop
+
+**Commands:**
+1. `SPLAY 1 LOOP` - Play speed sequence 1 looping
+2. Wait for at least 2 cycles (~14 seconds)
+3. `STOP` - Stop the sequence
+
+**Expected:**
+- Sequence repeats after 7s
+- Serial shows "Speed sequence looping" at each restart
+- STOP halts playback and stops both servos
+- Serial shows "Stopped"
+
+**Result:**
+- [x] Pass
+- [ ] Fail - describe:
+
+---
+
 ## Servo Calibration Notes
 
 | Channel | Servo Model | Type | Stop Pulse | Calibration |
