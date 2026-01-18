@@ -77,6 +77,29 @@ Keyframe sequence1[MAX_KEYFRAMES] = {
 };
 uint8_t sequence1Length = 9;
 
+// Speed sequence structure for continuous servos
+struct SpeedFrame {
+  uint8_t servo;      // Which servo (255 = end marker)
+  int8_t speed;       // Target speed (-100 to 100, 0 = stop)
+  uint16_t time;      // Time offset from sequence start (ms)
+  uint16_t rampMs;    // Ramp duration to reach speed (0 = instant)
+};
+
+// Example speed sequence storage
+#define MAX_SPEEDFRAMES 32
+SpeedFrame speedSeq1[MAX_SPEEDFRAMES] = {
+  {0, 50, 0, 500},       // Servo 0 ramp to 50% over 500ms at t=0
+  {1, -50, 0, 500},      // Servo 1 ramp to -50% (opposite direction)
+  {0, 0, 3000, 500},     // Servo 0 ramp to stop at t=3s
+  {1, 0, 3000, 500},     // Servo 1 ramp to stop
+  {0, -50, 4000, 500},   // Reverse directions
+  {1, 50, 4000, 500},
+  {0, 0, 7000, 500},     // Stop
+  {1, 0, 7000, 500},
+  {255, 0, 0, 0}         // End marker
+};
+uint8_t speedSeq1Length = 8;
+
 // Sequence playback state
 bool sequenceActive = false;
 bool sequenceLoop = false;
@@ -84,6 +107,21 @@ Keyframe* currentSequence = nullptr;
 uint8_t currentSequenceLength = 0;
 unsigned long sequenceStartTime = 0;
 uint8_t lastTriggeredKeyframe = 0;
+
+// Speed sequence playback state
+bool speedSeqActive = false;
+bool speedSeqLoop = false;
+SpeedFrame* currentSpeedSeq = nullptr;
+uint8_t currentSpeedSeqLength = 0;
+unsigned long speedSeqStartTime = 0;
+uint8_t lastTriggeredSpeedFrame = 0;
+
+// Per-servo speed ramping state
+int8_t servoTargetSpeed[NUM_SERVOS];
+int8_t servoStartSpeed[NUM_SERVOS];
+unsigned long servoSpeedRampStart[NUM_SERVOS];
+uint16_t servoSpeedRampDuration[NUM_SERVOS];
+bool servoSpeedRamping[NUM_SERVOS];
 
 // Default calibration values
 #define DEFAULT_MIN 150
@@ -111,6 +149,11 @@ void setup() {
     servoMoving[i] = false;
     servoContinuous[i] = false;
     servoStopPulse[i] = (DEFAULT_MIN + DEFAULT_MAX) / 2;
+    servoTargetSpeed[i] = 0;
+    servoStartSpeed[i] = 0;
+    servoSpeedRampStart[i] = 0;
+    servoSpeedRampDuration[i] = 0;
+    servoSpeedRamping[i] = false;
   }
 
   // === CUSTOM SERVO CALIBRATIONS ===
