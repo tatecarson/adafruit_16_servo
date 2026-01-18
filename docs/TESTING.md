@@ -84,24 +84,24 @@
 
 ## Test 6: Center Command
 
-**Command:** `CENTER 0`
+**Command:** `CENTER 4`
 
 **Expected:** Servo moves to 90° (center of calibrated range)
 
 **Result:**
-- [ ] Pass
+- [x] Pass
 - [ ] Fail - describe:
 
 ---
 
 ## Test 7: Sweep
 
-**Command:** `SWEEP 0`
+**Command:** `SWEEP 4`
 
 **Expected:** Servo sweeps from min to max to min, returns to center
 
 **Result:**
-- [ ] Pass
+- [x] Pass
 - [ ] Fail - describe:
 
 ---
@@ -109,13 +109,13 @@
 ## Test 8: Off Command
 
 **Commands:**
-1. `OFF 0`
+1. `OFF 4`
 2. Physically push the servo horn
 
 **Expected:** Servo goes limp (no holding torque), can be moved by hand
 
 **Result:**
-- [ ] Pass
+- [x] Pass (PWM stops; HS-805BB+ has mechanical gear resistance even when off)
 - [ ] Fail - describe:
 
 ---
@@ -123,13 +123,13 @@
 ## Test 9: Animated Move (MOVE)
 
 **Commands:**
-1. `S0 0` - Start at 0°
-2. `MOVE 0 180 2000` - Animate to 180° over 2 seconds
+1. `S4 0` - Start at 0°
+2. `MOVE 4 180 2000` - Animate to 180° over 2 seconds
 
 **Expected:** Smooth eased motion over ~2 seconds (not instant)
 
 **Result:**
-- [ ] Pass
+- [x] Pass
 - [ ] Fail - describe:
 
 ---
@@ -145,7 +145,7 @@
 
 **Result:**
 - [ ] Pass
-- [ ] Fail - describe:
+- [x] Skipped - requires multiple positional servos (only have servo 4)
 
 ---
 
@@ -158,7 +158,7 @@
 **Expected:** Servos 0, 1, 2 execute choreographed moves, "Sequence complete" prints
 
 **Result:**
-- [ ] Pass
+- [x] Pass (command executes, servo 0 moves; full test needs multiple positional servos)
 - [ ] Fail - describe:
 
 ---
@@ -174,7 +174,7 @@
 
 **Result:**
 - [ ] Pass
-- [ ] Fail - describe:
+- [x] Skipped - requires multiple positional servos for meaningful test
 
 ---
 
@@ -212,6 +212,6 @@
 | Channel | Servo Model | Type | Stop Pulse | Calibration |
 |---------|-------------|------|------------|-------------|
 | 0 | SM-S4303R | Continuous | 295 | `CAL 0 150 440` then `MODE 0 CONT` |
-| 1 | | | | |
+| 1 | SM-S4303R | Continuous | 295 | `CAL 1 150 440` then `MODE 1 CONT` |
 | 4 | Hitec HS-805BB+ | Standard | N/A | `CAL 4 150 450` |
 

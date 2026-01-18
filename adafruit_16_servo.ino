@@ -123,6 +123,13 @@ void setup() {
   servoStopPulse[0] = 295;
   servoPos[0] = 295;
 
+  // Servo 1: SM-S4303R continuous rotation (stop pulse = 295)
+  servoMin[1] = 150;
+  servoMax[1] = 440;
+  servoContinuous[1] = true;
+  servoStopPulse[1] = 295;
+  servoPos[1] = 295;
+
   // Servo 4: Hitec HS-805BB+ mega quarter scale (standard positional)
   servoMin[4] = 150;
   servoMax[4] = 450;
