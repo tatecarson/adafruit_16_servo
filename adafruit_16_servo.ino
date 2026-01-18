@@ -349,6 +349,39 @@ void updateAnimations() {
   }
 }
 
+// Update all active speed ramps - call from loop()
+void updateSpeedRamps() {
+  unsigned long now = millis();
+
+  for (uint8_t i = 0; i < NUM_SERVOS; i++) {
+    if (!servoSpeedRamping[i]) continue;
+
+    unsigned long elapsed = now - servoSpeedRampStart[i];
+
+    if (elapsed >= servoSpeedRampDuration[i]) {
+      // Ramp complete
+      setServoSpeed(i, servoTargetSpeed[i]);
+      servoSpeedRamping[i] = false;
+    } else {
+      // Calculate eased speed
+      float t = (float)elapsed / servoSpeedRampDuration[i];
+      // Cubic ease in-out (same as position animation)
+      if (t < 0.5) {
+        t = 4 * t * t * t;
+      } else {
+        t = 1 - pow(-2 * t + 2, 3) / 2;
+      }
+
+      int8_t speed = servoStartSpeed[i] + (servoTargetSpeed[i] - servoStartSpeed[i]) * t;
+
+      // Set speed without printing (to avoid spam)
+      uint16_t pulse = speedToPulse(i, speed);
+      servoPos[i] = pulse;
+      pwm.setPWM(i, 0, pulse);
+    }
+  }
+}
+
 // Update wave pattern - call from loop()
 void updateWave() {
   if (!waveActive) return;
@@ -695,6 +728,7 @@ void processCommand(String cmd) {
 
 void loop() {
   updateAnimations();
+  updateSpeedRamps();
   updateWave();
   updateSequence();
 
