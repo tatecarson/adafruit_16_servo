@@ -263,6 +263,48 @@ void setServoSpeed(uint8_t servo, int8_t speed) {
   Serial.print(F("% -> pulse ")); Serial.println(pulse);
 }
 
+// Ramp continuous servo to target speed over duration
+void rampServoSpeed(uint8_t servo, int8_t targetSpeed, uint16_t rampMs) {
+  if (servo >= NUM_SERVOS) {
+    Serial.println(F("Invalid servo"));
+    return;
+  }
+  if (!servoContinuous[servo]) {
+    Serial.println(F("Not a continuous servo"));
+    return;
+  }
+
+  // Get current speed from pulse
+  int8_t currentSpeed = 0;
+  if (servoPos[servo] != servoStopPulse[servo]) {
+    // Approximate current speed from pulse position
+    if (servoPos[servo] > servoStopPulse[servo]) {
+      currentSpeed = map(servoPos[servo], servoStopPulse[servo], servoMax[servo], 0, 100);
+    } else {
+      currentSpeed = map(servoPos[servo], servoMin[servo], servoStopPulse[servo], -100, 0);
+    }
+  }
+
+  if (rampMs == 0) {
+    // Instant speed change
+    setServoSpeed(servo, targetSpeed);
+    servoSpeedRamping[servo] = false;
+  } else {
+    // Start ramping
+    servoStartSpeed[servo] = currentSpeed;
+    servoTargetSpeed[servo] = targetSpeed;
+    servoSpeedRampStart[servo] = millis();
+    servoSpeedRampDuration[servo] = rampMs;
+    servoSpeedRamping[servo] = true;
+
+    Serial.print(F("Servo ")); Serial.print(servo);
+    Serial.print(F(" ramping ")); Serial.print(currentSpeed);
+    Serial.print(F("% -> ")); Serial.print(targetSpeed);
+    Serial.print(F("% over ")); Serial.print(rampMs);
+    Serial.println(F("ms"));
+  }
+}
+
 // Start an animated move to target position over duration ms
 void moveServoAnimated(uint8_t servo, uint16_t targetPulse, uint16_t duration) {
   if (servo >= NUM_SERVOS) return;
