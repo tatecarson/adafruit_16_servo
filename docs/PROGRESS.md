@@ -91,6 +91,10 @@ adafruit_16_servo/
 10. `feat: add continuous servo mode and speed control commands`
 11. `fix: adjust speed mapping for continuous servos and update command feedback`
 
+## Future Features
+
+- [ ] **EEPROM calibration storage** - Save/load servo calibrations (type, min, max, stop pulse) to persist across power cycles. Commands: `SAVE`, `LOAD`, `CLEAR`
+
 ## Hardware Notes
 
 - Adafruit PCA9685 16-channel PWM driver (I2C)

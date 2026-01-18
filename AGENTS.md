@@ -136,7 +136,7 @@ When adding features:
 
 **Always do these before committing changes:**
 
-1. **Manual test** - Use the `arduino-manual-testing` skill to create and execute test cases. Upload to Arduino and verify via Serial Monitor.
+1. **Manual test** - Use the `arduino-manual-testing` skill to create and execute test cases. Upload to Arduino and verify via Serial Monitor. Update `docs/TESTING.md` with pass/fail results as you test.
 2. **Update README.md** - Update command tables if adding/changing commands
 3. **Update docs/PROGRESS.md** - Add new commits to the Git Commits section, update "Current Issue" if relevant
 4. **Update AGENTS.md** (this file) - Update line numbers in "Code Organization" section if code structure changes significantly

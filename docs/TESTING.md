@@ -2,10 +2,10 @@
 
 ## Setup Checklist
 
-- [ ] Arduino connected via USB
-- [ ] Serial Monitor open at 9600 baud
-- [ ] External power connected to servo power terminals
-- [ ] At least one servo connected (note which channel: ____)
+- [x] Arduino connected via USB
+- [x] Serial Monitor open at 9600 baud
+- [x] External power connected to servo power terminals
+- [x] At least one servo connected (note which channel: 0, 1, 4)
 
 ---
 
@@ -16,7 +16,7 @@
 **Expected:** List of available commands prints to Serial Monitor
 
 **Result:**
-- [ ] Pass
+- [x] Pass
 - [ ] Fail - describe:
 
 ---
@@ -28,7 +28,7 @@
 **Expected:** Shows all 16 servos with default calibration (min=150, max=600, pos=375)
 
 **Result:**
-- [ ] Pass
+- [x] Pass
 - [ ] Fail - describe:
 
 ---
@@ -44,7 +44,9 @@
 
 **Result:**
 - [ ] Pass
-- [ ] Fail - describe:
+- [x] Fail - Servo 0 is a continuous rotation servo, not positional. Continuously rotates instead of stopping at position.
+
+**Note:** Servo 0 needs to use MODE/SPEED commands instead. Test positional commands on servo 1 or 4.
 
 ---
 
@@ -177,17 +179,21 @@
 
 ## Test 13: Continuous Servo Mode (if you have a continuous servo)
 
+**Setup required first:**
+1. Find stop pulse with `P0 <value>` (was 295 for SM-S4303R)
+2. `CAL 0 150 440` - Set range centered on stop pulse
+3. `MODE 0 CONT`
+
 **Commands:**
-1. `MODE 0 CONT` - Set to continuous mode
+1. `SPEED 0 0` - Stop
 2. `SPEED 0 50` - 50% speed forward
 3. `SPEED 0 -50` - 50% speed reverse
 4. `SPEED 0 0` - Stop
-5. `MODE 0 STD` - Back to standard
 
 **Expected:** Servo spins at different speeds/directions, stops at 0
 
 **Result:**
-- [ ] Pass
+- [x] Pass (after calibration)
 - [ ] Fail - describe:
 
 ---
@@ -196,5 +202,15 @@
 
 | Test | Issue Description | Severity |
 |------|-------------------|----------|
-| | | |
+| 3 | Servo 0 is continuous rotation, not positional | Hardware config |
+
+---
+
+## Servo Calibration Notes
+
+| Channel | Servo Model | Type | Stop Pulse | Calibration |
+|---------|-------------|------|------------|-------------|
+| 0 | SM-S4303R | Continuous | 295 | `CAL 0 150 440` then `MODE 0 CONT` |
+| 1 | | | | |
+| 4 | | | | |
 
