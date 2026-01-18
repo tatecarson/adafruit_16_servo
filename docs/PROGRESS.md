@@ -66,6 +66,7 @@ Servo calibration and control system for the Adafruit PCA9685 16-channel PWM dri
 adafruit_16_servo/
 ├── adafruit_16_servo.ino    # Main Arduino sketch
 ├── README.md                 # User documentation
+├── AGENTS.md                 # AI assistant context
 └── docs/
     ├── plans/
     │   └── 2026-01-17-animation-system.md  # Implementation plan (all tasks done)
@@ -84,16 +85,10 @@ adafruit_16_servo/
 8. `feat: add PLAY command for keyframe sequences`
 9. `docs: add animation commands to README`
 
-## Continuous Servo Changes (Not Yet Committed)
+## Git Commits (Continuous Servo)
 
-- Added `servoContinuous[]` and `servoStopPulse[]` arrays
-- Added `speedToPulse()` function
-- Added `setServoSpeed()` function
-- Added `MODE` and `SPEED` command parsing
-- Modified `STOP` and `CENTER` to handle continuous servos
-- Updated `showStatus()` and `showHelp()`
-- Fixed `S` command parsing to not match `SPEED`/`STATUS`/etc.
-- Updated README with continuous servo section
+10. `feat: add continuous servo mode and speed control commands`
+11. `fix: adjust speed mapping for continuous servos and update command feedback`
 
 ## Hardware Notes
 

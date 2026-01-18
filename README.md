@@ -20,7 +20,7 @@ Interactive Serial interface for the Adafruit PCA9685 16-channel PWM/Servo drive
 
 ## Installation
 
-1. Install the Adafruit PWM Servo Driver library via Arduino Library Manager
+1. Install the [Adafruit PWM Servo Driver Library](https://github.com/adafruit/Adafruit-PWM-Servo-Driver-Library) via Arduino Library Manager
 2. Upload `adafruit_16_servo.ino` to your Arduino
 3. Open Serial Monitor at 9600 baud
 
