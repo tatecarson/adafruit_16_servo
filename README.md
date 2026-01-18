@@ -59,10 +59,10 @@ Interactive Serial interface for the Adafruit PCA9685 16-channel PWM/Servo drive
 
 ### Creating Custom Sequences
 
-Edit the `sequence1` array in the code to define your own keyframe animations:
+Edit `sequence_setup.h` to define your own keyframe animations:
 
 ```cpp
-Keyframe sequence1[MAX_KEYFRAMES] = {
+Keyframe sequence1[] = {
   {servo, degrees, time_ms, duration_ms},
   // ...
   {255, 0, 0, 0}  // End marker
@@ -84,10 +84,10 @@ SPLAY 1 LOOP   # Loop speed sequence 1
 STOP           # Stop sequence
 ```
 
-Edit the `speedSeq1` array in the code to define speed sequences:
+Edit `sequence_setup.h` to define speed sequences:
 
 ```cpp
-SpeedFrame speedSeq1[MAX_SPEEDFRAMES] = {
+SpeedFrame speedSeq1[] = {
   {servo, speed, time_ms, ramp_ms},
   // ...
   {255, 0, 0, 0}  // End marker

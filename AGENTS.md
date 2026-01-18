@@ -51,6 +51,7 @@ A servo calibration and control system for the **Adafruit PCA9685 16-channel PWM
 adafruit_16_servo/
 ├── adafruit_16_servo.ino    # Main Arduino sketch (core logic)
 ├── servo_setup.h            # Installation-specific per-servo setup
+├── sequence_setup.h         # Installation-specific animation sequence setup
 ├── README.md                 # User documentation
 ├── AGENTS.md                 # This file - AI context
 └── docs/

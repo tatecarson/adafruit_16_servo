@@ -36,17 +36,29 @@ Servo calibration and control system for the Adafruit PCA9685 16-channel PWM dri
 - `SPLAY <n> [LOOP]` command for speed sequence playback
 - Cubic ease-in-out for organic speed ramping
 
+### 5. Installation-Specific Setup Files (Complete)
+- `servo_setup.h` for per-installation servo calibration and mode setup
+- `sequence_setup.h` for per-installation animation sequence definitions (keyframes + speed sequences)
+
+## In Progress
+
+- Refactor: move sequence definitions out of `adafruit_16_servo.ino` into `sequence_setup.h`
+
 ## File Structure
 
 ```
 adafruit_16_servo/
 ├── adafruit_16_servo.ino    # Main Arduino sketch
+├── servo_setup.h            # Installation-specific servo setup
+├── sequence_setup.h         # Installation-specific animation sequences
 ├── README.md                 # User documentation
 ├── AGENTS.md                 # AI assistant context
 └── docs/
     ├── plans/
     │   ├── 2026-01-17-animation-system.md  # Animation implementation plan (done)
-    │   └── 2026-01-18-continuous-servo-sequences.md  # Speed sequences plan (done)
+    │   ├── 2026-01-18-servo-config-refactor.md  # Servo config refactor plan (done)
+    │   ├── 2026-01-18-continuous-servo-sequences.md  # Speed sequences plan (done)
+    │   └── 2026-01-18-sequence-setup-extraction.md  # Sequence setup extraction plan (draft)
     ├── TESTING.md            # Manual test results
     └── PROGRESS.md           # This file
 ```
@@ -76,6 +88,10 @@ adafruit_16_servo/
 15. `feat: add updateSpeedSequence engine for continuous servo choreography`
 16. `feat: add SPLAY command for speed sequence playback`
 17. `docs: add speed sequence documentation`
+
+## Git Commits (Refactors)
+
+18. `refactor: replace parallel arrays with ServoConfig/ServoState structs and separate installation-specific setup`
 
 ## Future Features
 

@@ -72,27 +72,11 @@ unsigned long waveStartTime = 0;
 
 // Keyframe sequence structure
 struct Keyframe {
-  uint8_t servo;      // Which servo (255 = all servos use same pos)
+  uint8_t servo;      // Which servo (0-15), 255 = end marker
   uint8_t degrees;    // Target position
   uint16_t time;      // Time offset from sequence start (ms)
   uint16_t duration;  // Move duration (ms)
 };
-
-// Example sequence storage (modify for your choreography)
-#define MAX_KEYFRAMES 32
-Keyframe sequence1[MAX_KEYFRAMES] = {
-  {0, 0, 0, 500},       // Servo 0 to 0° at t=0, over 500ms
-  {1, 0, 100, 500},     // Servo 1 to 0° at t=100ms
-  {2, 0, 200, 500},     // Servo 2 to 0° at t=200ms
-  {0, 180, 1000, 500},  // Servo 0 to 180° at t=1s
-  {1, 180, 1100, 500},
-  {2, 180, 1200, 500},
-  {0, 90, 2000, 500},   // Return to center
-  {1, 90, 2100, 500},
-  {2, 90, 2200, 500},
-  {255, 0, 0, 0}        // End marker (servo=255)
-};
-uint8_t sequence1Length = 9;
 
 // Speed sequence structure for continuous servos
 struct SpeedFrame {
@@ -102,20 +86,7 @@ struct SpeedFrame {
   uint16_t rampMs;    // Ramp duration to reach speed (0 = instant)
 };
 
-// Example speed sequence storage
-#define MAX_SPEEDFRAMES 32
-SpeedFrame speedSeq1[MAX_SPEEDFRAMES] = {
-  {0, 50, 0, 500},       // Servo 0 ramp to 50% over 500ms at t=0
-  {1, -50, 0, 500},      // Servo 1 ramp to -50% (opposite direction)
-  {0, 0, 3000, 500},     // Servo 0 ramp to stop at t=3s
-  {1, 0, 3000, 500},     // Servo 1 ramp to stop
-  {0, -50, 4000, 500},   // Reverse directions
-  {1, 50, 4000, 500},
-  {0, 0, 7000, 500},     // Stop
-  {1, 0, 7000, 500},
-  {255, 0, 7500, 0}      // End marker (triggers after last frame completes)
-};
-uint8_t speedSeq1Length = 9;  // Includes end marker
+#include "sequence_setup.h"
 
 // Sequence playback state
 bool sequenceActive = false;
@@ -681,11 +652,7 @@ void processCommand(String cmd) {
       uint8_t seqNum = cmd.substring(space + 1).toInt();
       sequenceLoop = (cmd.indexOf("LOOP") > 0);
 
-      // Select sequence (add more sequences as needed)
-      if (seqNum == 1) {
-        currentSequence = sequence1;
-        currentSequenceLength = sequence1Length;
-      } else {
+      if (!selectPositionSequence(seqNum, currentSequence, currentSequenceLength)) {
         Serial.println(F("Unknown sequence"));
         return;
       }
@@ -712,11 +679,7 @@ void processCommand(String cmd) {
       sequenceActive = false;
       waveActive = false;
 
-      // Select speed sequence
-      if (seqNum == 1) {
-        currentSpeedSeq = speedSeq1;
-        currentSpeedSeqLength = speedSeq1Length;
-      } else {
+      if (!selectSpeedSequence(seqNum, currentSpeedSeq, currentSpeedSeqLength)) {
         Serial.println(F("Unknown speed sequence"));
         return;
       }
