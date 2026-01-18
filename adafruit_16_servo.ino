@@ -440,6 +440,44 @@ void updateSequence() {
   }
 }
 
+// Update speed sequence playback - call from loop()
+void updateSpeedSequence() {
+  if (!speedSeqActive || currentSpeedSeq == nullptr) return;
+
+  unsigned long elapsed = millis() - speedSeqStartTime;
+
+  // Find speed frames to trigger
+  for (uint8_t i = lastTriggeredSpeedFrame; i < currentSpeedSeqLength; i++) {
+    SpeedFrame* sf = &currentSpeedSeq[i];
+
+    // End marker check
+    if (sf->servo == 255) {
+      if (speedSeqLoop) {
+        // Restart sequence
+        speedSeqStartTime = millis();
+        lastTriggeredSpeedFrame = 0;
+        Serial.println(F("Speed sequence looping"));
+      } else {
+        speedSeqActive = false;
+        // Stop all continuous servos
+        for (uint8_t j = 0; j < NUM_SERVOS; j++) {
+          if (servoContinuous[j]) {
+            setServoSpeed(j, 0);
+          }
+        }
+        Serial.println(F("Speed sequence complete"));
+      }
+      return;
+    }
+
+    // Trigger speed frame if time reached
+    if (elapsed >= sf->time && i >= lastTriggeredSpeedFrame) {
+      rampServoSpeed(sf->servo, sf->speed, sf->rampMs);
+      lastTriggeredSpeedFrame = i + 1;
+    }
+  }
+}
+
 // Sweep a servo through its full range
 void sweepServo(uint8_t servo) {
   if (servo >= NUM_SERVOS) {
@@ -731,6 +769,7 @@ void loop() {
   updateSpeedRamps();
   updateWave();
   updateSequence();
+  updateSpeedSequence();
 
   // Read serial input
   while (Serial.available()) {
