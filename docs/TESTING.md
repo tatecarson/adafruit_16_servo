@@ -61,7 +61,7 @@
 **Expected:** Servo moves, may buzz at extremes if outside physical range
 
 **Result:**
-- [ ] Pass
+- [x] Pass (used to find stop pulse 295 for servo 0)
 - [ ] Fail - describe:
 
 ---
@@ -77,7 +77,7 @@
 **Expected:** Calibration updates, servo respects new range
 
 **Result:**
-- [ ] Pass
+- [x] Pass (used CAL 0 150 440 and CAL 4 150 450)
 - [ ] Fail - describe:
 
 ---
