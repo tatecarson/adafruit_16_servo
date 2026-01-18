@@ -49,7 +49,8 @@ A servo calibration and control system for the **Adafruit PCA9685 16-channel PWM
 
 ```
 adafruit_16_servo/
-├── adafruit_16_servo.ino    # Main Arduino sketch (all code)
+├── adafruit_16_servo.ino    # Main Arduino sketch (core logic)
+├── servo_setup.h            # Installation-specific per-servo setup
 ├── README.md                 # User documentation
 ├── AGENTS.md                 # This file - AI context
 └── docs/
@@ -62,30 +63,23 @@ adafruit_16_servo/
 
 The sketch is organized in this order:
 
-1. **Includes & Globals** (lines 1-95): Library includes, state arrays, keyframe structures
-2. **Utility Functions** (lines 96-161): `degreesToPulse()`, `speedToPulse()`, easing functions
-3. **Servo Control** (lines 163-216): `setServoPulse()`, `setServoDegrees()`, `setServoSpeed()`, `moveServoAnimated()`
-4. **Animation Engines** (lines 218-300): `updateAnimations()`, `updateWave()`, `updateSequence()`
-5. **Commands** (lines 302-387): `sweepServo()`, `servoOff()`, `setCalibration()`, `showStatus()`, `showHelp()`
-6. **Command Parser** (lines 389-586): `processCommand()` - parses all Serial commands
-7. **Main Loop** (lines 588-609): Calls update functions, reads Serial
+1. **Includes & Globals** (lines 1-167): Library includes, `ServoConfig`/`ServoState`, wave + sequence globals
+2. **Setup** (lines 168-183): Serial init, default init, `applyCustomServoSetup()`, PWM init
+3. **Utility Functions** (lines 185-223): `degreesToPulse()`, `speedToPulse()`, easing functions
+4. **Servo Control** (lines 224-320): `setServoPulse()`, `setServoDegrees()`, `setServoSpeed()`, `moveServoAnimated()`
+5. **Animation Engines** (lines 321-475): `updateAnimations()`, `updateWave()`, `updateSequence()`
+6. **Commands** (lines 477-563): `sweepServo()`, `servoOff()`, `setCalibration()`, `showStatus()`, `showHelp()`
+7. **Command Parser** (lines 565-794): `processCommand()` - parses all Serial commands
+8. **Main Loop** (lines 796-819): Calls update functions, reads Serial
 
-## State Arrays
+## State Model
 
-Per-servo state is tracked in parallel arrays:
+Per-servo setup and runtime state is tracked in two arrays of structs:
 
 | Array | Type | Purpose |
 |-------|------|---------|
-| `servoMin[]` | uint16_t | Calibrated minimum pulse |
-| `servoMax[]` | uint16_t | Calibrated maximum pulse |
-| `servoPos[]` | uint16_t | Current pulse position |
-| `servoContinuous[]` | bool | True if continuous rotation servo |
-| `servoStopPulse[]` | uint16_t | Stop/center pulse for continuous servos |
-| `servoTarget[]` | uint16_t | Animation target position |
-| `servoStart[]` | uint16_t | Animation start position |
-| `servoMoveStart[]` | unsigned long | Animation start time (millis) |
-| `servoMoveDuration[]` | uint16_t | Animation duration (ms) |
-| `servoMoving[]` | bool | Is servo currently animating? |
+| `servoConfig[]` | `ServoConfig` | Calibration + behavior (`minPulse`, `maxPulse`, `continuous`, `stopPulse`) |
+| `servoState[]` | `ServoState` | Runtime state (position + move animation + speed ramping) |
 
 ## Command Reference
 
@@ -126,10 +120,10 @@ See [docs/PROGRESS.md](docs/PROGRESS.md) for current issues. Main concern:
 ## Adding New Features
 
 When adding features:
-1. Add state variables after existing state arrays (around line 55)
-2. Add update function after `updateSequence()` (around line 300)
-3. Call update function at start of `loop()`
-4. Add command parsing in `processCommand()` (around line 389)
+1. Add per-servo fields to `ServoConfig`/`ServoState` (around line 33)
+2. Add update function after `updateSpeedSequence()` (around line 475)
+3. Call update function at start of `loop()` (around line 796)
+4. Add command parsing in `processCommand()` (around line 565)
 5. Update `showHelp()` in the sketch
 
 ## Before Committing

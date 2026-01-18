@@ -30,19 +30,35 @@ Adafruit_PWMServoDriver pwm = Adafruit_PWMServoDriver();
 #define NUM_SERVOS 16
 #define SERVO_FREQ 50
 
-// Per-servo calibration (min/max pulse values)
-uint16_t servoMin[NUM_SERVOS];
-uint16_t servoMax[NUM_SERVOS];
-uint16_t servoPos[NUM_SERVOS];  // Current position (pulse)
-bool servoContinuous[NUM_SERVOS];  // true = continuous rotation servo
-uint16_t servoStopPulse[NUM_SERVOS];  // Center/stop pulse for continuous servos
+struct ServoConfig {
+  uint16_t minPulse;
+  uint16_t maxPulse;
+  bool continuous;      // true = continuous rotation servo
+  uint16_t stopPulse;   // Center/stop pulse for continuous servos
+};
 
-// Animation state per servo
-uint16_t servoTarget[NUM_SERVOS];    // Target position
-uint16_t servoStart[NUM_SERVOS];     // Starting position for current move
-unsigned long servoMoveStart[NUM_SERVOS];  // When move started (millis)
-uint16_t servoMoveDuration[NUM_SERVOS];    // Duration in ms (0 = instant)
-bool servoMoving[NUM_SERVOS];        // Is this servo currently animating?
+struct ServoState {
+  uint16_t posPulse;     // Current position (pulse)
+
+  // Position animation
+  uint16_t targetPulse;
+  uint16_t startPulse;
+  unsigned long moveStartMs;
+  uint16_t moveDurationMs;
+  bool moving;
+
+  // Continuous speed ramping (-100..100, 0=stop)
+  int8_t targetSpeed;
+  int8_t startSpeed;
+  unsigned long speedRampStartMs;
+  uint16_t speedRampDurationMs;
+  bool speedRamping;
+};
+
+#include "servo_setup.h"
+
+ServoConfig servoConfig[NUM_SERVOS];
+ServoState servoState[NUM_SERVOS];
 
 // Wave pattern state
 bool waveActive = false;
@@ -117,16 +133,33 @@ uint8_t currentSpeedSeqLength = 0;
 unsigned long speedSeqStartTime = 0;
 uint8_t lastTriggeredSpeedFrame = 0;
 
-// Per-servo speed ramping state
-int8_t servoTargetSpeed[NUM_SERVOS];
-int8_t servoStartSpeed[NUM_SERVOS];
-unsigned long servoSpeedRampStart[NUM_SERVOS];
-uint16_t servoSpeedRampDuration[NUM_SERVOS];
-bool servoSpeedRamping[NUM_SERVOS];
-
 // Default calibration values
 #define DEFAULT_MIN 150
 #define DEFAULT_MAX 600
+
+void initServoDefaults() {
+  uint16_t defaultCenter = (DEFAULT_MIN + DEFAULT_MAX) / 2;
+
+  for (uint8_t i = 0; i < NUM_SERVOS; i++) {
+    servoConfig[i].minPulse = DEFAULT_MIN;
+    servoConfig[i].maxPulse = DEFAULT_MAX;
+    servoConfig[i].continuous = false;
+    servoConfig[i].stopPulse = defaultCenter;
+
+    servoState[i].posPulse = defaultCenter;
+    servoState[i].targetPulse = defaultCenter;
+    servoState[i].startPulse = defaultCenter;
+    servoState[i].moveStartMs = 0;
+    servoState[i].moveDurationMs = 0;
+    servoState[i].moving = false;
+
+    servoState[i].targetSpeed = 0;
+    servoState[i].startSpeed = 0;
+    servoState[i].speedRampStartMs = 0;
+    servoState[i].speedRampDurationMs = 0;
+    servoState[i].speedRamping = false;
+  }
+}
 
 // Serial input buffer
 String inputString = "";
@@ -138,47 +171,8 @@ void setup() {
   Serial.println(F("Type HELP for commands"));
   Serial.println();
 
-  // Initialize calibration to defaults
-  for (uint8_t i = 0; i < NUM_SERVOS; i++) {
-    servoMin[i] = DEFAULT_MIN;
-    servoMax[i] = DEFAULT_MAX;
-    servoPos[i] = (DEFAULT_MIN + DEFAULT_MAX) / 2;
-    servoTarget[i] = servoPos[i];
-    servoStart[i] = servoPos[i];
-    servoMoveStart[i] = 0;
-    servoMoveDuration[i] = 0;
-    servoMoving[i] = false;
-    servoContinuous[i] = false;
-    servoStopPulse[i] = (DEFAULT_MIN + DEFAULT_MAX) / 2;
-    servoTargetSpeed[i] = 0;
-    servoStartSpeed[i] = 0;
-    servoSpeedRampStart[i] = 0;
-    servoSpeedRampDuration[i] = 0;
-    servoSpeedRamping[i] = false;
-  }
-
-  // === CUSTOM SERVO CALIBRATIONS ===
-  // Add your servo-specific calibrations here so they persist across uploads
-
-  // Servo 0: SM-S4303R continuous rotation (stop pulse = 295)
-  servoMin[0] = 150;
-  servoMax[0] = 440;
-  servoContinuous[0] = true;
-  servoStopPulse[0] = 295;
-  servoPos[0] = 295;
-
-  // Servo 1: SM-S4303R continuous rotation (stop pulse = 295)
-  servoMin[1] = 150;
-  servoMax[1] = 440;
-  servoContinuous[1] = true;
-  servoStopPulse[1] = 295;
-  servoPos[1] = 295;
-
-  // Servo 4: Hitec HS-805BB+ mega quarter scale (standard positional)
-  servoMin[4] = 150;
-  servoMax[4] = 450;
-
-  // === END CUSTOM CALIBRATIONS ===
+  initServoDefaults();
+  applyCustomServoSetup(servoConfig, servoState);
 
   pwm.begin();
   pwm.setOscillatorFrequency(27000000);
@@ -191,22 +185,22 @@ void setup() {
 // Convert degrees (0-180) to pulse value for a specific servo
 uint16_t degreesToPulse(uint8_t servo, uint8_t degrees) {
   degrees = constrain(degrees, 0, 180);
-  return map(degrees, 0, 180, servoMin[servo], servoMax[servo]);
+  return map(degrees, 0, 180, servoConfig[servo].minPulse, servoConfig[servo].maxPulse);
 }
 
 // Convert speed (-100 to 100) to pulse for continuous servo
 // 0 = stop, negative = one direction, positive = other direction
 uint16_t speedToPulse(uint8_t servo, int8_t speed) {
   speed = constrain(speed, -100, 100);
-  uint16_t stopPulse = servoStopPulse[servo];
+  uint16_t stopPulse = servoConfig[servo].stopPulse;
   if (speed == 0) {
     return stopPulse;
   } else if (speed > 0) {
-    // Map 1-100 to range from stopPulse to servoMax
-    return map(speed, 1, 100, stopPulse + 1, servoMax[servo]);
+    // Map 1-100 to range from stopPulse to max pulse
+    return map(speed, 1, 100, stopPulse + 1, servoConfig[servo].maxPulse);
   } else {
-    // Map -100 to -1 to range from servoMin to stopPulse
-    return map(speed, -100, -1, servoMin[servo], stopPulse - 1);
+    // Map -100 to -1 to range from min pulse to stopPulse
+    return map(speed, -100, -1, servoConfig[servo].minPulse, stopPulse - 1);
   }
 }
 
@@ -233,8 +227,8 @@ void setServoPulse(uint8_t servo, uint16_t pulse) {
     Serial.println(F("Invalid servo"));
     return;
   }
-  pulse = constrain(pulse, servoMin[servo], servoMax[servo]);
-  servoPos[servo] = pulse;
+  pulse = constrain(pulse, servoConfig[servo].minPulse, servoConfig[servo].maxPulse);
+  servoState[servo].posPulse = pulse;
   pwm.setPWM(servo, 0, pulse);
   Serial.print(F("Servo ")); Serial.print(servo);
   Serial.print(F(" -> pulse ")); Serial.println(pulse);
@@ -252,12 +246,12 @@ void setServoSpeed(uint8_t servo, int8_t speed) {
     Serial.println(F("Invalid servo"));
     return;
   }
-  if (!servoContinuous[servo]) {
+  if (!servoConfig[servo].continuous) {
     Serial.println(F("Not a continuous servo (use MODE command)"));
     return;
   }
   uint16_t pulse = speedToPulse(servo, speed);
-  servoPos[servo] = pulse;
+  servoState[servo].posPulse = pulse;
   pwm.setPWM(servo, 0, pulse);
   Serial.print(F("Servo ")); Serial.print(servo);
   Serial.print(F(" speed ")); Serial.print(speed);
@@ -270,33 +264,33 @@ void rampServoSpeed(uint8_t servo, int8_t targetSpeed, uint16_t rampMs) {
     Serial.println(F("Invalid servo"));
     return;
   }
-  if (!servoContinuous[servo]) {
+  if (!servoConfig[servo].continuous) {
     Serial.println(F("Not a continuous servo"));
     return;
   }
 
   // Get current speed from pulse
   int8_t currentSpeed = 0;
-  if (servoPos[servo] != servoStopPulse[servo]) {
+  if (servoState[servo].posPulse != servoConfig[servo].stopPulse) {
     // Approximate current speed from pulse position
-    if (servoPos[servo] > servoStopPulse[servo]) {
-      currentSpeed = map(servoPos[servo], servoStopPulse[servo], servoMax[servo], 0, 100);
+    if (servoState[servo].posPulse > servoConfig[servo].stopPulse) {
+      currentSpeed = map(servoState[servo].posPulse, servoConfig[servo].stopPulse, servoConfig[servo].maxPulse, 0, 100);
     } else {
-      currentSpeed = map(servoPos[servo], servoMin[servo], servoStopPulse[servo], -100, 0);
+      currentSpeed = map(servoState[servo].posPulse, servoConfig[servo].minPulse, servoConfig[servo].stopPulse, -100, 0);
     }
   }
 
   if (rampMs == 0) {
     // Instant speed change
     setServoSpeed(servo, targetSpeed);
-    servoSpeedRamping[servo] = false;
+    servoState[servo].speedRamping = false;
   } else {
     // Start ramping
-    servoStartSpeed[servo] = currentSpeed;
-    servoTargetSpeed[servo] = targetSpeed;
-    servoSpeedRampStart[servo] = millis();
-    servoSpeedRampDuration[servo] = rampMs;
-    servoSpeedRamping[servo] = true;
+    servoState[servo].startSpeed = currentSpeed;
+    servoState[servo].targetSpeed = targetSpeed;
+    servoState[servo].speedRampStartMs = millis();
+    servoState[servo].speedRampDurationMs = rampMs;
+    servoState[servo].speedRamping = true;
 
     Serial.print(F("Servo ")); Serial.print(servo);
     Serial.print(F(" ramping ")); Serial.print(currentSpeed);
@@ -309,13 +303,13 @@ void rampServoSpeed(uint8_t servo, int8_t targetSpeed, uint16_t rampMs) {
 // Start an animated move to target position over duration ms
 void moveServoAnimated(uint8_t servo, uint16_t targetPulse, uint16_t duration) {
   if (servo >= NUM_SERVOS) return;
-  targetPulse = constrain(targetPulse, servoMin[servo], servoMax[servo]);
+  targetPulse = constrain(targetPulse, servoConfig[servo].minPulse, servoConfig[servo].maxPulse);
 
-  servoStart[servo] = servoPos[servo];
-  servoTarget[servo] = targetPulse;
-  servoMoveDuration[servo] = duration;
-  servoMoveStart[servo] = millis();
-  servoMoving[servo] = true;
+  servoState[servo].startPulse = servoState[servo].posPulse;
+  servoState[servo].targetPulse = targetPulse;
+  servoState[servo].moveDurationMs = duration;
+  servoState[servo].moveStartMs = millis();
+  servoState[servo].moving = true;
 }
 
 // Animated move using degrees
@@ -329,21 +323,21 @@ void updateAnimations() {
   unsigned long now = millis();
 
   for (uint8_t i = 0; i < NUM_SERVOS; i++) {
-    if (!servoMoving[i]) continue;
+    if (!servoState[i].moving) continue;
 
-    unsigned long elapsed = now - servoMoveStart[i];
+    unsigned long elapsed = now - servoState[i].moveStartMs;
 
-    if (elapsed >= servoMoveDuration[i]) {
+    if (elapsed >= servoState[i].moveDurationMs) {
       // Animation complete
-      servoPos[i] = servoTarget[i];
-      pwm.setPWM(i, 0, servoPos[i]);
-      servoMoving[i] = false;
+      servoState[i].posPulse = servoState[i].targetPulse;
+      pwm.setPWM(i, 0, servoState[i].posPulse);
+      servoState[i].moving = false;
     } else {
       // Interpolate position
-      float progress = (float)elapsed / (float)servoMoveDuration[i];
-      uint16_t newPos = lerpEased(servoStart[i], servoTarget[i], progress);
-      if (newPos != servoPos[i]) {
-        servoPos[i] = newPos;
+      float progress = (float)elapsed / (float)servoState[i].moveDurationMs;
+      uint16_t newPos = lerpEased(servoState[i].startPulse, servoState[i].targetPulse, progress);
+      if (newPos != servoState[i].posPulse) {
+        servoState[i].posPulse = newPos;
         pwm.setPWM(i, 0, newPos);
       }
     }
@@ -355,17 +349,17 @@ void updateSpeedRamps() {
   unsigned long now = millis();
 
   for (uint8_t i = 0; i < NUM_SERVOS; i++) {
-    if (!servoSpeedRamping[i]) continue;
+    if (!servoState[i].speedRamping) continue;
 
-    unsigned long elapsed = now - servoSpeedRampStart[i];
+    unsigned long elapsed = now - servoState[i].speedRampStartMs;
 
-    if (elapsed >= servoSpeedRampDuration[i]) {
+    if (elapsed >= servoState[i].speedRampDurationMs) {
       // Ramp complete
-      setServoSpeed(i, servoTargetSpeed[i]);
-      servoSpeedRamping[i] = false;
+      setServoSpeed(i, servoState[i].targetSpeed);
+      servoState[i].speedRamping = false;
     } else {
       // Calculate eased speed
-      float t = (float)elapsed / servoSpeedRampDuration[i];
+      float t = (float)elapsed / servoState[i].speedRampDurationMs;
       // Cubic ease in-out (same as position animation)
       if (t < 0.5) {
         t = 4 * t * t * t;
@@ -373,11 +367,11 @@ void updateSpeedRamps() {
         t = 1 - pow(-2 * t + 2, 3) / 2;
       }
 
-      int8_t speed = servoStartSpeed[i] + (servoTargetSpeed[i] - servoStartSpeed[i]) * t;
+      int8_t speed = servoState[i].startSpeed + (servoState[i].targetSpeed - servoState[i].startSpeed) * t;
 
       // Set speed without printing (to avoid spam)
       uint16_t pulse = speedToPulse(i, speed);
-      servoPos[i] = pulse;
+      servoState[i].posPulse = pulse;
       pwm.setPWM(i, 0, pulse);
     }
   }
@@ -402,8 +396,8 @@ void updateWave() {
     float degrees = waveCenter + (sineVal * (float)waveAmplitude / 2.0f);
     uint16_t pulse = degreesToPulse(i, (uint8_t)constrain(degrees, 0, 180));
 
-    if (pulse != servoPos[i]) {
-      servoPos[i] = pulse;
+    if (pulse != servoState[i].posPulse) {
+      servoState[i].posPulse = pulse;
       pwm.setPWM(i, 0, pulse);
     }
   }
@@ -464,7 +458,7 @@ void updateSpeedSequence() {
           speedSeqActive = false;
           // Stop all continuous servos
           for (uint8_t j = 0; j < NUM_SERVOS; j++) {
-            if (servoContinuous[j]) {
+            if (servoConfig[j].continuous) {
               setServoSpeed(j, 0);
             }
           }
@@ -488,27 +482,27 @@ void sweepServo(uint8_t servo) {
   }
 
   Serial.print(F("Sweeping servo ")); Serial.println(servo);
-  Serial.print(F("Range: ")); Serial.print(servoMin[servo]);
-  Serial.print(F(" - ")); Serial.println(servoMax[servo]);
+  Serial.print(F("Range: ")); Serial.print(servoConfig[servo].minPulse);
+  Serial.print(F(" - ")); Serial.println(servoConfig[servo].maxPulse);
 
   // Sweep to max
-  for (uint16_t p = servoMin[servo]; p <= servoMax[servo]; p += 2) {
+  for (uint16_t p = servoConfig[servo].minPulse; p <= servoConfig[servo].maxPulse; p += 2) {
     pwm.setPWM(servo, 0, p);
     delay(5);
   }
   delay(300);
 
   // Sweep to min
-  for (uint16_t p = servoMax[servo]; p >= servoMin[servo]; p -= 2) {
+  for (uint16_t p = servoConfig[servo].maxPulse; p >= servoConfig[servo].minPulse; p -= 2) {
     pwm.setPWM(servo, 0, p);
     delay(5);
-    if (p < servoMin[servo] + 2) break;  // Prevent underflow
+    if (p < servoConfig[servo].minPulse + 2) break;  // Prevent underflow
   }
 
   // Return to center
-  uint16_t center = (servoMin[servo] + servoMax[servo]) / 2;
+  uint16_t center = (servoConfig[servo].minPulse + servoConfig[servo].maxPulse) / 2;
   pwm.setPWM(servo, 0, center);
-  servoPos[servo] = center;
+  servoState[servo].posPulse = center;
   Serial.println(F("Sweep complete"));
 }
 
@@ -525,8 +519,8 @@ void setCalibration(uint8_t servo, uint16_t minVal, uint16_t maxVal) {
     Serial.println(F("Invalid servo"));
     return;
   }
-  servoMin[servo] = minVal;
-  servoMax[servo] = maxVal;
+  servoConfig[servo].minPulse = minVal;
+  servoConfig[servo].maxPulse = maxVal;
   Serial.print(F("Servo ")); Serial.print(servo);
   Serial.print(F(" calibration: ")); Serial.print(minVal);
   Serial.print(F(" - ")); Serial.println(maxVal);
@@ -537,12 +531,12 @@ void showStatus() {
   Serial.println(F("\n--- Servo Status ---"));
   for (uint8_t i = 0; i < NUM_SERVOS; i++) {
     Serial.print(F("Servo ")); Serial.print(i);
-    Serial.print(servoContinuous[i] ? F(" [CONT]") : F(" [STD] "));
-    Serial.print(F(": min=")); Serial.print(servoMin[i]);
-    Serial.print(F(" max=")); Serial.print(servoMax[i]);
-    Serial.print(F(" pos=")); Serial.print(servoPos[i]);
-    if (servoContinuous[i]) {
-      Serial.print(F(" stop=")); Serial.print(servoStopPulse[i]);
+    Serial.print(servoConfig[i].continuous ? F(" [CONT]") : F(" [STD] "));
+    Serial.print(F(": min=")); Serial.print(servoConfig[i].minPulse);
+    Serial.print(F(" max=")); Serial.print(servoConfig[i].maxPulse);
+    Serial.print(F(" pos=")); Serial.print(servoState[i].posPulse);
+    if (servoConfig[i].continuous) {
+      Serial.print(F(" stop=")); Serial.print(servoConfig[i].stopPulse);
     }
     Serial.println();
   }
@@ -613,10 +607,10 @@ void processCommand(String cmd) {
     int space = cmd.indexOf(' ');
     if (space > 0) {
       uint8_t servo = cmd.substring(space + 1).toInt();
-      if (servo < NUM_SERVOS && servoContinuous[servo]) {
+      if (servo < NUM_SERVOS && servoConfig[servo].continuous) {
         // For continuous servo, center = stop
-        pwm.setPWM(servo, 0, servoStopPulse[servo]);
-        servoPos[servo] = servoStopPulse[servo];
+        pwm.setPWM(servo, 0, servoConfig[servo].stopPulse);
+        servoState[servo].posPulse = servoConfig[servo].stopPulse;
         Serial.print(F("Servo ")); Serial.print(servo);
         Serial.println(F(" stopped"));
       } else {
@@ -743,8 +737,8 @@ void processCommand(String cmd) {
     speedSeqActive = false;
     // Stop all speed ramps
     for (uint8_t i = 0; i < NUM_SERVOS; i++) {
-      servoSpeedRamping[i] = false;
-      if (servoContinuous[i]) {
+      servoState[i].speedRamping = false;
+      if (servoConfig[i].continuous) {
         setServoSpeed(i, 0);
       }
     }
@@ -758,16 +752,16 @@ void processCommand(String cmd) {
       if (servo >= NUM_SERVOS) {
         Serial.println(F("Invalid servo"));
       } else if (cmd.indexOf("CONT") > 0) {
-        servoContinuous[servo] = true;
-        servoStopPulse[servo] = (servoMin[servo] + servoMax[servo]) / 2;
+        servoConfig[servo].continuous = true;
+        servoConfig[servo].stopPulse = (servoConfig[servo].minPulse + servoConfig[servo].maxPulse) / 2;
         // Don't send PWM - let user set speed manually
         // The calculated stop pulse may not be the servo's actual stop point
         Serial.print(F("Servo ")); Serial.print(servo);
         Serial.print(F(" set to CONTINUOUS (stop="));
-        Serial.print(servoStopPulse[servo]);
+        Serial.print(servoConfig[servo].stopPulse);
         Serial.println(F(") - use SPEED to control"));
       } else if (cmd.indexOf("STD") > 0) {
-        servoContinuous[servo] = false;
+        servoConfig[servo].continuous = false;
         Serial.print(F("Servo ")); Serial.print(servo);
         Serial.println(F(" set to STANDARD"));
       } else {
