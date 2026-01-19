@@ -10,6 +10,7 @@
 // - This file depends on the `Keyframe` and `SpeedFrame` structs defined in
 //   `adafruit_16_servo.ino`, so it must be included *after* those type
 //   definitions.
+// - Sequences are stored in PROGMEM (flash memory) to save RAM on Arduino.
 // - Sequences are scanned in array order, and entries are triggered when
 //   `elapsedMs >= time`. Keep frames in ascending `time` order to avoid
 //   surprises.
@@ -37,6 +38,7 @@
 //   `timeMs` so it doesn't terminate early.
 
 #include <Arduino.h>
+#include <avr/pgmspace.h>
 
 static const uint8_t SEQUENCE_END_MARKER_SERVO = 255;
 
@@ -46,7 +48,8 @@ static const uint8_t SEQUENCE_END_MARKER_SERVO = 255;
 // - Multiple servos can overlap in time (moves are non-blocking).
 // - `degrees` are converted to pulses with per-servo calibration, so the same
 //   degrees may correspond to different absolute pulse widths per servo.
-static Keyframe sequence1[] = {
+// - Stored in PROGMEM to save RAM; use memcpy_P() to read.
+const Keyframe sequence1[] PROGMEM = {
   {0, 0, 0, 500},          // Servo 0 to 0° at t=0, over 500ms
   {1, 0, 100, 500},        // Servo 1 to 0° at t=100ms
   {2, 0, 200, 500},        // Servo 2 to 0° at t=200ms
@@ -56,19 +59,19 @@ static Keyframe sequence1[] = {
   {0, 90, 2000, 500},      // Return to center
   {1, 90, 2100, 500},
   {2, 90, 2200, 500},
-  {SEQUENCE_END_MARKER_SERVO, 0, 0, 0}  // End marker
+  {SEQUENCE_END_MARKER_SERVO, 0, 2700, 0}  // End marker
 };
 
 static const uint8_t sequence1Length = sizeof(sequence1) / sizeof(sequence1[0]);
 
-// Map a sequence number from the Serial command (`PLAY <n>`) to an in-memory
+// Map a sequence number from the Serial command (`PLAY <n>`) to a PROGMEM
 // array and length.
 //
 // When adding a new sequence:
-// - create `static Keyframe sequenceN[] = { ... }`
+// - create `const Keyframe sequenceN[] PROGMEM = { ... }`
 // - create `static const uint8_t sequenceNLength = ...`
 // - add a `seqNum == N` branch below
-inline bool selectPositionSequence(uint8_t seqNum, Keyframe*& outSeq, uint8_t& outLen) {
+inline bool selectPositionSequence(uint8_t seqNum, const Keyframe*& outSeq, uint8_t& outLen) {
   if (seqNum == 1) {
     outSeq = sequence1;
     outLen = sequence1Length;
@@ -82,7 +85,8 @@ inline bool selectPositionSequence(uint8_t seqNum, Keyframe*& outSeq, uint8_t& o
 // Example speed sequence 1:
 // - Intended for continuous-rotation servos (MODE <n> CONT).
 // - Uses per-servo min/max/stop calibration to translate `speed` into pulses.
-static SpeedFrame speedSeq1[] = {
+// - Stored in PROGMEM to save RAM; use memcpy_P() to read.
+const SpeedFrame speedSeq1[] PROGMEM = {
   {0, 50, 0, 500},         // Servo 0 ramp to 50% over 500ms at t=0
   {1, -50, 0, 500},        // Servo 1 ramp to -50% (opposite direction)
   {0, 0, 3000, 500},       // Servo 0 ramp to stop at t=3s
@@ -96,14 +100,14 @@ static SpeedFrame speedSeq1[] = {
 
 static const uint8_t speedSeq1Length = sizeof(speedSeq1) / sizeof(speedSeq1[0]);
 
-// Map a sequence number from the Serial command (`SPLAY <n>`) to an in-memory
+// Map a sequence number from the Serial command (`SPLAY <n>`) to a PROGMEM
 // array and length.
 //
 // When adding a new speed sequence:
-// - create `static SpeedFrame speedSeqN[] = { ... }`
+// - create `const SpeedFrame speedSeqN[] PROGMEM = { ... }`
 // - create `static const uint8_t speedSeqNLength = ...`
 // - add a `seqNum == N` branch below
-inline bool selectSpeedSequence(uint8_t seqNum, SpeedFrame*& outSeq, uint8_t& outLen) {
+inline bool selectSpeedSequence(uint8_t seqNum, const SpeedFrame*& outSeq, uint8_t& outLen) {
   if (seqNum == 1) {
     outSeq = speedSeq1;
     outLen = speedSeq1Length;
