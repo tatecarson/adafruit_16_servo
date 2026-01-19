@@ -108,6 +108,14 @@ uint8_t lastTriggeredSpeedFrame = 0;
 #define DEFAULT_MIN 150
 #define DEFAULT_MAX 600
 
+/**
+ * @brief Initialize per-servo calibration and runtime state to sane defaults.
+ *
+ * Sets each servo's min/max pulse to DEFAULT_MIN/DEFAULT_MAX, sets mode to standard
+ * (not continuous), sets the stop/center pulse to the midpoint of the default range,
+ * and resets all runtime state (current/target/start pulse, movement timers/flags,
+ * and speed ramp fields).
+ */
 void initServoDefaults() {
   uint16_t defaultCenter = (DEFAULT_MIN + DEFAULT_MAX) / 2;
 
@@ -136,6 +144,12 @@ void initServoDefaults() {
 String inputString = "";
 bool stringComplete = false;
 
+/**
+ * @brief Initialize hardware, driver, and servo state before entering the main loop.
+ *
+ * Initializes the Serial console, the PWM/servo driver, applies default and custom servo
+ * configurations, and reserves the serial input buffer.
+ */
 void setup() {
   Serial.begin(9600);
   Serial.println(F("Servo Calibration & Control"));
@@ -153,14 +167,32 @@ void setup() {
   inputString.reserve(50);
 }
 
-// Convert degrees (0-180) to pulse value for a specific servo
+/**
+ * @brief Convert a servo angle (0–180°) to the calibrated PWM pulse for a specific servo.
+ *
+ * Uses the servo's configured min/max pulse calibration to produce a pulse value.
+ *
+ * @param servo Servo channel index (0..NUM_SERVOS-1).
+ * @param degrees Desired angle in degrees; values are clamped to the 0–180 range.
+ * @return uint16_t Pulse value mapped into the servo's configured minPulse..maxPulse range.
+ */
 uint16_t degreesToPulse(uint8_t servo, uint8_t degrees) {
   degrees = constrain(degrees, 0, 180);
   return map(degrees, 0, 180, servoConfig[servo].minPulse, servoConfig[servo].maxPulse);
 }
 
 // Convert speed (-100 to 100) to pulse for continuous servo
-// 0 = stop, negative = one direction, positive = other direction
+/**
+ * Convert a signed speed (-100..100) into the calibrated PWM pulse for a servo.
+ *
+ * Maps 0 to the servo's configured stop pulse; positive speeds 1..100 map linearly
+ * from stopPulse+1 up to the servo's configured maxPulse; negative speeds -1..-100
+ * map linearly from stopPulse-1 down to the servo's configured minPulse.
+ *
+ * @param servo Index of the servo whose calibration (minPulse, maxPulse, stopPulse) is used.
+ * @param speed Desired speed in the range -100 to 100, where 0 is stop, negative is one direction, positive the other.
+ * @return uint16_t PWM pulse value within the servo's calibrated min/max corresponding to the requested speed; `stopPulse` when speed is 0.
+ */
 uint16_t speedToPulse(uint8_t servo, int8_t speed) {
   speed = constrain(speed, -100, 100);
   uint16_t stopPulse = servoConfig[servo].stopPulse;
@@ -192,7 +224,16 @@ uint16_t lerpEased(uint16_t start, uint16_t end, float progress) {
   return start + (uint16_t)((float)(end - start) * easedProgress);
 }
 
-// Move servo to a pulse value
+/**
+ * @brief Move a servo channel to the given PWM pulse (within the servo's calibrated range).
+ *
+ * Clamps the provided pulse to the servo's configured min/max, updates the servo's stored
+ * position pulse, and writes the PWM value to the driver. Prints an error if the servo
+ * index is out of range and prints the resulting pulse when applied.
+ *
+ * @param servo Index of the servo channel (0..NUM_SERVOS-1).
+ * @param pulse Desired PWM pulse value (will be constrained to the servo's calibration).
+ */
 void setServoPulse(uint8_t servo, uint16_t pulse) {
   if (servo >= NUM_SERVOS) {
     Serial.println(F("Invalid servo"));
@@ -211,7 +252,16 @@ void setServoDegrees(uint8_t servo, uint8_t degrees) {
   setServoPulse(servo, pulse);
 }
 
-// Set continuous servo speed (-100 to 100, 0 = stop)
+/**
+ * @brief Set the speed of a continuous-rotation servo and apply the corresponding PWM.
+ *
+ * Updates the servo's stored pulse position and writes the computed pulse for the
+ * requested speed to the PWM driver. If the servo index is out of range or the
+ * servo is not configured as continuous, no change is applied.
+ *
+ * @param servo Index of the servo channel (0..NUM_SERVOS-1).
+ * @param speed Desired speed from -100 to 100, where 0 is stop.
+ */
 void setServoSpeed(uint8_t servo, int8_t speed) {
   if (servo >= NUM_SERVOS) {
     Serial.println(F("Invalid servo"));
@@ -229,7 +279,17 @@ void setServoSpeed(uint8_t servo, int8_t speed) {
   Serial.print(F("% -> pulse ")); Serial.println(pulse);
 }
 
-// Ramp continuous servo to target speed over duration
+/**
+ * @brief Ramp a continuous-rotation servo from its current speed to a target speed.
+ *
+ * Approximates the servo's current speed from its last PWM pulse and either applies
+ * the target speed immediately (when rampMs is 0) or starts a timed speed ramp that
+ * will be progressed by the regular updateSpeedRamps() loop.
+ *
+ * @param servo Index of the servo channel (0..NUM_SERVOS-1).
+ * @param targetSpeed Desired speed in percent, from -100 (full reverse) to 100 (full forward).
+ * @param rampMs Duration of the speed ramp in milliseconds; 0 applies the target speed instantly.
+ */
 void rampServoSpeed(uint8_t servo, int8_t targetSpeed, uint16_t rampMs) {
   if (servo >= NUM_SERVOS) {
     Serial.println(F("Invalid servo"));
@@ -271,7 +331,16 @@ void rampServoSpeed(uint8_t servo, int8_t targetSpeed, uint16_t rampMs) {
   }
 }
 
-// Start an animated move to target position over duration ms
+/**
+ * @brief Initiates an animated move of a servo from its current position to a target pulse over a given duration.
+ *
+ * The target pulse is clamped to the servo's configured min/max pulse range and the servo's animation state is
+ * initialized so subsequent update calls will perform the interpolation.
+ *
+ * @param servo Index of the servo channel (0-based).
+ * @param targetPulse Desired PWM pulse value; will be constrained to the servo's configured range.
+ * @param duration Duration of the animation in milliseconds.
+ */
 void moveServoAnimated(uint8_t servo, uint16_t targetPulse, uint16_t duration) {
   if (servo >= NUM_SERVOS) return;
   targetPulse = constrain(targetPulse, servoConfig[servo].minPulse, servoConfig[servo].maxPulse);
@@ -289,7 +358,14 @@ void moveServoDegrees(uint8_t servo, uint8_t degrees, uint16_t duration) {
   moveServoAnimated(servo, pulse, duration);
 }
 
-// Update all servo animations - call from loop()
+/**
+ * @brief Advance active servo animations and apply resulting PWM updates.
+ *
+ * For each servo with motion in progress, either completes the animation by
+ * setting the servo to its target pulse and clearing the moving flag, or
+ * interpolates the current pulse (using the configured easing) and writes the
+ * updated pulse to the PWM driver.
+ */
 void updateAnimations() {
   unsigned long now = millis();
 
@@ -315,7 +391,14 @@ void updateAnimations() {
   }
 }
 
-// Update all active speed ramps - call from loop()
+/**
+ * @brief Advance and apply active speed ramps for continuous servos.
+ *
+ * Checks each servo for an active speed ramp, computes progress based on millis(),
+ * applies a cubic ease-in-out interpolation between the stored start and target speeds,
+ * updates the servo PWM output and posPulse accordingly, and completes ramps by
+ * setting the final speed and clearing the ramping flag when the ramp duration elapses.
+ */
 void updateSpeedRamps() {
   unsigned long now = millis();
 
@@ -348,7 +431,16 @@ void updateSpeedRamps() {
   }
 }
 
-// Update wave pattern - call from loop()
+/**
+ * @brief Applies an active sine-wave motion across a contiguous range of servos.
+ *
+ * When wave mode is active, computes a time- and index-offset sine pattern using
+ * the global wave parameters (waveStartTime, waveSpeed, wavePhaseOffset,
+ * waveAmplitude, waveCenter, waveStartServo, waveEndServo) and updates each
+ * servo's PWM output to the corresponding calibrated pulse. No action is taken
+ * if wave mode is not active. Each servo channel is written only when the
+ * computed pulse differs from its current position.
+ */
 void updateWave() {
   if (!waveActive) return;
 
@@ -406,7 +498,16 @@ void updateSequence() {
   }
 }
 
-// Update speed sequence playback - call from loop()
+/**
+ * @brief Advance and apply the active speed-frame sequence.
+ *
+ * Checks the currently selected speed sequence against elapsed time and triggers scheduled speed changes.
+ * When a frame's time is reached, the function initiates a speed ramp for the frame's servo using the frame's
+ * target speed and ramp duration. A frame with servo value 255 marks the sequence end: if looping is enabled the
+ * sequence restarts, otherwise playback stops and all continuous servos are commanded to stop (speed 0).
+ *
+ * @note Intended to be called regularly from the main loop.
+ */
 void updateSpeedSequence() {
   if (!speedSeqActive || currentSpeedSeq == nullptr) return;
 
@@ -445,7 +546,16 @@ void updateSpeedSequence() {
   }
 }
 
-// Sweep a servo through its full range
+/**
+ * @brief Sweeps a servo across its calibrated pulse range and returns it to center.
+ *
+ * Performs a full sweep from the servo's configured minPulse to maxPulse and back, writing PWM
+ * values to the channel with short delays for visible motion. Prints progress and range info to
+ * Serial and updates servoState[servo].posPulse to the center pulse when complete.
+ *
+ * @param servo Servo channel index (0..NUM_SERVOS-1). If the index is invalid the function prints
+ *              an error and returns without modifying outputs.
+ */
 void sweepServo(uint8_t servo) {
   if (servo >= NUM_SERVOS) {
     Serial.println(F("Invalid servo"));
@@ -484,7 +594,16 @@ void servoOff(uint8_t servo) {
   Serial.print(F("Servo ")); Serial.print(servo); Serial.println(F(" off"));
 }
 
-// Set calibration for a servo
+/**
+ * @brief Update the pulse calibration range for a servo.
+ *
+ * Sets the servo's minimum and maximum PWM pulse values used for degree and speed conversions.
+ * If `servo` is outside the valid range [0, NUM_SERVOS-1], the call returns without modifying any calibration.
+ *
+ * @param servo Servo channel index (0 .. NUM_SERVOS-1).
+ * @param minVal Minimum pulse value for the servo.
+ * @param maxVal Maximum pulse value for the servo.
+ */
 void setCalibration(uint8_t servo, uint16_t minVal, uint16_t maxVal) {
   if (servo >= NUM_SERVOS) {
     Serial.println(F("Invalid servo"));
@@ -497,7 +616,13 @@ void setCalibration(uint8_t servo, uint16_t minVal, uint16_t maxVal) {
   Serial.print(F(" - ")); Serial.println(maxVal);
 }
 
-// Show status of all servos with non-default calibration
+/**
+ * @brief Print the current configuration and position for every servo to Serial.
+ *
+ * Prints each servo's index, mode (STD or CONT), calibrated minimum and maximum pulse
+ * values, and current pulse position. For continuous servos, also prints the configured
+ * stop (center) pulse.
+ */
 void showStatus() {
   Serial.println(F("\n--- Servo Status ---"));
   for (uint8_t i = 0; i < NUM_SERVOS; i++) {
@@ -533,6 +658,14 @@ void showHelp() {
   Serial.println();
 }
 
+/**
+ * @brief Parse a single serial command string and execute the corresponding servo control action.
+ *
+ * Recognizes and executes commands for direct position/pulse control, calibration, animated moves,
+ * waves, sequences, speed ramps, mode switching, status and help. Commands are parsed case-insensitively.
+ *
+ * @param cmd Raw command string received from the serial input (may include parameters separated by spaces).
+ */
 void processCommand(String cmd) {
   cmd.trim();
   cmd.toUpperCase();
