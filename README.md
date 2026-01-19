@@ -59,13 +59,13 @@ Interactive Serial interface for the Adafruit PCA9685 16-channel PWM/Servo drive
 
 ### Creating Custom Sequences
 
-Edit `sequence_setup.h` to define your own keyframe animations:
+Edit `sequence_setup.h` to define your own keyframe animations. Sequences are stored in PROGMEM (flash memory) to save RAM:
 
 ```cpp
-Keyframe sequence1[] = {
+const Keyframe sequence1[] PROGMEM = {
   {servo, degrees, time_ms, duration_ms},
   // ...
-  {255, 0, 0, 0}  // End marker
+  {255, 0, end_time_ms, 0}  // End marker
 };
 ```
 
@@ -84,13 +84,13 @@ SPLAY 1 LOOP   # Loop speed sequence 1
 STOP           # Stop sequence
 ```
 
-Edit `sequence_setup.h` to define speed sequences:
+Edit `sequence_setup.h` to define speed sequences (also stored in PROGMEM):
 
 ```cpp
-SpeedFrame speedSeq1[] = {
+const SpeedFrame speedSeq1[] PROGMEM = {
   {servo, speed, time_ms, ramp_ms},
   // ...
-  {255, 0, 0, 0}  // End marker
+  {255, 0, end_time_ms, 0}  // End marker
 };
 ```
 
@@ -181,3 +181,5 @@ Continuous rotation servos spin instead of moving to positions. The PWM signal c
 - Pulse values are out of 4096 (12-bit resolution)
 - Typical servo range: 150-600 pulse counts (adjust per servo)
 - Always use external power for servos (not USB power)
+- Sequences are stored in PROGMEM (flash) to conserve RAM
+- Serial input uses a fixed 50-byte buffer for long-term stability

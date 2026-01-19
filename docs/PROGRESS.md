@@ -40,9 +40,16 @@ Servo calibration and control system for the Adafruit PCA9685 16-channel PWM dri
 - `servo_setup.h` for per-installation servo calibration and mode setup
 - `sequence_setup.h` for per-installation animation sequence definitions (keyframes + speed sequences)
 
+### 6. Code Review Improvements (Complete)
+- Replaced Arduino `String` class with fixed 50-byte char buffer to prevent heap fragmentation
+- Added WAVE command bounds validation (rejects invalid servo ranges)
+- Cleaned up sweep function underflow protection
+- Moved sequence data to PROGMEM (flash) to save RAM
+- Added helper functions for C-style string operations (`trimString`, `toUpperCase`, `findChar`, `startsWith`, `containsStr`)
+
 ## In Progress
 
-- Refactor: move sequence definitions out of `adafruit_16_servo.ino` into `sequence_setup.h`
+(None)
 
 ## File Structure
 
@@ -58,7 +65,8 @@ adafruit_16_servo/
     │   ├── 2026-01-17-animation-system.md  # Animation implementation plan (done)
     │   ├── 2026-01-18-servo-config-refactor.md  # Servo config refactor plan (done)
     │   ├── 2026-01-18-continuous-servo-sequences.md  # Speed sequences plan (done)
-    │   └── 2026-01-18-sequence-setup-extraction.md  # Sequence setup extraction plan (draft)
+    │   ├── 2026-01-18-sequence-setup-extraction.md  # Sequence setup extraction plan (done)
+    │   └── 2026-01-19-code-review-fixes.md  # Code review improvements plan (done)
     ├── TESTING.md            # Manual test results
     └── PROGRESS.md           # This file
 ```
@@ -92,6 +100,11 @@ adafruit_16_servo/
 ## Git Commits (Refactors)
 
 18. `refactor: replace parallel arrays with ServoConfig/ServoState structs and separate installation-specific setup`
+19. `refactor: move sequence definitions to sequence_setup.h for better organization`
+
+## Git Commits (Code Review Fixes)
+
+20. `refactor: replace String with fixed char buffer and add PROGMEM for sequences`
 
 ## Future Features
 

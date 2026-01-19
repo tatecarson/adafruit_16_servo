@@ -88,18 +88,18 @@ struct SpeedFrame {
 
 #include "sequence_setup.h"
 
-// Sequence playback state
+// Sequence playback state (pointers to PROGMEM arrays)
 bool sequenceActive = false;
 bool sequenceLoop = false;
-Keyframe* currentSequence = nullptr;
+const Keyframe* currentSequence = nullptr;
 uint8_t currentSequenceLength = 0;
 unsigned long sequenceStartTime = 0;
 uint8_t lastTriggeredKeyframe = 0;
 
-// Speed sequence playback state
+// Speed sequence playback state (pointers to PROGMEM arrays)
 bool speedSeqActive = false;
 bool speedSeqLoop = false;
-SpeedFrame* currentSpeedSeq = nullptr;
+const SpeedFrame* currentSpeedSeq = nullptr;
 uint8_t currentSpeedSeqLength = 0;
 unsigned long speedSeqStartTime = 0;
 uint8_t lastTriggeredSpeedFrame = 0;
@@ -140,9 +140,11 @@ void initServoDefaults() {
   }
 }
 
-// Serial input buffer
-String inputString = "";
-bool stringComplete = false;
+// Serial input buffer (fixed-size to avoid String heap fragmentation)
+#define INPUT_BUFFER_SIZE 50
+char inputBuffer[INPUT_BUFFER_SIZE];
+uint8_t inputIndex = 0;
+bool inputComplete = false;
 
 /**
  * @brief Initialize hardware, driver, and servo state before entering the main loop.
@@ -164,7 +166,6 @@ void setup() {
   pwm.setPWMFreq(SERVO_FREQ);
 
   delay(10);
-  inputString.reserve(50);
 }
 
 /**
@@ -467,17 +468,19 @@ void updateWave() {
 }
 
 // Update sequence playback - call from loop()
+// Reads keyframes from PROGMEM using memcpy_P
 void updateSequence() {
   if (!sequenceActive || currentSequence == nullptr) return;
 
   unsigned long elapsed = millis() - sequenceStartTime;
+  Keyframe kf;  // Local copy for PROGMEM read
 
   // Find keyframes to trigger
   for (uint8_t i = lastTriggeredKeyframe; i < currentSequenceLength; i++) {
-    Keyframe* kf = &currentSequence[i];
+    memcpy_P(&kf, &currentSequence[i], sizeof(Keyframe));
 
     // End marker check
-    if (kf->servo == 255) {
+    if (kf.servo == 255) {
       if (sequenceLoop) {
         // Restart sequence
         sequenceStartTime = millis();
@@ -491,36 +494,29 @@ void updateSequence() {
     }
 
     // Trigger keyframe if time reached
-    if (elapsed >= kf->time && i >= lastTriggeredKeyframe) {
-      moveServoDegrees(kf->servo, kf->degrees, kf->duration);
+    if (elapsed >= kf.time && i >= lastTriggeredKeyframe) {
+      moveServoDegrees(kf.servo, kf.degrees, kf.duration);
       lastTriggeredKeyframe = i + 1;
     }
   }
 }
 
-/**
- * @brief Advance and apply the active speed-frame sequence.
- *
- * Checks the currently selected speed sequence against elapsed time and triggers scheduled speed changes.
- * When a frame's time is reached, the function initiates a speed ramp for the frame's servo using the frame's
- * target speed and ramp duration. A frame with servo value 255 marks the sequence end: if looping is enabled the
- * sequence restarts, otherwise playback stops and all continuous servos are commanded to stop (speed 0).
- *
- * @note Intended to be called regularly from the main loop.
- */
+// Update speed sequence playback - call from loop()
+// Reads speed frames from PROGMEM using memcpy_P
 void updateSpeedSequence() {
   if (!speedSeqActive || currentSpeedSeq == nullptr) return;
 
   unsigned long elapsed = millis() - speedSeqStartTime;
+  SpeedFrame sf;  // Local copy for PROGMEM read
 
   // Find speed frames to trigger
   for (uint8_t i = lastTriggeredSpeedFrame; i < currentSpeedSeqLength; i++) {
-    SpeedFrame* sf = &currentSpeedSeq[i];
+    memcpy_P(&sf, &currentSpeedSeq[i], sizeof(SpeedFrame));
 
     // Trigger speed frame if time reached
-    if (elapsed >= sf->time) {
+    if (elapsed >= sf.time) {
       // End marker check
-      if (sf->servo == 255) {
+      if (sf.servo == 255) {
         if (speedSeqLoop) {
           // Restart sequence
           speedSeqStartTime = millis();
@@ -540,22 +536,15 @@ void updateSpeedSequence() {
       }
 
       // Trigger regular speed frame
-      rampServoSpeed(sf->servo, sf->speed, sf->rampMs);
+      rampServoSpeed(sf.servo, sf.speed, sf.rampMs);
       lastTriggeredSpeedFrame = i + 1;
     }
   }
 }
 
-/**
- * @brief Sweeps a servo across its calibrated pulse range and returns it to center.
- *
- * Performs a full sweep from the servo's configured minPulse to maxPulse and back, writing PWM
- * values to the channel with short delays for visible motion. Prints progress and range info to
- * Serial and updates servoState[servo].posPulse to the center pulse when complete.
- *
- * @param servo Servo channel index (0..NUM_SERVOS-1). If the index is invalid the function prints
- *              an error and returns without modifying outputs.
- */
+// Sweep a servo through its full range (BLOCKING - for calibration/debug only)
+// Note: Uses delay() which blocks all other operations for several seconds.
+// This is intentional for calibration where you want to observe the full range.
 void sweepServo(uint8_t servo) {
   if (servo >= NUM_SERVOS) {
     Serial.println(F("Invalid servo"));
@@ -573,12 +562,12 @@ void sweepServo(uint8_t servo) {
   }
   delay(300);
 
-  // Sweep to min
-  for (uint16_t p = servoConfig[servo].maxPulse; p >= servoConfig[servo].minPulse; p -= 2) {
+  // Sweep to min (loop condition avoids uint16_t underflow)
+  for (uint16_t p = servoConfig[servo].maxPulse; p > servoConfig[servo].minPulse + 1; p -= 2) {
     pwm.setPWM(servo, 0, p);
     delay(5);
-    if (p < servoConfig[servo].minPulse + 2) break;  // Prevent underflow
   }
+  pwm.setPWM(servo, 0, servoConfig[servo].minPulse);  // Ensure we hit min exactly
 
   // Return to center
   uint16_t center = (servoConfig[servo].minPulse + servoConfig[servo].maxPulse) / 2;
@@ -658,59 +647,85 @@ void showHelp() {
   Serial.println();
 }
 
-/**
- * @brief Parse a single serial command string and execute the corresponding servo control action.
- *
- * Recognizes and executes commands for direct position/pulse control, calibration, animated moves,
- * waves, sequences, speed ramps, mode switching, status and help. Commands are parsed case-insensitively.
- *
- * @param cmd Raw command string received from the serial input (may include parameters separated by spaces).
- */
-void processCommand(String cmd) {
-  cmd.trim();
-  cmd.toUpperCase();
+// Helper: trim leading/trailing whitespace in place
+void trimString(char* str) {
+  // Trim leading
+  char* start = str;
+  while (*start && isspace(*start)) start++;
+  if (start != str) memmove(str, start, strlen(start) + 1);
+  // Trim trailing
+  char* end = str + strlen(str) - 1;
+  while (end > str && isspace(*end)) *end-- = '\0';
+}
 
-  if (cmd.startsWith("S") && cmd.charAt(1) >= '0' && cmd.charAt(1) <= '9') {
+// Helper: convert string to uppercase in place
+void toUpperCase(char* str) {
+  while (*str) {
+    *str = toupper(*str);
+    str++;
+  }
+}
+
+// Helper: find character in string starting at offset, returns -1 if not found
+int findChar(const char* str, char c, int startIdx) {
+  const char* p = strchr(str + startIdx, c);
+  return p ? (p - str) : -1;
+}
+
+// Helper: check if string starts with prefix
+bool startsWith(const char* str, const char* prefix) {
+  return strncmp(str, prefix, strlen(prefix)) == 0;
+}
+
+// Helper: check if string contains substring
+bool containsStr(const char* str, const char* substr) {
+  return strstr(str, substr) != nullptr;
+}
+
+void processCommand(char* cmd) {
+  trimString(cmd);
+  toUpperCase(cmd);
+
+  if (cmd[0] == 'S' && cmd[1] >= '0' && cmd[1] <= '9') {
     // S<n> <degrees> - move servo to degrees (S0, S1, ... S15)
-    int space = cmd.indexOf(' ');
+    int space = findChar(cmd, ' ', 0);
     if (space > 1) {
-      uint8_t servo = cmd.substring(1, space).toInt();
-      uint8_t degrees = cmd.substring(space + 1).toInt();
+      uint8_t servo = atoi(cmd + 1);
+      uint8_t degrees = atoi(cmd + space + 1);
       setServoDegrees(servo, degrees);
     }
   }
-  else if (cmd.startsWith("P")) {
+  else if (cmd[0] == 'P') {
     // P<n> <pulse> - move servo to raw pulse
-    int space = cmd.indexOf(' ');
+    int space = findChar(cmd, ' ', 0);
     if (space > 1) {
-      uint8_t servo = cmd.substring(1, space).toInt();
-      uint16_t pulse = cmd.substring(space + 1).toInt();
+      uint8_t servo = atoi(cmd + 1);
+      uint16_t pulse = atoi(cmd + space + 1);
       setServoPulse(servo, pulse);
     }
   }
-  else if (cmd.startsWith("CAL")) {
+  else if (startsWith(cmd, "CAL")) {
     // CAL <n> <min> <max>
-    int idx = 4;
-    int space1 = cmd.indexOf(' ', idx);
-    int space2 = cmd.indexOf(' ', space1 + 1);
+    int space1 = findChar(cmd, ' ', 4);
+    int space2 = (space1 > 0) ? findChar(cmd, ' ', space1 + 1) : -1;
     if (space1 > 0 && space2 > 0) {
-      uint8_t servo = cmd.substring(idx, space1).toInt();
-      uint16_t minVal = cmd.substring(space1 + 1, space2).toInt();
-      uint16_t maxVal = cmd.substring(space2 + 1).toInt();
+      uint8_t servo = atoi(cmd + 4);
+      uint16_t minVal = atoi(cmd + space1 + 1);
+      uint16_t maxVal = atoi(cmd + space2 + 1);
       setCalibration(servo, minVal, maxVal);
     }
   }
-  else if (cmd.startsWith("SWEEP")) {
-    int space = cmd.indexOf(' ');
+  else if (startsWith(cmd, "SWEEP")) {
+    int space = findChar(cmd, ' ', 0);
     if (space > 0) {
-      uint8_t servo = cmd.substring(space + 1).toInt();
+      uint8_t servo = atoi(cmd + space + 1);
       sweepServo(servo);
     }
   }
-  else if (cmd.startsWith("CENTER")) {
-    int space = cmd.indexOf(' ');
+  else if (startsWith(cmd, "CENTER")) {
+    int space = findChar(cmd, ' ', 0);
     if (space > 0) {
-      uint8_t servo = cmd.substring(space + 1).toInt();
+      uint8_t servo = atoi(cmd + space + 1);
       if (servo < NUM_SERVOS && servoConfig[servo].continuous) {
         // For continuous servo, center = stop
         pwm.setPWM(servo, 0, servoConfig[servo].stopPulse);
@@ -722,23 +737,23 @@ void processCommand(String cmd) {
       }
     }
   }
-  else if (cmd.startsWith("OFF")) {
-    int space = cmd.indexOf(' ');
+  else if (startsWith(cmd, "OFF")) {
+    int space = findChar(cmd, ' ', 0);
     if (space > 0) {
-      uint8_t servo = cmd.substring(space + 1).toInt();
+      uint8_t servo = atoi(cmd + space + 1);
       servoOff(servo);
     }
   }
-  else if (cmd.startsWith("MOVE") || cmd.startsWith("M ")) {
+  else if (startsWith(cmd, "MOVE") || startsWith(cmd, "M ")) {
     // MOVE <servo> <degrees> <duration_ms>
     // or M <servo> <degrees> <duration_ms>
-    int idx = cmd.startsWith("MOVE") ? 5 : 2;
-    int space1 = cmd.indexOf(' ', idx);
-    int space2 = cmd.indexOf(' ', space1 + 1);
+    int idx = startsWith(cmd, "MOVE") ? 5 : 2;
+    int space1 = findChar(cmd, ' ', idx);
+    int space2 = (space1 > 0) ? findChar(cmd, ' ', space1 + 1) : -1;
     if (space1 > 0 && space2 > 0) {
-      uint8_t servo = cmd.substring(idx, space1).toInt();
-      uint8_t degrees = cmd.substring(space1 + 1, space2).toInt();
-      uint16_t duration = cmd.substring(space2 + 1).toInt();
+      uint8_t servo = atoi(cmd + idx);
+      uint8_t degrees = atoi(cmd + space1 + 1);
+      uint16_t duration = atoi(cmd + space2 + 1);
       moveServoDegrees(servo, degrees, duration);
       Serial.print(F("Moving servo ")); Serial.print(servo);
       Serial.print(F(" to ")); Serial.print(degrees);
@@ -746,26 +761,31 @@ void processCommand(String cmd) {
       Serial.println(F("ms"));
     }
   }
-  else if (cmd.startsWith("WAVE")) {
+  else if (startsWith(cmd, "WAVE")) {
     // WAVE <start> <end> <speed> <offset> <amplitude>
     // Example: WAVE 0 7 50 30 90
-    int idx = 5;
-    int s1 = cmd.indexOf(' ', idx);
-    int s2 = cmd.indexOf(' ', s1 + 1);
-    int s3 = cmd.indexOf(' ', s2 + 1);
-    int s4 = cmd.indexOf(' ', s3 + 1);
+    int s1 = findChar(cmd, ' ', 5);
+    int s2 = (s1 > 0) ? findChar(cmd, ' ', s1 + 1) : -1;
+    int s3 = (s2 > 0) ? findChar(cmd, ' ', s2 + 1) : -1;
+    int s4 = (s3 > 0) ? findChar(cmd, ' ', s3 + 1) : -1;
 
     if (s1 > 0 && s2 > 0) {
-      waveStartServo = cmd.substring(idx, s1).toInt();
-      waveEndServo = cmd.substring(s1 + 1, s2).toInt();
+      waveStartServo = atoi(cmd + 5);
+      waveEndServo = atoi(cmd + s1 + 1);
 
-      if (s3 > 0) waveSpeed = cmd.substring(s2 + 1, s3).toInt();
+      // Validate servo range
+      if (waveStartServo > waveEndServo || waveEndServo >= NUM_SERVOS) {
+        Serial.println(F("Invalid servo range"));
+        return;
+      }
+
+      if (s3 > 0) waveSpeed = atoi(cmd + s2 + 1);
       else waveSpeed = 50;
 
-      if (s4 > 0) wavePhaseOffset = cmd.substring(s3 + 1, s4).toInt();
+      if (s4 > 0) wavePhaseOffset = atoi(cmd + s3 + 1);
       else wavePhaseOffset = 30;
 
-      if (s4 > 0) waveAmplitude = cmd.substring(s4 + 1).toInt();
+      if (s4 > 0) waveAmplitude = atoi(cmd + s4 + 1);
       else waveAmplitude = 90;
 
       waveStartTime = millis();
@@ -778,12 +798,12 @@ void processCommand(String cmd) {
       Serial.print(F(" amp=")); Serial.println(waveAmplitude);
     }
   }
-  else if (cmd.startsWith("PLAY")) {
+  else if (startsWith(cmd, "PLAY")) {
     // PLAY <sequence_num> [LOOP]
-    int space = cmd.indexOf(' ');
+    int space = findChar(cmd, ' ', 0);
     if (space > 0) {
-      uint8_t seqNum = cmd.substring(space + 1).toInt();
-      sequenceLoop = (cmd.indexOf("LOOP") > 0);
+      uint8_t seqNum = atoi(cmd + space + 1);
+      sequenceLoop = containsStr(cmd, "LOOP");
 
       if (!selectPositionSequence(seqNum, currentSequence, currentSequenceLength)) {
         Serial.println(F("Unknown sequence"));
@@ -800,12 +820,12 @@ void processCommand(String cmd) {
       Serial.println();
     }
   }
-  else if (cmd.startsWith("SPLAY")) {
+  else if (startsWith(cmd, "SPLAY")) {
     // SPLAY <sequence_num> [LOOP]
-    int space = cmd.indexOf(' ');
+    int space = findChar(cmd, ' ', 0);
     if (space > 0) {
-      uint8_t seqNum = cmd.substring(space + 1).toInt();
-      bool loop = (cmd.indexOf("LOOP") > 0);
+      uint8_t seqNum = atoi(cmd + space + 1);
+      bool loop = containsStr(cmd, "LOOP");
 
       // Stop any running sequences
       speedSeqActive = false;
@@ -827,7 +847,7 @@ void processCommand(String cmd) {
       Serial.println();
     }
   }
-  else if (cmd.startsWith("STOP")) {
+  else if (startsWith(cmd, "STOP")) {
     waveActive = false;
     sequenceActive = false;
     speedSeqActive = false;
@@ -840,14 +860,14 @@ void processCommand(String cmd) {
     }
     Serial.println(F("Stopped"));
   }
-  else if (cmd.startsWith("MODE")) {
+  else if (startsWith(cmd, "MODE")) {
     // MODE <n> STD|CONT
-    int space = cmd.indexOf(' ');
+    int space = findChar(cmd, ' ', 0);
     if (space > 0) {
-      uint8_t servo = cmd.substring(space + 1).toInt();
+      uint8_t servo = atoi(cmd + space + 1);
       if (servo >= NUM_SERVOS) {
         Serial.println(F("Invalid servo"));
-      } else if (cmd.indexOf("CONT") > 0) {
+      } else if (containsStr(cmd, "CONT")) {
         servoConfig[servo].continuous = true;
         servoConfig[servo].stopPulse = (servoConfig[servo].minPulse + servoConfig[servo].maxPulse) / 2;
         // Don't send PWM - let user set speed manually
@@ -856,7 +876,7 @@ void processCommand(String cmd) {
         Serial.print(F(" set to CONTINUOUS (stop="));
         Serial.print(servoConfig[servo].stopPulse);
         Serial.println(F(") - use SPEED to control"));
-      } else if (cmd.indexOf("STD") > 0) {
+      } else if (containsStr(cmd, "STD")) {
         servoConfig[servo].continuous = false;
         Serial.print(F("Servo ")); Serial.print(servo);
         Serial.println(F(" set to STANDARD"));
@@ -865,26 +885,25 @@ void processCommand(String cmd) {
       }
     }
   }
-  else if (cmd.startsWith("SPEED")) {
+  else if (startsWith(cmd, "SPEED")) {
     // SPEED <n> <-100 to 100>
     // Parse: "SPEED 0 50" or "SPEED 0 -50" or "SPEED 0 0"
-    int idx = 6;  // Skip "SPEED "
-    int space1 = cmd.indexOf(' ', idx);
+    int space1 = findChar(cmd, ' ', 6);
     if (space1 > 0) {
-      uint8_t servo = cmd.substring(idx).toInt();
-      int16_t speed = cmd.substring(space1 + 1).toInt();
+      uint8_t servo = atoi(cmd + 6);
+      int16_t speed = atoi(cmd + space1 + 1);
       setServoSpeed(servo, (int8_t)constrain(speed, -100, 100));
     } else {
       Serial.println(F("Use: SPEED <n> <-100 to 100>"));
     }
   }
-  else if (cmd.startsWith("STATUS")) {
+  else if (startsWith(cmd, "STATUS")) {
     showStatus();
   }
-  else if (cmd.startsWith("HELP")) {
+  else if (startsWith(cmd, "HELP")) {
     showHelp();
   }
-  else if (cmd.length() > 0) {
+  else if (strlen(cmd) > 0) {
     Serial.println(F("Unknown command. Type HELP"));
   }
 }
@@ -896,20 +915,22 @@ void loop() {
   updateSequence();
   updateSpeedSequence();
 
-  // Read serial input
+  // Read serial input into fixed buffer
   while (Serial.available()) {
     char c = (char)Serial.read();
     if (c == '\n' || c == '\r') {
-      stringComplete = true;
-    } else {
-      inputString += c;
+      inputBuffer[inputIndex] = '\0';
+      inputComplete = true;
+    } else if (inputIndex < INPUT_BUFFER_SIZE - 1) {
+      inputBuffer[inputIndex++] = c;
     }
+    // Silently ignore characters beyond buffer size
   }
 
   // Process complete command
-  if (stringComplete) {
-    processCommand(inputString);
-    inputString = "";
-    stringComplete = false;
+  if (inputComplete) {
+    processCommand(inputBuffer);
+    inputIndex = 0;
+    inputComplete = false;
   }
 }

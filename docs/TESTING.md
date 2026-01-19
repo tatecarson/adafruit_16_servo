@@ -246,6 +246,122 @@
 
 ---
 
+## Test 16: Code Review Fixes (2026-01-19)
+
+### 16a: Fixed Char Buffer - Basic Input
+
+**Command:** `HELP`
+
+**Expected:** Commands list displays correctly
+
+**Result:**
+- [x] Pass
+- [ ] Fail - describe:
+
+---
+
+### 16b: Fixed Char Buffer - Long Input
+
+**Command:** Type 50+ characters (e.g., `ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ`)
+
+**Expected:** Truncates gracefully, shows "Unknown command. Type HELP" (no crash)
+
+**Result:**
+- [x] Pass
+- [ ] Fail - describe:
+
+---
+
+### 16c: WAVE Bounds Validation - Invalid Range (start > end)
+
+**Command:** `WAVE 10 5 50 30 90`
+
+**Expected:** Shows "Invalid servo range"
+
+**Result:**
+- [x] Pass
+- [ ] Fail - describe:
+
+---
+
+### 16d: WAVE Bounds Validation - Invalid Range (end >= NUM_SERVOS)
+
+**Command:** `WAVE 0 20 50 30 90`
+
+**Expected:** Shows "Invalid servo range"
+
+**Result:**
+- [x] Pass
+- [ ] Fail - describe:
+
+---
+
+### 16e: Sweep Underflow Fix
+
+**Command:** `SWEEP 4`
+
+**Expected:** Sweep completes without hanging at end
+
+**Result:**
+- [x] Pass
+- [ ] Fail - describe:
+
+---
+
+### 16f: Rapid Commands
+
+**Commands:** Send quickly:
+```
+S0 45
+S1 90
+S2 135
+STATUS
+```
+
+**Expected:** All commands process correctly, no memory issues
+
+**Result:**
+- [x] Pass
+- [ ] Fail - describe:
+
+---
+
+### 16g: PROGMEM Keyframe Sequence
+
+**Command:** `PLAY 1`
+
+**Expected:** Sequence plays, "Sequence complete" message appears
+
+**Result:**
+- [x] Pass (PROGMEM read working; servos 0,1 are continuous so only partial motion)
+- [ ] Fail - describe:
+
+---
+
+### 16h: PROGMEM Speed Sequence
+
+**Command:** `SPLAY 1`
+
+**Expected:** Speed sequence plays correctly on continuous servos
+
+**Result:**
+- [x] Pass
+- [ ] Fail - describe:
+
+---
+
+### 16i: Memory Savings
+
+**Compile output:**
+```
+Sketch uses 16108 bytes (49%) of program storage space.
+Global variables use 1051 bytes (51%) of dynamic memory.
+```
+
+Sequence data moved to PROGMEM saves ~114 bytes RAM.
+
+---
+
 ## Servo Calibration Notes
 
 | Channel | Servo Model | Type | Stop Pulse | Calibration |
