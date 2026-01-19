@@ -7,8 +7,34 @@
 // `adafruit_16_servo.ino` so the core logic can stay unchanged.
 //
 // Notes:
-// - Use `servo = 255` as the end marker (last entry in each sequence).
-// - Add more sequences by copying the pattern for `sequence1` / `speedSeq1`.
+// - This file depends on the `Keyframe` and `SpeedFrame` structs defined in
+//   `adafruit_16_servo.ino`, so it must be included *after* those type
+//   definitions.
+// - Sequences are scanned in array order, and entries are triggered when
+//   `elapsedMs >= time`. Keep frames in ascending `time` order to avoid
+//   surprises.
+// - Use `servo = 255` as an end marker (last entry in each sequence). The
+//   playback engine treats this as "sequence complete" (or loop point).
+// - Add more sequences by copying the pattern for `sequence1` / `speedSeq1`
+//   and extending `selectPositionSequence()` / `selectSpeedSequence()`.
+//
+// Keyframe (positional) sequence structure:
+//   { servo, degrees, timeMs, durationMs }
+// - servo:      0-15 (servo channel). Use 255 to end the sequence.
+// - degrees:    0-180 (mapped using that servo's configured min/max pulses).
+// - timeMs:     when to start this move, relative to sequence start.
+// - durationMs: how long the move should take (0 = instant).
+//
+// Speed (continuous) sequence structure:
+//   { servo, speed, timeMs, rampMs }
+// - servo:  0-15 (servo channel). Use 255 to end the sequence.
+// - speed:  -100..100, where 0 = stop; negative/positive = opposite directions.
+// - timeMs: when to start this speed change, relative to sequence start.
+// - rampMs: how long to ramp to the target speed (0 = instant).
+//
+// End marker timing:
+// - The end marker is also time-gated. Give it a `timeMs` >= your last frame's
+//   `timeMs` so it doesn't terminate early.
 
 #include <Arduino.h>
 
@@ -16,6 +42,10 @@ static const uint8_t SEQUENCE_END_MARKER_SERVO = 255;
 
 // --- Keyframe (positional) sequences ---
 
+// Example sequence 1:
+// - Multiple servos can overlap in time (moves are non-blocking).
+// - `degrees` are converted to pulses with per-servo calibration, so the same
+//   degrees may correspond to different absolute pulse widths per servo.
 static Keyframe sequence1[] = {
   {0, 0, 0, 500},          // Servo 0 to 0° at t=0, over 500ms
   {1, 0, 100, 500},        // Servo 1 to 0° at t=100ms
@@ -53,6 +83,9 @@ inline bool selectPositionSequence(uint8_t seqNum, Keyframe*& outSeq, uint8_t& o
 
 // --- Speed (continuous) sequences ---
 
+// Example speed sequence 1:
+// - Intended for continuous-rotation servos (MODE <n> CONT).
+// - Uses per-servo min/max/stop calibration to translate `speed` into pulses.
 static SpeedFrame speedSeq1[] = {
   {0, 50, 0, 500},         // Servo 0 ramp to 50% over 500ms at t=0
   {1, -50, 0, 500},        // Servo 1 ramp to -50% (opposite direction)
