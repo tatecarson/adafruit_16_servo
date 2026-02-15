@@ -64,6 +64,83 @@ const Keyframe sequence1[] PROGMEM = {
 
 static const uint8_t sequence1Length = sizeof(sequence1) / sizeof(sequence1[0]);
 
+// Sequence 2: "Slow raise and lower"
+// Raises entire ring level over 4s, holds 2s, lowers over 4s.
+const Keyframe sequence2[] PROGMEM = {
+  {0, 1800, 0, 4000},       // All three raise together over 4s
+  {1, 1800, 0, 4000},
+  {2, 1800, 0, 4000},
+  {0, 0, 6000, 4000},       // Hold 2s, then lower over 4s
+  {1, 0, 6000, 4000},
+  {2, 0, 6000, 4000},
+  {SEQUENCE_END_MARKER_SERVO, 0, 10000, 0}
+};
+
+static const uint8_t sequence2Length = sizeof(sequence2) / sizeof(sequence2[0]);
+
+// Sequence 3: "Tilt sweep"
+// Tilts ring toward each winch point in turn, sweeping around the ring.
+const Keyframe sequence3[] PROGMEM = {
+  // Start level at bottom
+  {0, 0, 0, 1000},
+  {1, 0, 0, 1000},
+  {2, 0, 0, 1000},
+  // Tilt toward servo 0
+  {0, 1200, 1500, 2000},
+  // Level out, transition tilt to servo 1
+  {0, 0, 4000, 2000},
+  {1, 1200, 4000, 2000},
+  // Transition tilt to servo 2
+  {1, 0, 6500, 2000},
+  {2, 1200, 6500, 2000},
+  // Return to level
+  {2, 0, 9000, 2000},
+  {SEQUENCE_END_MARKER_SERVO, 0, 11000, 0}
+};
+
+static const uint8_t sequence3Length = sizeof(sequence3) / sizeof(sequence3[0]);
+
+// Sequence 4: "Gentle bob"
+// All winches oscillate low-to-mid — breathing/bobbing motion. Good for looping.
+const Keyframe sequence4[] PROGMEM = {
+  {0, 300, 0, 1500},        // Rise to ~1/6 height
+  {1, 300, 0, 1500},
+  {2, 300, 0, 1500},
+  {0, 900, 1500, 1500},     // Rise to mid
+  {1, 900, 1500, 1500},
+  {2, 900, 1500, 1500},
+  {0, 300, 3000, 1500},     // Back down
+  {1, 300, 3000, 1500},
+  {2, 300, 3000, 1500},
+  {SEQUENCE_END_MARKER_SERVO, 0, 4500, 0}
+};
+
+static const uint8_t sequence4Length = sizeof(sequence4) / sizeof(sequence4[0]);
+
+// Sequence 5: "Wave tilt"
+// Rolling wave — each winch takes turns as the high point. Best with LOOP.
+const Keyframe sequence5[] PROGMEM = {
+  // Servo 0 leads up
+  {0, 1200, 0, 1500},
+  {1, 400, 0, 1500},
+  {2, 400, 0, 1500},
+  // Servo 1 takes over
+  {0, 400, 1500, 1500},
+  {1, 1200, 1500, 1500},
+  {2, 400, 1500, 1500},
+  // Servo 2 takes over
+  {0, 400, 3000, 1500},
+  {1, 400, 3000, 1500},
+  {2, 1200, 3000, 1500},
+  // Reset to start position for smooth loop
+  {0, 1200, 4500, 1500},
+  {1, 400, 4500, 1500},
+  {2, 400, 4500, 1500},
+  {SEQUENCE_END_MARKER_SERVO, 0, 6000, 0}
+};
+
+static const uint8_t sequence5Length = sizeof(sequence5) / sizeof(sequence5[0]);
+
 // Map a sequence number from the Serial command (`PLAY <n>`) to a PROGMEM
 // array and length.
 //
@@ -75,6 +152,26 @@ inline bool selectPositionSequence(uint8_t seqNum, const Keyframe*& outSeq, uint
   if (seqNum == 1) {
     outSeq = sequence1;
     outLen = sequence1Length;
+    return true;
+  }
+  if (seqNum == 2) {
+    outSeq = sequence2;
+    outLen = sequence2Length;
+    return true;
+  }
+  if (seqNum == 3) {
+    outSeq = sequence3;
+    outLen = sequence3Length;
+    return true;
+  }
+  if (seqNum == 4) {
+    outSeq = sequence4;
+    outLen = sequence4Length;
+    return true;
+  }
+  if (seqNum == 5) {
+    outSeq = sequence5;
+    outLen = sequence5Length;
     return true;
   }
   return false;
