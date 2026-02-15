@@ -22,7 +22,7 @@
 // Keyframe (positional) sequence structure:
 //   { servo, degrees, timeMs, durationMs }
 // - servo:      0-15 (servo channel). Use 255 to end the sequence.
-// - degrees:    0-180 (mapped using that servo's configured min/max pulses).
+// - degrees:    0 to totalDegrees (mapped using that servo's configured min/max pulses).
 // - timeMs:     when to start this move, relative to sequence start.
 // - durationMs: how long the move should take (0 = instant).
 //
@@ -53,12 +53,12 @@ const Keyframe sequence1[] PROGMEM = {
   {0, 0, 0, 500},          // Servo 0 to 0° at t=0, over 500ms
   {1, 0, 100, 500},        // Servo 1 to 0° at t=100ms
   {2, 0, 200, 500},        // Servo 2 to 0° at t=200ms
-  {0, 180, 1000, 500},     // Servo 0 to 180° at t=1s
-  {1, 180, 1100, 500},
-  {2, 180, 1200, 500},
-  {0, 90, 2000, 500},      // Return to center
-  {1, 90, 2100, 500},
-  {2, 90, 2200, 500},
+  {0, 1800, 1000, 500},    // Servo 0 to max at t=1s
+  {1, 1800, 1100, 500},
+  {2, 1800, 1200, 500},
+  {0, 900, 2000, 500},     // Return to center
+  {1, 900, 2100, 500},
+  {2, 900, 2200, 500},
   {SEQUENCE_END_MARKER_SERVO, 0, 2700, 0}  // End marker
 };
 

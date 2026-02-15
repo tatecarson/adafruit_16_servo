@@ -5,7 +5,7 @@
   ------> http://www.adafruit.com/products/815
 
   Serial Commands:
-    S<n> <pos>     - Move servo n to position (0-180 degrees)
+    S<n> <pos>     - Move servo n to position (degrees, range per servo)
     P<n> <pulse>   - Move servo n to raw pulse (150-600)
     CAL <n> <min> <max> - Set servo n calibration (pulse values)
     SWEEP <n>      - Test sweep servo n
@@ -35,6 +35,7 @@ struct ServoConfig {
   uint16_t maxPulse;
   bool continuous;      // true = continuous rotation servo
   uint16_t stopPulse;   // Center/stop pulse for continuous servos
+  uint16_t totalDegrees; // Total range in degrees (180 for standard, 1800 for 5-turn, etc.)
 };
 
 struct ServoState {
@@ -66,14 +67,14 @@ uint8_t waveStartServo = 0;
 uint8_t waveEndServo = 7;
 uint16_t waveSpeed = 50;        // Period in ms per degree
 uint8_t wavePhaseOffset = 30;   // Degrees offset between adjacent servos
-uint8_t waveAmplitude = 90;     // Degrees of motion (center +/- amplitude/2)
-uint8_t waveCenter = 90;        // Center position in degrees
+uint16_t waveAmplitude = 90;    // Degrees of motion (center +/- amplitude/2)
+uint16_t waveCenter = 90;       // Center position in degrees
 unsigned long waveStartTime = 0;
 
 // Keyframe sequence structure
 struct Keyframe {
   uint8_t servo;      // Which servo (0-15), 255 = end marker
-  uint8_t degrees;    // Target position
+  uint16_t degrees;   // Target position
   uint16_t time;      // Time offset from sequence start (ms)
   uint16_t duration;  // Move duration (ms)
 };
@@ -124,6 +125,7 @@ void initServoDefaults() {
     servoConfig[i].maxPulse = DEFAULT_MAX;
     servoConfig[i].continuous = false;
     servoConfig[i].stopPulse = defaultCenter;
+    servoConfig[i].totalDegrees = 180;
 
     servoState[i].posPulse = defaultCenter;
     servoState[i].targetPulse = defaultCenter;
@@ -177,9 +179,10 @@ void setup() {
  * @param degrees Desired angle in degrees; values are clamped to the 0–180 range.
  * @return uint16_t Pulse value mapped into the servo's configured minPulse..maxPulse range.
  */
-uint16_t degreesToPulse(uint8_t servo, uint8_t degrees) {
-  degrees = constrain(degrees, 0, 180);
-  return map(degrees, 0, 180, servoConfig[servo].minPulse, servoConfig[servo].maxPulse);
+uint16_t degreesToPulse(uint8_t servo, uint16_t degrees) {
+  uint16_t maxDeg = servoConfig[servo].totalDegrees;
+  degrees = constrain(degrees, 0, maxDeg);
+  return map(degrees, 0, maxDeg, servoConfig[servo].minPulse, servoConfig[servo].maxPulse);
 }
 
 // Convert speed (-100 to 100) to pulse for continuous servo
@@ -248,7 +251,7 @@ void setServoPulse(uint8_t servo, uint16_t pulse) {
 }
 
 // Move servo to degrees
-void setServoDegrees(uint8_t servo, uint8_t degrees) {
+void setServoDegrees(uint8_t servo, uint16_t degrees) {
   uint16_t pulse = degreesToPulse(servo, degrees);
   setServoPulse(servo, pulse);
 }
@@ -354,7 +357,7 @@ void moveServoAnimated(uint8_t servo, uint16_t targetPulse, uint16_t duration) {
 }
 
 // Animated move using degrees
-void moveServoDegrees(uint8_t servo, uint8_t degrees, uint16_t duration) {
+void moveServoDegrees(uint8_t servo, uint16_t degrees, uint16_t duration) {
   uint16_t pulse = degreesToPulse(servo, degrees);
   moveServoAnimated(servo, pulse, duration);
 }
@@ -458,7 +461,7 @@ void updateWave() {
 
     // Map to servo position
     float degrees = waveCenter + (sineVal * (float)waveAmplitude / 2.0f);
-    uint16_t pulse = degreesToPulse(i, (uint8_t)constrain(degrees, 0, 180));
+    uint16_t pulse = degreesToPulse(i, (uint16_t)constrain(degrees, 0, servoConfig[i].totalDegrees));
 
     if (pulse != servoState[i].posPulse) {
       servoState[i].posPulse = pulse;
@@ -620,6 +623,7 @@ void showStatus() {
     Serial.print(F(": min=")); Serial.print(servoConfig[i].minPulse);
     Serial.print(F(" max=")); Serial.print(servoConfig[i].maxPulse);
     Serial.print(F(" pos=")); Serial.print(servoState[i].posPulse);
+    Serial.print(F(" range=0-")); Serial.print(servoConfig[i].totalDegrees);
     if (servoConfig[i].continuous) {
       Serial.print(F(" stop=")); Serial.print(servoConfig[i].stopPulse);
     }
@@ -630,7 +634,7 @@ void showStatus() {
 
 void showHelp() {
   Serial.println(F("\n--- Commands ---"));
-  Serial.println(F("S<n> <deg>       Move servo n to degrees (0-180)"));
+  Serial.println(F("S<n> <deg>       Move servo n to degrees"));
   Serial.println(F("P<n> <pulse>     Move servo n to raw pulse"));
   Serial.println(F("CAL <n> <min> <max>  Set calibration"));
   Serial.println(F("SWEEP <n>        Test sweep servo n"));
@@ -691,7 +695,7 @@ void processCommand(char* cmd) {
     int space = findChar(cmd, ' ', 0);
     if (space > 1) {
       uint8_t servo = atoi(cmd + 1);
-      uint8_t degrees = atoi(cmd + space + 1);
+      uint16_t degrees = atoi(cmd + space + 1);
       setServoDegrees(servo, degrees);
     }
   }
@@ -733,7 +737,7 @@ void processCommand(char* cmd) {
         Serial.print(F("Servo ")); Serial.print(servo);
         Serial.println(F(" stopped"));
       } else {
-        setServoDegrees(servo, 90);
+        setServoDegrees(servo, servoConfig[servo].totalDegrees / 2);
       }
     }
   }
@@ -752,7 +756,7 @@ void processCommand(char* cmd) {
     int space2 = (space1 > 0) ? findChar(cmd, ' ', space1 + 1) : -1;
     if (space1 > 0 && space2 > 0) {
       uint8_t servo = atoi(cmd + idx);
-      uint8_t degrees = atoi(cmd + space1 + 1);
+      uint16_t degrees = atoi(cmd + space1 + 1);
       uint16_t duration = atoi(cmd + space2 + 1);
       moveServoDegrees(servo, degrees, duration);
       Serial.print(F("Moving servo ")); Serial.print(servo);

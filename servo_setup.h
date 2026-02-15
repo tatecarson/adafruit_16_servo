@@ -22,18 +22,33 @@ inline void applyCustomServoSetup(ServoConfig servoConfig[], ServoState servoSta
   // Add your servo-specific calibrations here so they persist across uploads
 
   // Servo 0: SM-S4303R continuous rotation (stop pulse = 295)
-  servoConfig[0].minPulse = 150;
-  servoConfig[0].maxPulse = 440;
-  servoConfig[0].continuous = true;
-  servoConfig[0].stopPulse = 295;
-  servoState[0].posPulse = 295;
+  // servoConfig[0].minPulse = 150;
+  // servoConfig[0].maxPulse = 440;
+  // servoConfig[0].continuous = true;
+  // servoConfig[0].stopPulse = 295;
+  // servoState[0].posPulse = 295;
 
   // Servo 1: SM-S4303R continuous rotation (stop pulse = 295)
-  servoConfig[1].minPulse = 150;
-  servoConfig[1].maxPulse = 440;
-  servoConfig[1].continuous = true;
-  servoConfig[1].stopPulse = 295;
-  servoState[1].posPulse = 295;
+  // servoConfig[1].minPulse = 150;
+  // servoConfig[1].maxPulse = 440;
+  // servoConfig[1].continuous = true;
+  // servoConfig[1].stopPulse = 295;
+  // servoState[1].posPulse = 295;
+
+  // Servo 0: goBILDA 2000 Series 5-Turn Dual Mode (25-2 Torque) - standard
+  servoConfig[0].minPulse = 110;
+  servoConfig[0].maxPulse = 480;
+  servoConfig[0].totalDegrees = 1800;
+
+  // Servo 1: goBILDA 2000 Series 5-Turn Dual Mode (25-2 Torque) - standard
+  servoConfig[1].minPulse = 110;
+  servoConfig[1].maxPulse = 480;
+  servoConfig[1].totalDegrees = 1800;
+
+  // Servo 2: goBILDA 2000 Series 5-Turn Dual Mode (25-2 Torque) - standard
+  servoConfig[2].minPulse = 110;
+  servoConfig[2].maxPulse = 480;
+  servoConfig[2].totalDegrees = 1800;
 
   // Servo 3: goBILDA 2000 Series 5-Turn Dual Mode (25-3 Speed) - continuous
   servoConfig[3].minPulse = 186;
