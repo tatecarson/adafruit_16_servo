@@ -35,6 +35,13 @@ inline void applyCustomServoSetup(ServoConfig servoConfig[], ServoState servoSta
   servoConfig[1].stopPulse = 295;
   servoState[1].posPulse = 295;
 
+  // Servo 3: goBILDA 2000 Series 5-Turn Dual Mode (25-3 Speed) - continuous
+  servoConfig[3].minPulse = 186;
+  servoConfig[3].maxPulse = 410;
+  servoConfig[3].continuous = true;
+  servoConfig[3].stopPulse = 298;
+  servoState[3].posPulse = 298;
+
   // Servo 4: Hitec HS-805BB+ mega quarter scale (standard positional)
   servoConfig[4].minPulse = 150;
   servoConfig[4].maxPulse = 450;
