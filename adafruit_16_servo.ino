@@ -45,14 +45,14 @@ struct ServoState {
   uint16_t targetPulse;
   uint16_t startPulse;
   unsigned long moveStartMs;
-  uint16_t moveDurationMs;
+  uint32_t moveDurationMs;
   bool moving;
 
   // Continuous speed ramping (-100..100, 0=stop)
   int8_t targetSpeed;
   int8_t startSpeed;
   unsigned long speedRampStartMs;
-  uint16_t speedRampDurationMs;
+  uint32_t speedRampDurationMs;
   bool speedRamping;
 };
 
@@ -88,6 +88,10 @@ struct SpeedFrame {
 };
 
 #include "sequence_setup.h"
+
+// Time multiplier for scaling sequence durations (1 = no scaling, 60 = 60x slower)
+// Set via serial command: TIMESCALE <n>
+uint16_t timeMultiplier = 1;
 
 // Sequence playback state (pointers to PROGMEM arrays)
 bool sequenceActive = false;
@@ -294,7 +298,7 @@ void setServoSpeed(uint8_t servo, int8_t speed) {
  * @param targetSpeed Desired speed in percent, from -100 (full reverse) to 100 (full forward).
  * @param rampMs Duration of the speed ramp in milliseconds; 0 applies the target speed instantly.
  */
-void rampServoSpeed(uint8_t servo, int8_t targetSpeed, uint16_t rampMs) {
+void rampServoSpeed(uint8_t servo, int8_t targetSpeed, uint32_t rampMs) {
   if (servo >= NUM_SERVOS) {
     Serial.println(F("Invalid servo"));
     return;
@@ -345,7 +349,7 @@ void rampServoSpeed(uint8_t servo, int8_t targetSpeed, uint16_t rampMs) {
  * @param targetPulse Desired PWM pulse value; will be constrained to the servo's configured range.
  * @param duration Duration of the animation in milliseconds.
  */
-void moveServoAnimated(uint8_t servo, uint16_t targetPulse, uint16_t duration) {
+void moveServoAnimated(uint8_t servo, uint16_t targetPulse, uint32_t duration) {
   if (servo >= NUM_SERVOS) return;
   targetPulse = constrain(targetPulse, servoConfig[servo].minPulse, servoConfig[servo].maxPulse);
 
@@ -357,7 +361,7 @@ void moveServoAnimated(uint8_t servo, uint16_t targetPulse, uint16_t duration) {
 }
 
 // Animated move using degrees
-void moveServoDegrees(uint8_t servo, uint16_t degrees, uint16_t duration) {
+void moveServoDegrees(uint8_t servo, uint16_t degrees, uint32_t duration) {
   uint16_t pulse = degreesToPulse(servo, degrees);
   moveServoAnimated(servo, pulse, duration);
 }
@@ -483,7 +487,7 @@ void updateSequence() {
     memcpy_P(&kf, &currentSequence[i], sizeof(Keyframe));
 
     // Time not reached yet — stop scanning (frames are in ascending order)
-    if (elapsed < kf.time) break;
+    if (elapsed < (uint32_t)kf.time * timeMultiplier) break;
 
     // End marker check (time-gated: only reached when elapsed >= end marker time)
     if (kf.servo == SEQUENCE_END_MARKER_SERVO) {
@@ -498,8 +502,8 @@ void updateSequence() {
       return;
     }
 
-    // Trigger this keyframe
-    moveServoDegrees(kf.servo, kf.degrees, kf.duration);
+    // Trigger this keyframe (scale duration by timeMultiplier)
+    moveServoDegrees(kf.servo, kf.degrees, (uint32_t)kf.duration * timeMultiplier);
     lastTriggeredKeyframe = i + 1;
   }
 }
@@ -517,7 +521,7 @@ void updateSpeedSequence() {
     memcpy_P(&sf, &currentSpeedSeq[i], sizeof(SpeedFrame));
 
     // Time not reached yet — stop scanning (frames are in ascending order)
-    if (elapsed < sf.time) break;
+    if (elapsed < (uint32_t)sf.time * timeMultiplier) break;
 
     // End marker check (time-gated: only reached when elapsed >= end marker time)
     if (sf.servo == SEQUENCE_END_MARKER_SERVO) {
@@ -538,8 +542,8 @@ void updateSpeedSequence() {
       return;
     }
 
-    // Trigger regular speed frame
-    rampServoSpeed(sf.servo, sf.speed, sf.rampMs);
+    // Trigger regular speed frame (scale ramp duration by timeMultiplier)
+    rampServoSpeed(sf.servo, sf.speed, (uint32_t)sf.rampMs * timeMultiplier);
     lastTriggeredSpeedFrame = i + 1;
   }
 }
@@ -616,6 +620,7 @@ void setCalibration(uint8_t servo, uint16_t minVal, uint16_t maxVal) {
  */
 void showStatus() {
   Serial.println(F("\n--- Servo Status ---"));
+  Serial.print(F("Time multiplier: ")); Serial.println(timeMultiplier);
   for (uint8_t i = 0; i < NUM_SERVOS; i++) {
     Serial.print(F("Servo ")); Serial.print(i);
     Serial.print(servoConfig[i].continuous ? F(" [CONT]") : F(" [STD] "));
@@ -644,6 +649,7 @@ void showHelp() {
   Serial.println(F("PLAY <n> [LOOP]      Play sequence n"));
   Serial.println(F("SPLAY <n> [LOOP]     Speed sequence (continuous)"));
   Serial.println(F("STOP                 Stop wave/sequence"));
+  Serial.println(F("TIMESCALE <n>        Scale sequence timing n times slower"));
   Serial.println(F("MODE <n> STD|CONT    Set servo mode"));
   Serial.println(F("SPEED <n> <-100:100> Continuous servo speed"));
   Serial.println(F("STATUS           Show all servos"));
@@ -899,6 +905,17 @@ void processCommand(char* cmd) {
       setServoSpeed(servo, (int8_t)constrain(speed, -100, 100));
     } else {
       Serial.println(F("Use: SPEED <n> <-100 to 100>"));
+    }
+  }
+  else if (startsWith(cmd, "TIMESCALE")) {
+    int space = findChar(cmd, ' ', 0);
+    if (space > 0) {
+      uint16_t val = (uint16_t)atoi(cmd + space + 1);
+      if (val < 1) val = 1;
+      timeMultiplier = val;
+      Serial.print(F("Time multiplier set to ")); Serial.println(timeMultiplier);
+    } else {
+      Serial.print(F("TIMESCALE: ")); Serial.println(timeMultiplier);
     }
   }
   else if (startsWith(cmd, "STATUS")) {
