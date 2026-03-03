@@ -1,6 +1,5 @@
 {
   "database": "dolt",
   "backend": "dolt",
-  "dolt_mode": "server",
   "dolt_database": "adafruit_16_servo"
 }
