@@ -210,6 +210,36 @@ void moveAllProtectedWinchesPercent(bool percentUp, uint8_t percent, uint32_t du
   }
 }
 
+int8_t findPrimaryContinuousServo() {
+  for (uint8_t i = 0; i < NUM_SERVOS; i++) {
+    if (servoConfig[i].continuous) {
+      return i;
+    }
+  }
+  return -1;
+}
+
+bool setTestRigState(bool percentUp, uint8_t percent, int8_t speed, uint32_t duration, uint8_t& rotationServo) {
+  int8_t continuousServo = findPrimaryContinuousServo();
+  if (continuousServo < 0) {
+    Serial.println(F("No continuous rotation servo is configured"));
+    return false;
+  }
+
+  rotationServo = (uint8_t)continuousServo;
+  stopActivePatterns();
+
+  if (duration == 0) {
+    setAllProtectedWinchesPercent(percentUp, percent);
+    setServoSpeed(rotationServo, speed);
+  } else {
+    moveAllProtectedWinchesPercent(percentUp, percent, duration);
+    rampServoSpeed(rotationServo, speed, duration);
+  }
+
+  return true;
+}
+
 void servoOff(uint8_t servo) {
   if (servo >= NUM_SERVOS) return;
   if (!servoConfig[servo].allowRelease) {

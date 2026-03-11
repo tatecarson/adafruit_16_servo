@@ -52,6 +52,11 @@ Servo calibration and control system for the Adafruit PCA9685 16-channel PWM dri
 - `LMOVE <n> <pct> <ms>` command for eased percent-based moves
 - Percent commands reuse each servo's configured `totalDegrees`, which fits the 5-turn winch setup
 
+### 8. Combined Rig Manual Testing Command (Complete)
+- `RIG <UP|DOWN> <pct> <spd> [ms]` command for coordinated manual testing
+- Reuses protected winch targeting plus continuous-servo speed/ramp control
+- Intended for live testing outside of `PLAY` / `SPLAY`
+
 ## In Progress
 
 (None)
@@ -114,6 +119,10 @@ adafruit_16_servo/
 ## Git Commits (Winch Percent Control)
 
 21. `feat: add percent-of-travel commands for winch positioning`
+
+## Git Commits (Manual Rig Testing)
+
+22. `feat: add combined rig test command for winches and rotation`
 
 ## Future Features
 

@@ -35,6 +35,7 @@ Interactive Serial interface for the Adafruit PCA9685 16-channel PWM/Servo drive
 | `DOWN <n> <pct>` | `DOWN 0 30` | Move servo n to absolute percent down |
 | `ALLUP <pct> [ms]` | `ALLUP 100 3000` | Move all protected winch servos up together |
 | `ALLDOWN <pct> [ms]` | `ALLDOWN 25` | Move all protected winch servos down together |
+| `RIG <UP\|DOWN> <pct> <spd> [ms]` | `RIG UP 80 35 3000` | Manual test: move all protected winches and rotation together |
 | `P<n> <pulse>` | `P0 375` | Move servo n to raw pulse value |
 | `CAL <n> <min> <max>` | `CAL 0 160 580` | Set min/max pulse calibration |
 | `SWEEP <n>` | `SWEEP 0` | Test sweep through full range |
@@ -141,7 +142,11 @@ UP 0 80    # servo 0 further up, not relative
 DOWN 1 60  # servo 1 to 60% down
 ALLUP 100 3000   # all protected winches move fully up together over 3s
 ALLDOWN 25       # all protected winches move to 25% down
+RIG UP 80 35 3000    # winches go 80% up while rotation ramps to 35%
+RIG DOWN 20 -25      # winches go 20% down while rotation immediately runs reverse
 ```
+
+`RIG` is a manual integration-testing command. It targets all protected non-continuous winches plus the first configured continuous servo, and stays separate from `PLAY` / `SPLAY`.
 
 ## Release Safety
 

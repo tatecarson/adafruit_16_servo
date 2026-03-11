@@ -20,6 +20,7 @@ void showHelp() {
   Serial.println(F("DMOVE <n> <pct> <ms> Animated move to absolute percent down"));
   Serial.println(F("ALLUP <pct> [ms] Move all protected winches up together"));
   Serial.println(F("ALLDOWN <pct> [ms] Move all protected winches down together"));
+  Serial.println(F("RIG <UP|DOWN> <pct> <spd> [ms]  Winches + rotation test"));
   Serial.println(F("WAVE <s> <e> [spd] [off] [amp]  Start wave pattern"));
   Serial.println(F("PLAY <n> [LOOP]      Play sequence n"));
   Serial.println(F("SPLAY <n> [LOOP]     Speed sequence (continuous)"));
@@ -63,6 +64,34 @@ bool startsWith(const char* str, const char* prefix) {
 // Helper: check if string contains substring
 bool containsStr(const char* str, const char* substr) {
   return strstr(str, substr) != nullptr;
+}
+
+bool parseRigDirection(const char* cmd, bool& percentUp, uint8_t& percent, int8_t& speed, uint32_t& duration) {
+  char direction[6] = {0};
+  int speedIn = 0;
+  int parsed = sscanf(cmd, "RIG %5s %hhu %d %lu", direction, &percent, &speedIn, &duration);
+  if (parsed < 4) {
+    duration = 0;
+    parsed = sscanf(cmd, "RIG %5s %hhu %d", direction, &percent, &speedIn);
+  }
+
+  if (parsed < 3) {
+    Serial.println(F("Use: RIG <UP|DOWN> <pct> <spd> [ms]"));
+    return false;
+  }
+
+  if (strcmp(direction, "UP") == 0) {
+    percentUp = true;
+  } else if (strcmp(direction, "DOWN") == 0) {
+    percentUp = false;
+  } else {
+    Serial.println(F("RIG direction must be UP or DOWN"));
+    return false;
+  }
+
+  percent = constrain(percent, 0, 100);
+  speed = (int8_t)constrain(speedIn, -100, 100);
+  return true;
 }
 
 void processCommand(char* cmd) {
@@ -150,6 +179,30 @@ void processCommand(char* cmd) {
         Serial.print(percent);
         Serial.println(F("% down"));
       }
+    }
+  }
+  else if (startsWith(cmd, "RIG")) {
+    bool percentUp = false;
+    uint8_t percent = 0;
+    int8_t speed = 0;
+    uint32_t duration = 0;
+    uint8_t rotationServo = 0;
+    if (parseRigDirection(cmd, percentUp, percent, speed, duration) &&
+        setTestRigState(percentUp, percent, speed, duration, rotationServo)) {
+      Serial.print(F("Rig test: winches -> "));
+      Serial.print(percent);
+      Serial.print(percentUp ? F("% up, ") : F("% down, "));
+      Serial.print(F("rotation servo "));
+      Serial.print(rotationServo);
+      Serial.print(F(" -> "));
+      Serial.print(speed);
+      Serial.print(F("%"));
+      if (duration > 0) {
+        Serial.print(F(" over "));
+        Serial.print(duration);
+        Serial.print(F("ms"));
+      }
+      Serial.println();
     }
   }
   else if (startsWith(cmd, "PLAY")) {

@@ -20,6 +20,7 @@
     DMOVE <n> <pct> <ms> - Animated move to absolute percent down
     ALLUP <pct> [ms]   - Move all protected winch servos up together
     ALLDOWN <pct> [ms] - Move all protected winch servos down together
+    RIG <UP|DOWN> <pct> <spd> [ms] - Manual winch + rotation test
     WAVE <start> <end> [speed] [offset] [amp] - Wave pattern
     PLAY <n> [LOOP]    - Play keyframe sequence
     SPLAY <n> [LOOP]   - Play speed sequence (continuous servos)
