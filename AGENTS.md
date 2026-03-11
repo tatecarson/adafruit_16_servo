@@ -64,14 +64,14 @@ adafruit_16_servo/
 
 The sketch is organized in this order:
 
-1. **Includes & Globals** (lines 1-167): Library includes, `ServoConfig`/`ServoState`, wave + sequence globals
-2. **Setup** (lines 168-183): Serial init, default init, `applyCustomServoSetup()`, PWM init
-3. **Utility Functions** (lines 185-223): `degreesToPulse()`, `speedToPulse()`, easing functions
-4. **Servo Control** (lines 224-320): `setServoPulse()`, `setServoDegrees()`, `setServoSpeed()`, `moveServoAnimated()`
-5. **Animation Engines** (lines 321-475): `updateAnimations()`, `updateWave()`, `updateSequence()`
-6. **Commands** (lines 477-563): `sweepServo()`, `servoOff()`, `setCalibration()`, `showStatus()`, `showHelp()`
-7. **Command Parser** (lines 565-794): `processCommand()` - parses all Serial commands
-8. **Main Loop** (lines 796-819): Calls update functions, reads Serial
+1. **Includes & Globals** (lines 1-169): Library includes, `ServoConfig`/`ServoState`, wave + sequence globals
+2. **Setup** (lines 171-186): Serial init, default init, `applyCustomServoSetup()`, PWM init
+3. **Utility Functions** (lines 188-240): `degreesToPulse()`, percent conversion, `speedToPulse()`, easing functions
+4. **Servo Control** (lines 243-392): `setServoPulse()`, `setServoDegrees()`, `setServoPercent()`, `setServoSpeed()`, `moveServoAnimated()`
+5. **Animation Engines** (lines 394-548): `updateAnimations()`, `updateWave()`, `updateSequence()`
+6. **Commands** (lines 550-636): `sweepServo()`, `servoOff()`, `setCalibration()`, `showStatus()`, `showHelp()`
+7. **Command Parser** (lines 722-921): `processCommand()` - parses all Serial commands
+8. **Main Loop** (lines 948-971): Calls update functions, reads Serial
 
 ## State Model
 
@@ -86,6 +86,7 @@ Per-servo setup and runtime state is tracked in two arrays of structs:
 
 ### Basic Control
 - `S<n> <deg>` - Move servo to degrees (0-180)
+- `L<n> <pct>` - Move servo to percent of configured travel
 - `P<n> <pulse>` - Move servo to raw pulse value
 - `CAL <n> <min> <max>` - Set pulse calibration
 - `SWEEP <n>` - Test sweep full range
@@ -94,6 +95,7 @@ Per-servo setup and runtime state is tracked in two arrays of structs:
 
 ### Animation
 - `MOVE <n> <deg> <ms>` - Smooth eased movement
+- `LMOVE <n> <pct> <ms>` - Smooth eased move to percent of travel
 - `WAVE <s> <e> [spd] [off] [amp]` - Sine wave pattern across servos
 - `PLAY <n> [LOOP]` - Play keyframe sequence
 - `STOP` - Stop all animations

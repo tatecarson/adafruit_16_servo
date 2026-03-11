@@ -12,6 +12,8 @@
     CENTER <n>     - Move servo n to center (90 degrees)
     OFF <n>        - Turn off servo n
     MOVE <n> <deg> <ms> - Animated move with easing
+    L<n> <pct>     - Move servo n to percent of total travel
+    LMOVE <n> <pct> <ms> - Animated move to percent of travel
     WAVE <start> <end> [speed] [offset] [amp] - Wave pattern
     PLAY <n> [LOOP]    - Play keyframe sequence
     SPLAY <n> [LOOP]   - Play speed sequence (continuous servos)
@@ -189,6 +191,12 @@ uint16_t degreesToPulse(uint8_t servo, uint16_t degrees) {
   return map(degrees, 0, maxDeg, servoConfig[servo].minPulse, servoConfig[servo].maxPulse);
 }
 
+// Convert a percentage of the configured servo travel to degrees.
+uint16_t percentToDegrees(uint8_t servo, uint8_t percent) {
+  percent = constrain(percent, 0, 100);
+  return ((uint32_t)servoConfig[servo].totalDegrees * percent) / 100;
+}
+
 // Convert speed (-100 to 100) to pulse for continuous servo
 /**
  * Convert a signed speed (-100..100) into the calibrated PWM pulse for a servo.
@@ -364,6 +372,24 @@ void moveServoAnimated(uint8_t servo, uint16_t targetPulse, uint32_t duration) {
 void moveServoDegrees(uint8_t servo, uint16_t degrees, uint32_t duration) {
   uint16_t pulse = degreesToPulse(servo, degrees);
   moveServoAnimated(servo, pulse, duration);
+}
+
+// Move servo to a percentage of its configured total travel.
+void setServoPercent(uint8_t servo, uint8_t percent) {
+  if (servo >= NUM_SERVOS) {
+    Serial.println(F("Invalid servo"));
+    return;
+  }
+  setServoDegrees(servo, percentToDegrees(servo, percent));
+}
+
+// Animated move using percentage of travel.
+void moveServoPercent(uint8_t servo, uint8_t percent, uint32_t duration) {
+  if (servo >= NUM_SERVOS) {
+    Serial.println(F("Invalid servo"));
+    return;
+  }
+  moveServoDegrees(servo, percentToDegrees(servo, percent), duration);
 }
 
 /**
@@ -645,6 +671,8 @@ void showHelp() {
   Serial.println(F("CENTER <n>       Move to center (90 deg) / stop"));
   Serial.println(F("OFF <n>          Turn off servo n"));
   Serial.println(F("MOVE <n> <deg> <ms>  Animated move (eased)"));
+  Serial.println(F("L<n> <pct>       Move servo n to percent of travel"));
+  Serial.println(F("LMOVE <n> <pct> <ms> Animated move to percent"));
   Serial.println(F("WAVE <s> <e> [spd] [off] [amp]  Start wave pattern"));
   Serial.println(F("PLAY <n> [LOOP]      Play sequence n"));
   Serial.println(F("SPLAY <n> [LOOP]     Speed sequence (continuous)"));
@@ -702,6 +730,18 @@ void processCommand(char* cmd) {
       uint8_t servo = atoi(cmd + 1);
       uint16_t degrees = atoi(cmd + space + 1);
       setServoDegrees(servo, degrees);
+    }
+  }
+  else if (cmd[0] == 'L' && cmd[1] >= '0' && cmd[1] <= '9') {
+    // L<n> <percent> - move servo to percentage of total travel
+    int space = findChar(cmd, ' ', 0);
+    if (space > 1) {
+      uint8_t servo = atoi(cmd + 1);
+      uint8_t percent = atoi(cmd + space + 1);
+      setServoPercent(servo, percent);
+      Serial.print(F("Servo ")); Serial.print(servo);
+      Serial.print(F(" -> ")); Serial.print(percent);
+      Serial.println(F("% of travel"));
     }
   }
   else if (startsWith(cmd, "PLAY")) {
@@ -816,6 +856,21 @@ void processCommand(char* cmd) {
       Serial.print(F("Moving servo ")); Serial.print(servo);
       Serial.print(F(" to ")); Serial.print(degrees);
       Serial.print(F(" deg over ")); Serial.print(duration);
+      Serial.println(F("ms"));
+    }
+  }
+  else if (startsWith(cmd, "LMOVE")) {
+    // LMOVE <servo> <percent> <duration_ms>
+    int space1 = findChar(cmd, ' ', 6);
+    int space2 = (space1 > 0) ? findChar(cmd, ' ', space1 + 1) : -1;
+    if (space1 > 0 && space2 > 0) {
+      uint8_t servo = atoi(cmd + 6);
+      uint8_t percent = atoi(cmd + space1 + 1);
+      uint16_t duration = atoi(cmd + space2 + 1);
+      moveServoPercent(servo, percent, duration);
+      Serial.print(F("Moving servo ")); Serial.print(servo);
+      Serial.print(F(" to ")); Serial.print(percent);
+      Serial.print(F("% over ")); Serial.print(duration);
       Serial.println(F("ms"));
     }
   }

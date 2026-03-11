@@ -30,6 +30,7 @@ Interactive Serial interface for the Adafruit PCA9685 16-channel PWM/Servo drive
 | Command | Example | Description |
 |---------|---------|-------------|
 | `S<n> <deg>` | `S0 90` | Move servo n to degrees (0-180) |
+| `L<n> <pct>` | `L0 10` | Move servo n to percent of total travel |
 | `P<n> <pulse>` | `P0 375` | Move servo n to raw pulse value |
 | `CAL <n> <min> <max>` | `CAL 0 160 580` | Set min/max pulse calibration |
 | `SWEEP <n>` | `SWEEP 0` | Test sweep through full range |
@@ -43,6 +44,7 @@ Interactive Serial interface for the Adafruit PCA9685 16-channel PWM/Servo drive
 | Command | Example | Description |
 |---------|---------|-------------|
 | `MOVE <n> <deg> <ms>` | `MOVE 0 180 2000` | Smooth animated move with easing |
+| `LMOVE <n> <pct> <ms>` | `LMOVE 0 90 3000` | Smooth animated move to percent of travel |
 | `WAVE <s> <e> [spd] [off] [amp]` | `WAVE 0 7 50 30 90` | Start sine wave pattern |
 | `PLAY <n> [LOOP]` | `PLAY 1 LOOP` | Play keyframe sequence |
 | `SPLAY <n> [LOOP]` | `SPLAY 1 LOOP` | Play speed sequence (continuous servos) |
@@ -98,6 +100,20 @@ const SpeedFrame speedSeq1[] PROGMEM = {
 - `speed`: Target speed (-100 to 100, 0 = stop)
 - `time_ms`: When to start this speed change (ms from sequence start)
 - `ramp_ms`: How long to ramp to the target speed (0 = instant)
+
+## Percent-of-Travel Commands
+
+For winches or other long-travel servos, relative positioning is often easier than working in raw degrees.
+
+```
+L0 10
+L1 50
+LMOVE 2 90 3000
+```
+
+- `0` = minimum calibrated position
+- `100` = maximum calibrated position
+- Intermediate percentages are mapped linearly across the servo's configured `totalDegrees`
 
 ## Calibration Guide
 

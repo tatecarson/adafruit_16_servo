@@ -47,6 +47,11 @@ Servo calibration and control system for the Adafruit PCA9685 16-channel PWM dri
 - Moved sequence data to PROGMEM (flash) to save RAM
 - Added helper functions for C-style string operations (`trimString`, `toUpperCase`, `findChar`, `startsWith`, `containsStr`)
 
+### 7. Percent-of-Travel Commands (Complete)
+- `L<n> <pct>` command for moving a servo to a relative percentage of its configured travel
+- `LMOVE <n> <pct> <ms>` command for eased percent-based moves
+- Percent commands reuse each servo's configured `totalDegrees`, which fits the 5-turn winch setup
+
 ## In Progress
 
 (None)
@@ -105,6 +110,10 @@ adafruit_16_servo/
 ## Git Commits (Code Review Fixes)
 
 20. `refactor: replace String with fixed char buffer and add PROGMEM for sequences`
+
+## Git Commits (Winch Percent Control)
+
+21. `feat: add percent-of-travel commands for winch positioning`
 
 ## Future Features
 

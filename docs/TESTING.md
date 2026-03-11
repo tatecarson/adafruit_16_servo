@@ -207,6 +207,25 @@
 
 ---
 
+## Verification Note: Percent-of-Travel Commands
+
+Manual hardware verification for the new `L<n> <pct>` and `LMOVE <n> <pct> <ms>` commands has not been run in this session.
+
+Build verification completed:
+- [x] `arduino-cli compile --fqbn arduino:avr:uno .`
+
+Suggested manual checks when hardware is connected:
+1. `L0 0`
+2. `L0 50`
+3. `L0 100`
+4. `LMOVE 0 25 2000`
+
+Expected:
+- Servo moves to minimum, midpoint, and maximum calibrated travel
+- `LMOVE` performs a smooth eased transition
+
+---
+
 ## Test 14: Speed Sequences (Continuous Servos)
 
 **Setup:** Servos 0 and 1 must be configured as continuous (already hardcoded in sketch)
@@ -369,4 +388,3 @@ Sequence data moved to PROGMEM saves ~114 bytes RAM.
 | 0 | SM-S4303R | Continuous | 295 | `CAL 0 150 440` then `MODE 0 CONT` |
 | 1 | SM-S4303R | Continuous | 295 | `CAL 1 150 440` then `MODE 1 CONT` |
 | 4 | Hitec HS-805BB+ | Standard | N/A | `CAL 4 150 450` |
-
