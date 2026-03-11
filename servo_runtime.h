@@ -105,3 +105,8 @@ void setCalibration(uint8_t servo, uint16_t minVal, uint16_t maxVal);
 void showStatus();
 void showHelp();
 void processCommand(char* cmd);
+void updateAnimations();
+void updateSpeedRamps();
+void updateWave();
+void updateSequence();
+void updateSpeedSequence();
