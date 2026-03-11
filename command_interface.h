@@ -1,5 +1,7 @@
 #pragma once
 
+#include "servo_runtime.h"
+
 void showHelp() {
   Serial.println(F("\n--- Commands ---"));
   Serial.println(F("S<n> <deg>       Move servo n to degrees"));
