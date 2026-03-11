@@ -39,16 +39,19 @@ inline void applyCustomServoSetup(ServoConfig servoConfig[], ServoState servoSta
   servoConfig[0].minPulse = 110;
   servoConfig[0].maxPulse = 480;
   servoConfig[0].totalDegrees = 1800;
+  servoConfig[0].allowRelease = false;
 
   // Servo 1: goBILDA 2000 Series 5-Turn Dual Mode (25-2 Torque) - standard
   servoConfig[1].minPulse = 110;
   servoConfig[1].maxPulse = 480;
   servoConfig[1].totalDegrees = 1800;
+  servoConfig[1].allowRelease = false;
 
   // Servo 2: goBILDA 2000 Series 5-Turn Dual Mode (25-2 Torque) - standard
   servoConfig[2].minPulse = 110;
   servoConfig[2].maxPulse = 480;
   servoConfig[2].totalDegrees = 1800;
+  servoConfig[2].allowRelease = false;
 
   // Servo 3: goBILDA 2000 Series 5-Turn Dual Mode (25-3 Speed) - continuous
   servoConfig[3].minPulse = 186;

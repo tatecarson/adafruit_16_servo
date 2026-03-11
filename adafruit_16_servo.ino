@@ -14,6 +14,12 @@
     MOVE <n> <deg> <ms> - Animated move with easing
     L<n> <pct>     - Move servo n to percent of total travel
     LMOVE <n> <pct> <ms> - Animated move to percent of travel
+    UP <n> <pct>   - Move servo n to absolute percent up
+    DOWN <n> <pct> - Move servo n to absolute percent down
+    UMOVE <n> <pct> <ms> - Animated move to absolute percent up
+    DMOVE <n> <pct> <ms> - Animated move to absolute percent down
+    ALLUP <pct> [ms]   - Move all protected winch servos up together
+    ALLDOWN <pct> [ms] - Move all protected winch servos down together
     WAVE <start> <end> [speed] [offset] [amp] - Wave pattern
     PLAY <n> [LOOP]    - Play keyframe sequence
     SPLAY <n> [LOOP]   - Play speed sequence (continuous servos)
@@ -38,6 +44,7 @@ struct ServoConfig {
   bool continuous;      // true = continuous rotation servo
   uint16_t stopPulse;   // Center/stop pulse for continuous servos
   uint16_t totalDegrees; // Total range in degrees (180 for standard, 1800 for 5-turn, etc.)
+  bool allowRelease;    // false = block OFF and require explicit RELEASE command
 };
 
 struct ServoState {
@@ -132,6 +139,7 @@ void initServoDefaults() {
     servoConfig[i].continuous = false;
     servoConfig[i].stopPulse = defaultCenter;
     servoConfig[i].totalDegrees = 180;
+    servoConfig[i].allowRelease = true;
 
     servoState[i].posPulse = defaultCenter;
     servoState[i].targetPulse = defaultCenter;
@@ -195,6 +203,12 @@ uint16_t degreesToPulse(uint8_t servo, uint16_t degrees) {
 uint16_t percentToDegrees(uint8_t servo, uint8_t percent) {
   percent = constrain(percent, 0, 100);
   return ((uint32_t)servoConfig[servo].totalDegrees * percent) / 100;
+}
+
+// Convert an absolute "up" percentage to degrees assuming 0% = fully down, 100% = fully up.
+uint16_t upPercentToDegrees(uint8_t servo, uint8_t percentUp) {
+  percentUp = constrain(percentUp, 0, 100);
+  return percentToDegrees(servo, 100 - percentUp);
 }
 
 // Convert speed (-100 to 100) to pulse for continuous servo
@@ -374,12 +388,20 @@ void moveServoDegrees(uint8_t servo, uint16_t degrees, uint32_t duration) {
   moveServoAnimated(servo, pulse, duration);
 }
 
+void stopActivePatterns() {
+  waveActive = false;
+  sequenceActive = false;
+  speedSeqActive = false;
+}
+
 // Move servo to a percentage of its configured total travel.
 void setServoPercent(uint8_t servo, uint8_t percent) {
   if (servo >= NUM_SERVOS) {
     Serial.println(F("Invalid servo"));
     return;
   }
+  stopActivePatterns();
+  servoState[servo].moving = false;
   setServoDegrees(servo, percentToDegrees(servo, percent));
 }
 
@@ -389,7 +411,54 @@ void moveServoPercent(uint8_t servo, uint8_t percent, uint32_t duration) {
     Serial.println(F("Invalid servo"));
     return;
   }
+  stopActivePatterns();
   moveServoDegrees(servo, percentToDegrees(servo, percent), duration);
+}
+
+// Move servo to an absolute percent up (0 = fully down, 100 = fully up).
+void setServoPercentUp(uint8_t servo, uint8_t percentUp) {
+  if (servo >= NUM_SERVOS) {
+    Serial.println(F("Invalid servo"));
+    return;
+  }
+  stopActivePatterns();
+  servoState[servo].moving = false;
+  setServoDegrees(servo, upPercentToDegrees(servo, percentUp));
+}
+
+// Animated move using an absolute percent up (0 = fully down, 100 = fully up).
+void moveServoPercentUp(uint8_t servo, uint8_t percentUp, uint32_t duration) {
+  if (servo >= NUM_SERVOS) {
+    Serial.println(F("Invalid servo"));
+    return;
+  }
+  stopActivePatterns();
+  moveServoDegrees(servo, upPercentToDegrees(servo, percentUp), duration);
+}
+
+void setAllProtectedWinchesPercent(bool percentUp, uint8_t percent) {
+  stopActivePatterns();
+  for (uint8_t i = 0; i < NUM_SERVOS; i++) {
+    if (servoConfig[i].continuous || servoConfig[i].allowRelease) continue;
+    servoState[i].moving = false;
+    if (percentUp) {
+      setServoDegrees(i, upPercentToDegrees(i, percent));
+    } else {
+      setServoDegrees(i, percentToDegrees(i, percent));
+    }
+  }
+}
+
+void moveAllProtectedWinchesPercent(bool percentUp, uint8_t percent, uint32_t duration) {
+  stopActivePatterns();
+  for (uint8_t i = 0; i < NUM_SERVOS; i++) {
+    if (servoConfig[i].continuous || servoConfig[i].allowRelease) continue;
+    if (percentUp) {
+      moveServoDegrees(i, upPercentToDegrees(i, percent), duration);
+    } else {
+      moveServoDegrees(i, percentToDegrees(i, percent), duration);
+    }
+  }
 }
 
 /**
@@ -611,8 +680,20 @@ void sweepServo(uint8_t servo) {
 // Turn off a servo (stop sending PWM)
 void servoOff(uint8_t servo) {
   if (servo >= NUM_SERVOS) return;
+  if (!servoConfig[servo].allowRelease) {
+    Serial.print(F("Servo ")); Serial.print(servo);
+    Serial.println(F(" is release-protected; use RELEASE <n> to intentionally drop it"));
+    return;
+  }
   pwm.setPWM(servo, 0, 0);
   Serial.print(F("Servo ")); Serial.print(servo); Serial.println(F(" off"));
+}
+
+// Explicitly release a servo by stopping PWM even if OFF is protected.
+void releaseServo(uint8_t servo) {
+  if (servo >= NUM_SERVOS) return;
+  pwm.setPWM(servo, 0, 0);
+  Serial.print(F("Servo ")); Serial.print(servo); Serial.println(F(" released"));
 }
 
 /**
@@ -669,10 +750,17 @@ void showHelp() {
   Serial.println(F("CAL <n> <min> <max>  Set calibration"));
   Serial.println(F("SWEEP <n>        Test sweep servo n"));
   Serial.println(F("CENTER <n>       Move to center (90 deg) / stop"));
-  Serial.println(F("OFF <n>          Turn off servo n"));
+  Serial.println(F("OFF <n>          Turn off servo n (blocked on protected winches)"));
+  Serial.println(F("RELEASE <n>      Force-release servo n"));
   Serial.println(F("MOVE <n> <deg> <ms>  Animated move (eased)"));
   Serial.println(F("L<n> <pct>       Move servo n to percent of travel"));
   Serial.println(F("LMOVE <n> <pct> <ms> Animated move to percent"));
+  Serial.println(F("UP <n> <pct>     Move servo n to absolute percent up"));
+  Serial.println(F("DOWN <n> <pct>   Move servo n to absolute percent down"));
+  Serial.println(F("UMOVE <n> <pct> <ms> Animated move to absolute percent up"));
+  Serial.println(F("DMOVE <n> <pct> <ms> Animated move to absolute percent down"));
+  Serial.println(F("ALLUP <pct> [ms] Move all protected winches up together"));
+  Serial.println(F("ALLDOWN <pct> [ms] Move all protected winches down together"));
   Serial.println(F("WAVE <s> <e> [spd] [off] [amp]  Start wave pattern"));
   Serial.println(F("PLAY <n> [LOOP]      Play sequence n"));
   Serial.println(F("SPLAY <n> [LOOP]     Speed sequence (continuous)"));
@@ -742,6 +830,74 @@ void processCommand(char* cmd) {
       Serial.print(F("Servo ")); Serial.print(servo);
       Serial.print(F(" -> ")); Serial.print(percent);
       Serial.println(F("% of travel"));
+    }
+  }
+  else if (startsWith(cmd, "UP")) {
+    // UP <servo> <percent>
+    int space1 = findChar(cmd, ' ', 3);
+    if (space1 > 0) {
+      uint8_t servo = atoi(cmd + 3);
+      uint8_t percent = atoi(cmd + space1 + 1);
+      setServoPercentUp(servo, percent);
+      Serial.print(F("Servo ")); Serial.print(servo);
+      Serial.print(F(" -> ")); Serial.print(percent);
+      Serial.println(F("% up"));
+    }
+  }
+  else if (startsWith(cmd, "DOWN")) {
+    // DOWN <servo> <percent>
+    int space1 = findChar(cmd, ' ', 5);
+    if (space1 > 0) {
+      uint8_t servo = atoi(cmd + 5);
+      uint8_t percent = atoi(cmd + space1 + 1);
+      setServoPercent(servo, percent);
+      Serial.print(F("Servo ")); Serial.print(servo);
+      Serial.print(F(" -> ")); Serial.print(percent);
+      Serial.println(F("% down"));
+    }
+  }
+  else if (startsWith(cmd, "ALLUP")) {
+    // ALLUP <percent> [duration_ms]
+    int space1 = findChar(cmd, ' ', 0);
+    int space2 = (space1 > 0) ? findChar(cmd, ' ', space1 + 1) : -1;
+    if (space1 > 0) {
+      uint8_t percent = atoi(cmd + space1 + 1);
+      if (space2 > 0) {
+        uint16_t duration = atoi(cmd + space2 + 1);
+        moveAllProtectedWinchesPercent(true, percent, duration);
+        Serial.print(F("Moving all protected winches to "));
+        Serial.print(percent);
+        Serial.print(F("% up over "));
+        Serial.print(duration);
+        Serial.println(F("ms"));
+      } else {
+        setAllProtectedWinchesPercent(true, percent);
+        Serial.print(F("All protected winches -> "));
+        Serial.print(percent);
+        Serial.println(F("% up"));
+      }
+    }
+  }
+  else if (startsWith(cmd, "ALLDOWN")) {
+    // ALLDOWN <percent> [duration_ms]
+    int space1 = findChar(cmd, ' ', 0);
+    int space2 = (space1 > 0) ? findChar(cmd, ' ', space1 + 1) : -1;
+    if (space1 > 0) {
+      uint8_t percent = atoi(cmd + space1 + 1);
+      if (space2 > 0) {
+        uint16_t duration = atoi(cmd + space2 + 1);
+        moveAllProtectedWinchesPercent(false, percent, duration);
+        Serial.print(F("Moving all protected winches to "));
+        Serial.print(percent);
+        Serial.print(F("% down over "));
+        Serial.print(duration);
+        Serial.println(F("ms"));
+      } else {
+        setAllProtectedWinchesPercent(false, percent);
+        Serial.print(F("All protected winches -> "));
+        Serial.print(percent);
+        Serial.println(F("% down"));
+      }
     }
   }
   else if (startsWith(cmd, "PLAY")) {
@@ -842,6 +998,13 @@ void processCommand(char* cmd) {
       servoOff(servo);
     }
   }
+  else if (startsWith(cmd, "RELEASE")) {
+    int space = findChar(cmd, ' ', 0);
+    if (space > 0) {
+      uint8_t servo = atoi(cmd + space + 1);
+      releaseServo(servo);
+    }
+  }
   else if (startsWith(cmd, "MOVE") || startsWith(cmd, "M ")) {
     // MOVE <servo> <degrees> <duration_ms>
     // or M <servo> <degrees> <duration_ms>
@@ -871,6 +1034,36 @@ void processCommand(char* cmd) {
       Serial.print(F("Moving servo ")); Serial.print(servo);
       Serial.print(F(" to ")); Serial.print(percent);
       Serial.print(F("% over ")); Serial.print(duration);
+      Serial.println(F("ms"));
+    }
+  }
+  else if (startsWith(cmd, "UMOVE")) {
+    // UMOVE <servo> <percent> <duration_ms>
+    int space1 = findChar(cmd, ' ', 6);
+    int space2 = (space1 > 0) ? findChar(cmd, ' ', space1 + 1) : -1;
+    if (space1 > 0 && space2 > 0) {
+      uint8_t servo = atoi(cmd + 6);
+      uint8_t percent = atoi(cmd + space1 + 1);
+      uint16_t duration = atoi(cmd + space2 + 1);
+      moveServoPercentUp(servo, percent, duration);
+      Serial.print(F("Moving servo ")); Serial.print(servo);
+      Serial.print(F(" to ")); Serial.print(percent);
+      Serial.print(F("% up over ")); Serial.print(duration);
+      Serial.println(F("ms"));
+    }
+  }
+  else if (startsWith(cmd, "DMOVE")) {
+    // DMOVE <servo> <percent> <duration_ms>
+    int space1 = findChar(cmd, ' ', 6);
+    int space2 = (space1 > 0) ? findChar(cmd, ' ', space1 + 1) : -1;
+    if (space1 > 0 && space2 > 0) {
+      uint8_t servo = atoi(cmd + 6);
+      uint8_t percent = atoi(cmd + space1 + 1);
+      uint16_t duration = atoi(cmd + space2 + 1);
+      moveServoPercent(servo, percent, duration);
+      Serial.print(F("Moving servo ")); Serial.print(servo);
+      Serial.print(F(" to ")); Serial.print(percent);
+      Serial.print(F("% down over ")); Serial.print(duration);
       Serial.println(F("ms"));
     }
   }

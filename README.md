@@ -31,11 +31,16 @@ Interactive Serial interface for the Adafruit PCA9685 16-channel PWM/Servo drive
 |---------|---------|-------------|
 | `S<n> <deg>` | `S0 90` | Move servo n to degrees (0-180) |
 | `L<n> <pct>` | `L0 10` | Move servo n to percent of total travel |
+| `UP <n> <pct>` | `UP 0 80` | Move servo n to absolute percent up |
+| `DOWN <n> <pct>` | `DOWN 0 30` | Move servo n to absolute percent down |
+| `ALLUP <pct> [ms]` | `ALLUP 100 3000` | Move all protected winch servos up together |
+| `ALLDOWN <pct> [ms]` | `ALLDOWN 25` | Move all protected winch servos down together |
 | `P<n> <pulse>` | `P0 375` | Move servo n to raw pulse value |
 | `CAL <n> <min> <max>` | `CAL 0 160 580` | Set min/max pulse calibration |
 | `SWEEP <n>` | `SWEEP 0` | Test sweep through full range |
 | `CENTER <n>` | `CENTER 0` | Move servo to center (90°) |
-| `OFF <n>` | `OFF 0` | Stop sending PWM signal |
+| `OFF <n>` | `OFF 0` | Stop sending PWM signal; blocked on protected winches |
+| `RELEASE <n>` | `RELEASE 0` | Force-release a servo by stopping PWM |
 | `STATUS` | `STATUS` | Show all servo calibrations |
 | `HELP` | `HELP` | Show available commands |
 
@@ -45,6 +50,8 @@ Interactive Serial interface for the Adafruit PCA9685 16-channel PWM/Servo drive
 |---------|---------|-------------|
 | `MOVE <n> <deg> <ms>` | `MOVE 0 180 2000` | Smooth animated move with easing |
 | `LMOVE <n> <pct> <ms>` | `LMOVE 0 90 3000` | Smooth animated move to percent of travel |
+| `UMOVE <n> <pct> <ms>` | `UMOVE 0 80 3000` | Smooth animated move to absolute percent up |
+| `DMOVE <n> <pct> <ms>` | `DMOVE 0 30 3000` | Smooth animated move to absolute percent down |
 | `WAVE <s> <e> [spd] [off] [amp]` | `WAVE 0 7 50 30 90` | Start sine wave pattern |
 | `PLAY <n> [LOOP]` | `PLAY 1 LOOP` | Play keyframe sequence |
 | `SPLAY <n> [LOOP]` | `SPLAY 1 LOOP` | Play speed sequence (continuous servos) |
@@ -103,17 +110,51 @@ const SpeedFrame speedSeq1[] PROGMEM = {
 
 ## Percent-of-Travel Commands
 
-For winches or other long-travel servos, relative positioning is often easier than working in raw degrees.
+For winches or other long-travel servos, percentage commands are often easier than working in raw degrees.
 
 ```
 L0 10
 L1 50
 LMOVE 2 90 3000
+UP 0 80
+DOWN 1 25
+UMOVE 2 90 3000
+ALLUP 100 3000
+ALLDOWN 20
 ```
 
 - `0` = minimum calibrated position
 - `100` = maximum calibrated position
 - Intermediate percentages are mapped linearly across the servo's configured `totalDegrees`
+
+For winches, the more explicit commands are usually better:
+
+- `DOWN <n> <pct>` treats `0` as fully up/retracted and `100` as fully down/lowered
+- `UP <n> <pct>` treats `0` as fully down/lowered and `100` as fully up/retracted
+- `UMOVE` and `DMOVE` are the animated versions of those absolute commands
+
+Examples:
+
+```text
+UP 0 30    # servo 0 to 30% up
+UP 0 80    # servo 0 further up, not relative
+DOWN 1 60  # servo 1 to 60% down
+ALLUP 100 3000   # all protected winches move fully up together over 3s
+ALLDOWN 25       # all protected winches move to 25% down
+```
+
+## Release Safety
+
+The configured winch servos are release-protected. For those channels, `OFF <n>` will not disable holding torque.
+
+Use:
+
+```text
+OFF 0       # blocked on protected winches
+RELEASE 0   # intentionally releases the winch
+```
+
+This avoids accidental drops when testing commands.
 
 ## Calibration Guide
 
