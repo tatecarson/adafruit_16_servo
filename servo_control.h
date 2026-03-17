@@ -57,7 +57,8 @@ float easeInOutCubic(float t) {
 // Linear interpolation with easing
 uint16_t lerpEased(uint16_t start, uint16_t end, float progress) {
   float easedProgress = easeInOutCubic(progress);
-  return start + (uint16_t)((float)(end - start) * easedProgress);
+  float delta = (float)((int32_t)end - (int32_t)start);
+  return (uint16_t)((float)start + (delta * easedProgress));
 }
 
 void setServoPulse(uint8_t servo, uint16_t pulse) {
