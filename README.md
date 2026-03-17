@@ -54,6 +54,7 @@ Interactive Serial interface for the Adafruit PCA9685 16-channel PWM/Servo drive
 | `WAVE <s> <e> [spd] [off] [amp]` | `WAVE 0 2 50 30 90` | Start sine wave pattern on positional servos in the range |
 | `PLAY <n> [LOOP]` | `PLAY 1 LOOP` | Play keyframe sequence |
 | `SPLAY <n> [LOOP]` | `SPLAY 1 LOOP` | Play speed sequence (continuous servos) |
+| `RUN <n> [LOOP]` | `RUN 1 LOOP` | Run a chained program made from existing `PLAY`/`SPLAY` sequences |
 | `STOP` | `STOP` | Stop all active motion and sequences |
 | `STOP <n>` | `STOP 0` | Stop and hold one servo at its current position |
 | `MODE <n> STD\|CONT` | `MODE 2 CONT` | Set servo to standard or continuous |
@@ -107,6 +108,41 @@ const SpeedFrame speedSeq1[] PROGMEM = {
 - `speed`: Target speed (-100 to 100, 0 = stop)
 - `time_ms`: When to start this speed change (ms from sequence start)
 - `ramp_ms`: How long to ramp to the target speed (0 = instant)
+
+### Chained Programs
+
+Programs let you stitch existing `PLAY` and `SPLAY` sequences into a longer-running show:
+
+```text
+RUN 1        # Run program 1 once
+RUN 1 LOOP   # Loop program 1 continuously
+STOP         # Stop the active program
+```
+
+In `sequence_setup.h`, programs define independent position and speed tracks that start from the same `RUN` command:
+
+```cpp
+const ProgramSequenceStep program1PositionTrack[] PROGMEM = {
+  {2, 2},
+  {4, 4},
+};
+
+const ProgramSequenceStep program1SpeedTrack[] PROGMEM = {
+  {1, 1},
+};
+
+const SequenceProgramDefinition program1 = {
+  program1PositionTrack,
+  sizeof(program1PositionTrack) / sizeof(program1PositionTrack[0]),
+  program1SpeedTrack,
+  sizeof(program1SpeedTrack) / sizeof(program1SpeedTrack[0]),
+};
+```
+
+- `positionSteps`: `PLAY` sequence IDs for the winch/positional track
+- `speedSteps`: `SPLAY` sequence IDs for the continuous-rotation track
+- `repeatCount`: How many times to run that track step before advancing
+- `RUN 1 LOOP` makes both tracks loop independently, so rotation can continue while the positional track changes sequences
 
 ## Percent-of-Travel Commands
 

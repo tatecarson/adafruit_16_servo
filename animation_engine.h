@@ -145,3 +145,92 @@ void updateSpeedSequence() {
     lastTriggeredSpeedFrame = i + 1;
   }
 }
+
+bool startNextProgramPositionStep() {
+  if (currentProgram == nullptr || currentProgram->positionSteps == nullptr || currentProgram->positionLength == 0) {
+    programPositionDone = true;
+    return false;
+  }
+
+  while (true) {
+    if (currentProgramPositionStepIndex >= currentProgram->positionLength) {
+      if (!programLoop) {
+        programPositionDone = true;
+        return false;
+      }
+      currentProgramPositionStepIndex = 0;
+      currentProgramPositionIteration = 0;
+      Serial.println(F("Program position track looping"));
+    }
+
+    ProgramSequenceStep step;
+    memcpy_P(&step, &currentProgram->positionSteps[currentProgramPositionStepIndex], sizeof(ProgramSequenceStep));
+    uint16_t repeatCount = step.repeatCount < 1 ? 1 : step.repeatCount;
+    if (currentProgramPositionIteration >= repeatCount) {
+      currentProgramPositionStepIndex++;
+      currentProgramPositionIteration = 0;
+      continue;
+    }
+
+    if (!startPositionSequence(step.sequenceNumber, false, true)) {
+      programPositionDone = true;
+      return false;
+    }
+
+    currentProgramPositionIteration++;
+    programPositionDone = false;
+    return true;
+  }
+}
+
+bool startNextProgramSpeedStep() {
+  if (currentProgram == nullptr || currentProgram->speedSteps == nullptr || currentProgram->speedLength == 0) {
+    programSpeedDone = true;
+    return false;
+  }
+
+  while (true) {
+    if (currentProgramSpeedStepIndex >= currentProgram->speedLength) {
+      if (!programLoop) {
+        programSpeedDone = true;
+        return false;
+      }
+      currentProgramSpeedStepIndex = 0;
+      currentProgramSpeedIteration = 0;
+      Serial.println(F("Program speed track looping"));
+    }
+
+    ProgramSequenceStep step;
+    memcpy_P(&step, &currentProgram->speedSteps[currentProgramSpeedStepIndex], sizeof(ProgramSequenceStep));
+    uint16_t repeatCount = step.repeatCount < 1 ? 1 : step.repeatCount;
+    if (currentProgramSpeedIteration >= repeatCount) {
+      currentProgramSpeedStepIndex++;
+      currentProgramSpeedIteration = 0;
+      continue;
+    }
+
+    if (!startSpeedSequence(step.sequenceNumber, false, true)) {
+      programSpeedDone = true;
+      return false;
+    }
+
+    currentProgramSpeedIteration++;
+    programSpeedDone = false;
+    return true;
+  }
+}
+
+void updateSequenceProgram() {
+  if (!programActive) return;
+  if (!sequenceActive && !programPositionDone) {
+    startNextProgramPositionStep();
+  }
+  if (!speedSeqActive && !programSpeedDone) {
+    startNextProgramSpeedStep();
+  }
+
+  if (!sequenceActive && !speedSeqActive && programPositionDone && programSpeedDone) {
+    programActive = false;
+    Serial.println(F("Program complete"));
+  }
+}

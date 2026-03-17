@@ -49,6 +49,18 @@ struct SpeedFrame {
   uint16_t rampMs;
 };
 
+struct ProgramSequenceStep {
+  uint8_t sequenceNumber;
+  uint16_t repeatCount;
+};
+
+struct SequenceProgramDefinition {
+  const ProgramSequenceStep* positionSteps;
+  uint8_t positionLength;
+  const ProgramSequenceStep* speedSteps;
+  uint8_t speedLength;
+};
+
 extern Adafruit_PWMServoDriver pwm;
 
 extern ServoConfig servoConfig[NUM_SERVOS];
@@ -79,6 +91,16 @@ extern uint8_t currentSpeedSeqLength;
 extern unsigned long speedSeqStartTime;
 extern uint8_t lastTriggeredSpeedFrame;
 
+extern bool programActive;
+extern bool programLoop;
+extern const SequenceProgramDefinition* currentProgram;
+extern bool programPositionDone;
+extern bool programSpeedDone;
+extern uint8_t currentProgramPositionStepIndex;
+extern uint16_t currentProgramPositionIteration;
+extern uint8_t currentProgramSpeedStepIndex;
+extern uint16_t currentProgramSpeedIteration;
+
 void initServoDefaults();
 
 uint16_t degreesToPulse(uint8_t servo, uint16_t degrees);
@@ -106,6 +128,10 @@ void moveServoPercentUp(uint8_t servo, uint8_t percentUp, uint32_t duration);
 void setAllProtectedWinchesPercent(bool percentUp, uint8_t percent);
 void moveAllProtectedWinchesPercent(bool percentUp, uint8_t percent, uint32_t duration);
 void setTestPulse(uint16_t pulse);
+bool startPositionSequence(uint8_t seqNum, bool loop, bool announce);
+bool startSpeedSequence(uint8_t seqNum, bool loop, bool announce);
+bool startSequenceProgram(uint8_t programNum, bool loop);
+void updateSequenceProgram();
 void servoOff(uint8_t servo);
 void releaseServo(uint8_t servo);
 

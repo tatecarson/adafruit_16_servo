@@ -18,6 +18,7 @@ Servo calibration and control system for the Adafruit PCA9685 16-channel PWM dri
 - **MOVE command** - Animated movement: `MOVE 0 180 2000` (servo 0 to 180° over 2 seconds)
 - **WAVE command** - Sine wave patterns across servo groups: `WAVE 0 7 50 30 90`
 - **Keyframe sequences** - Pre-programmed choreography with `PLAY 1 LOOP`
+- **Chained programs** - Back-to-back `PLAY` / `SPLAY` sequence programs with `RUN 1 LOOP`
 - **STOP command** - Halts all animations globally, or `STOP <n>` halts one servo immediately
 
 ### 3. Continuous Servo Mode (Complete)

@@ -374,7 +374,28 @@ Sequence: servo 3 (continuous) ramps to 50%, stops, reverses, stops.
 
 ---
 
-## 22. TIMESCALE with sequences
+## 22. RUN 1 LOOP — Chained long-form program
+
+Program: parallel position and rotation tracks intended for longer unattended playback.
+
+**Commands:**
+1. `RUN 1 LOOP`
+2. Observe at least two step transitions
+3. `STOP`
+
+**Expected:**
+- Program starts both the positional track and the rotation track from one command
+- When a positional sequence completes, the next programmed positional sequence starts without manual input
+- The rotation track continues independently while the positional track advances
+- Track looping keeps long-form playback running until `STOP`
+- `STOP` halts both tracks/program playback
+
+**Result:**
+- [ ] Pass
+
+---
+
+## 23. TIMESCALE with sequences
 
 **Commands:**
 1. `TIMESCALE 2`

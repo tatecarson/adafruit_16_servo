@@ -168,6 +168,7 @@ void stopActivePatterns() {
   waveActive = false;
   sequenceActive = false;
   speedSeqActive = false;
+  programActive = false;
 }
 
 void clearServoStop(uint8_t servo) {

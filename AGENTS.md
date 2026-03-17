@@ -97,6 +97,7 @@ Per-servo setup and runtime state is tracked in two arrays of structs:
 - `LMOVE <n> <pct> <ms>` - Smooth eased move to percent of travel
 - `WAVE <s> <e> [spd] [off] [amp]` - Sine wave pattern across servos
 - `PLAY <n> [LOOP]` - Play keyframe sequence
+- `RUN <n> [LOOP]` - Run a chained program of sequences
 - `STOP` - Stop all animations
 
 ### Continuous Servo Mode

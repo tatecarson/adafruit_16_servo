@@ -175,6 +175,41 @@ inline bool selectPositionSequence(uint8_t seqNum, const Keyframe*& outSeq, uint
   return false;
 }
 
+// --- Chained sequence programs ---
+//
+// Programs stitch together existing PLAY / SPLAY sequences so longer-running
+// shows can be assembled without duplicating frame data.
+//
+// Per-track step structure:
+//   { sequenceNumber, repeatCount }
+// - sequenceNumber: the existing PLAY or SPLAY ID to trigger
+// - repeatCount: number of consecutive times to run that sequence (minimum 1)
+const ProgramSequenceStep program1PositionTrack[] PROGMEM = {
+  {2, 2},   // Slow raise/lower twice
+  {3, 1},   // Sweep the tilt around the ring
+  {4, 4},   // Gentle bob for a while
+  {5, 6},   // Rolling wave tilt for longer texture
+};
+
+const ProgramSequenceStep program1SpeedTrack[] PROGMEM = {
+  {1, 1},   // Rotation sequence loops independently while the position track runs
+};
+
+const SequenceProgramDefinition program1 = {
+  program1PositionTrack,
+  sizeof(program1PositionTrack) / sizeof(program1PositionTrack[0]),
+  program1SpeedTrack,
+  sizeof(program1SpeedTrack) / sizeof(program1SpeedTrack[0]),
+};
+
+inline bool selectSequenceProgram(uint8_t programNum, const SequenceProgramDefinition*& outProgram) {
+  if (programNum == 1) {
+    outProgram = &program1;
+    return true;
+  }
+  return false;
+}
+
 // --- Speed (continuous) sequences ---
 
 // Example speed sequence 1:

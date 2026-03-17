@@ -25,6 +25,7 @@
       WAVE <start> <end> [speed] [offset] [amp] - Wave pattern
       PLAY <n> [LOOP]    - Play keyframe sequence
       SPLAY <n> [LOOP]   - Play speed sequence (continuous servos)
+      RUN <n> [LOOP]     - Run a chained program of sequences
       STOP [n]           - Stop all motion or hold one servo
       MODE <n> STD|CONT  - Set servo mode (standard/continuous)
       ROTATE <spd>       - Set installation rotation speed
@@ -78,6 +79,17 @@ const SpeedFrame* currentSpeedSeq = nullptr;
 uint8_t currentSpeedSeqLength = 0;
 unsigned long speedSeqStartTime = 0;
 uint8_t lastTriggeredSpeedFrame = 0;
+
+// Chained program playback state
+bool programActive = false;
+bool programLoop = false;
+const SequenceProgramDefinition* currentProgram = nullptr;
+bool programPositionDone = true;
+bool programSpeedDone = true;
+uint8_t currentProgramPositionStepIndex = 0;
+uint16_t currentProgramPositionIteration = 0;
+uint8_t currentProgramSpeedStepIndex = 0;
+uint16_t currentProgramSpeedIteration = 0;
 
 // Default calibration values
 #define DEFAULT_MIN 150
@@ -154,6 +166,7 @@ void loop() {
   updateWave();
   updateSequence();
   updateSpeedSequence();
+  updateSequenceProgram();
 
   // Read serial input into fixed buffer
   while (Serial.available()) {
