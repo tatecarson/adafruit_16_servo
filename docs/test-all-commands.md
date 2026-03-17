@@ -17,26 +17,11 @@ Assumes servo 0-2 are standard winches (reverseDir configured), servo 3 is conti
 - Servo 3: [CONT] with stop=298
 
 **Result:**
-- [ ] Pass
+- [x] Pass
 
 ---
 
-## 2. CENTER
-
-**Commands:**
-1. `CENTER 0` — standard servo goes to midpoint of travel
-2. `CENTER 3` — continuous servo stops (goes to stopPulse)
-
-**Expected:**
-- Servo 0 moves to 900 degrees (midpoint of 1800)
-- Servo 3 stops spinning (if it was moving)
-
-**Result:**
-- [ ] Pass
-
----
-
-## 3. OFF and RELEASE (protection check)
+## 2. OFF and RELEASE (protection check)
 
 **Commands:**
 1. `OFF 0` — should be BLOCKED (servo 0 is release-protected)
@@ -55,7 +40,7 @@ Assumes servo 0-2 are standard winches (reverseDir configured), servo 3 is conti
 
 ---
 
-## 4. ROTATE
+## 3. ROTATE
 
 **Commands:**
 1. `ROTATE 0` — stop

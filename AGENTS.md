@@ -90,7 +90,6 @@ Per-servo setup and runtime state is tracked in two arrays of structs:
 - `P<n> <pulse>` - Move servo to raw pulse value
 - `CAL <n> <min> <max>` - Set pulse calibration
 - `SWEEP <n>` - Test sweep full range
-- `CENTER <n>` - Move to 90° (or stop continuous servo)
 - `OFF <n>` - Stop sending PWM
 
 ### Animation

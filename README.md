@@ -38,7 +38,6 @@ Interactive Serial interface for the Adafruit PCA9685 16-channel PWM/Servo drive
 | `P<n> <pulse>` | `P0 375` | Move servo n to raw pulse value |
 | `CAL <n> <min> <max>` | `CAL 0 160 580` | Set min/max pulse calibration |
 | `SWEEP <n>` | `SWEEP 0` | Test sweep through full range |
-| `CENTER <n>` | `CENTER 0` | Move servo to center (90°) |
 | `OFF <n>` | `OFF 0` | Stop sending PWM signal; blocked on protected winches |
 | `RELEASE <n>` | `RELEASE 0` | Force-release a servo by stopping PWM |
 | `STATUS` | `STATUS` | Show all servo calibrations |
@@ -229,7 +228,7 @@ Continuous rotation servos spin instead of moving to positions. The PWM signal c
 
 3. **Stop the servo**
    ```
-   CENTER 2       # Same as ROTATE 0 when servo 2 is continuous
+   ROTATE 0       # Stop the primary continuous rotation servo
    STOP           # Stops all continuous servos
    ```
 

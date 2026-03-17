@@ -10,7 +10,7 @@ Servo calibration and control system for the Adafruit PCA9685 16-channel PWM dri
 ### 1. Core Servo Control
 - Serial command interface at 9600 baud
 - Per-servo calibration (min/max pulse values)
-- Commands: `S<n> <deg>`, `P<n> <pulse>`, `CAL`, `SWEEP`, `CENTER`, `OFF`, `STATUS`, `HELP`
+- Commands: `S<n> <deg>`, `P<n> <pulse>`, `CAL`, `SWEEP`, `OFF`, `STATUS`, `HELP`
 
 ### 2. Animation System (Tasks 1-9 Complete)
 - **Easing functions** - Smooth ease-in-out cubic motion
@@ -25,7 +25,6 @@ Servo calibration and control system for the Adafruit PCA9685 16-channel PWM dri
 - `MODE <n> STD` - Switches back to standard positional servo
 - `ROTATE <spd>` - Installation rotation control for the configured continuous servo
 - `STOP` - Also stops all continuous servos
-- `CENTER <n>` - Stops a continuous servo (sends stop pulse)
 - STATUS shows `[CONT]` or `[STD]` for each servo
 
 ### 4. Speed Sequences for Continuous Servos (Complete)

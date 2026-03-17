@@ -10,7 +10,6 @@
       P<n> <pulse>   - Move servo n to raw pulse (150-600)
       CAL <n> <min> <max> - Set servo n calibration (pulse values)
       SWEEP <n>      - Test sweep servo n
-      CENTER <n>     - Move servo n to center (90 degrees)
       OFF <n>        - Turn off servo n
       RELEASE <n>    - Force-release servo n
       STATUS         - Show all servo calibrations

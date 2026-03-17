@@ -9,7 +9,6 @@ void showHelp() {
   Serial.println(F("P<n> <pulse>          Move servo n to raw pulse"));
   Serial.println(F("CAL <n> <min> <max>   Set calibration"));
   Serial.println(F("SWEEP <n>             Test sweep servo n"));
-  Serial.println(F("CENTER <n>            Move to center (90 deg) / stop"));
   Serial.println(F("OFF <n>               Turn off servo n (blocked on protected winches)"));
   Serial.println(F("RELEASE <n>           Force-release servo n"));
   Serial.println(F("STATUS                Show all servos"));
@@ -264,20 +263,6 @@ void processCommand(char* cmd) {
     if (space > 0) {
       uint8_t servo = atoi(cmd + space + 1);
       sweepServo(servo);
-    }
-  }
-  else if (startsWith(cmd, "CENTER")) {
-    int space = findChar(cmd, ' ', 0);
-    if (space > 0) {
-      uint8_t servo = atoi(cmd + space + 1);
-      if (servo < NUM_SERVOS && servoConfig[servo].continuous) {
-        pwm.setPWM(servo, 0, servoConfig[servo].stopPulse);
-        servoState[servo].posPulse = servoConfig[servo].stopPulse;
-        Serial.print(F("Servo ")); Serial.print(servo);
-        Serial.println(F(" stopped"));
-      } else {
-        setServoDegrees(servo, servoConfig[servo].totalDegrees / 2);
-      }
     }
   }
   else if (startsWith(cmd, "OFF")) {

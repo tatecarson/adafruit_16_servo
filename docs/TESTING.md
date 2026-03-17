@@ -88,18 +88,6 @@ Current installation reference from `servo_setup.h`:
 
 ---
 
-## Test 6: Center Command
-
-**Command:** `CENTER 0`
-
-**Expected:** Servo moves to the midpoint of its configured travel
-
-**Result:**
-- [ ] Not tested yet on current hardware
-- [ ] Fail - describe:
-
----
-
 ## Test 7: Sweep
 
 **Command:** `SWEEP 0`
