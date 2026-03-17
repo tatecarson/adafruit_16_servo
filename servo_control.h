@@ -14,7 +14,13 @@ uint16_t degreesToPulse(uint8_t servo, uint16_t degrees) {
 // Convert a percentage of the configured servo travel to degrees.
 uint16_t percentToDegrees(uint8_t servo, uint8_t percent) {
   percent = constrain(percent, 0, 100);
-  return ((uint32_t)servoConfig[servo].totalDegrees * percent) / 100;
+  uint16_t lo = servoConfig[servo].upDegrees;
+  uint16_t hi = servoConfig[servo].downDegrees;
+  if (hi == 0) hi = servoConfig[servo].totalDegrees;
+  if (servoConfig[servo].reverseDir) {
+    return hi - (uint16_t)(((uint32_t)(hi - lo) * percent) / 100);
+  }
+  return lo + (uint16_t)(((uint32_t)(hi - lo) * percent) / 100);
 }
 
 // Convert an absolute "up" percentage to degrees assuming 0% = fully down, 100% = fully up.

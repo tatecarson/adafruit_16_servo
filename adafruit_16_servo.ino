@@ -102,6 +102,9 @@ void initServoDefaults() {
     servoConfig[i].stopPulse = defaultCenter;
     servoConfig[i].totalDegrees = 180;
     servoConfig[i].allowRelease = true;
+    servoConfig[i].upDegrees = 0;
+    servoConfig[i].downDegrees = 0;
+    servoConfig[i].reverseDir = false;
 
     servoState[i].posPulse = defaultCenter;
     servoState[i].targetPulse = defaultCenter;

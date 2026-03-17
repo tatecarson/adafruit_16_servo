@@ -13,6 +13,9 @@ struct ServoConfig {
   uint16_t stopPulse;
   uint16_t totalDegrees;
   bool allowRelease;
+  uint16_t upDegrees;    // degree position for fully-up (default 0)
+  uint16_t downDegrees;  // degree position for fully-down (0 = use totalDegrees)
+  bool reverseDir;       // true = higher degrees is physically UP
 };
 
 struct ServoState {

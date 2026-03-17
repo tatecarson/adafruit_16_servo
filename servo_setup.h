@@ -40,18 +40,24 @@ inline void applyCustomServoSetup(ServoConfig servoConfig[], ServoState servoSta
   servoConfig[0].maxPulse = 480;
   servoConfig[0].totalDegrees = 1800;
   servoConfig[0].allowRelease = false;
+  servoConfig[0].downDegrees = 1500;  // TODO: calibrate actual winch travel
+  servoConfig[0].reverseDir = true;
 
   // Servo 1: goBILDA 2000 Series 5-Turn Dual Mode (25-2 Torque) - standard
   servoConfig[1].minPulse = 110;
   servoConfig[1].maxPulse = 480;
   servoConfig[1].totalDegrees = 1800;
   servoConfig[1].allowRelease = false;
+  servoConfig[1].downDegrees = 1500;  // TODO: calibrate actual winch travel
+  servoConfig[1].reverseDir = true;
 
   // Servo 2: goBILDA 2000 Series 5-Turn Dual Mode (25-2 Torque) - standard
   servoConfig[2].minPulse = 110;
   servoConfig[2].maxPulse = 480;
   servoConfig[2].totalDegrees = 1800;
   servoConfig[2].allowRelease = false;
+  servoConfig[2].downDegrees = 1500;  // TODO: calibrate actual winch travel
+  servoConfig[2].reverseDir = false;
 
   // Servo 3: goBILDA 2000 Series 5-Turn Dual Mode (25-3 Speed) - continuous
   servoConfig[3].minPulse = 186;
@@ -59,10 +65,6 @@ inline void applyCustomServoSetup(ServoConfig servoConfig[], ServoState servoSta
   servoConfig[3].continuous = true;
   servoConfig[3].stopPulse = 298;
   servoState[3].posPulse = 298;
-
-  // Servo 4: Hitec HS-805BB+ mega quarter scale (standard positional)
-  servoConfig[4].minPulse = 150;
-  servoConfig[4].maxPulse = 450;
 
   // === END CUSTOM CALIBRATIONS ===
 }
