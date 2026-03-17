@@ -381,6 +381,26 @@ Sequence data moved to PROGMEM saves ~114 bytes RAM.
 
 ---
 
+## Test 17: Combined Rig Manual Command
+
+**Commands:**
+1. `RIG UP 80 35 3000`
+2. Observe all protected winches move together while the rotation servo ramps up
+3. `RIG DOWN 20 -25`
+4. Observe all protected winches move together while the rotation servo reverses immediately
+5. `STOP`
+
+**Expected:**
+- All protected winch servos move to the requested shared position
+- The first configured continuous servo changes speed from the same command
+- Optional duration ramps the rotation servo over the same interval as the winch move
+- `STOP` halts any remaining winch motion and returns continuous servos to stop
+
+**Result:**
+- [ ] Not tested yet on hardware
+
+---
+
 ## Servo Calibration Notes
 
 | Channel | Servo Model | Type | Stop Pulse | Calibration |

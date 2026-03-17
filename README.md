@@ -30,11 +30,11 @@ Interactive Serial interface for the Adafruit PCA9685 16-channel PWM/Servo drive
 | Command | Example | Description |
 |---------|---------|-------------|
 | `S<n> <deg>` | `S0 90` | Move servo n to degrees (0-180) |
-| `L<n> <pct>` | `L0 10` | Move servo n to percent of total travel |
 | `UP <n> <pct>` | `UP 0 80` | Move servo n to absolute percent up |
 | `DOWN <n> <pct>` | `DOWN 0 30` | Move servo n to absolute percent down |
 | `ALLUP <pct> [ms]` | `ALLUP 100 3000` | Move all protected winch servos up together |
 | `ALLDOWN <pct> [ms]` | `ALLDOWN 25` | Move all protected winch servos down together |
+| `RIG <UP\|DOWN> <pct> <spd> [ms]` | `RIG UP 80 35 3000` | Manual test: move all protected winches and set rotation speed together |
 | `P<n> <pulse>` | `P0 375` | Move servo n to raw pulse value |
 | `CAL <n> <min> <max>` | `CAL 0 160 580` | Set min/max pulse calibration |
 | `SWEEP <n>` | `SWEEP 0` | Test sweep through full range |
@@ -49,15 +49,14 @@ Interactive Serial interface for the Adafruit PCA9685 16-channel PWM/Servo drive
 | Command | Example | Description |
 |---------|---------|-------------|
 | `MOVE <n> <deg> <ms>` | `MOVE 0 180 2000` | Smooth animated move with easing |
-| `LMOVE <n> <pct> <ms>` | `LMOVE 0 90 3000` | Smooth animated move to percent of travel |
 | `UMOVE <n> <pct> <ms>` | `UMOVE 0 80 3000` | Smooth animated move to absolute percent up |
 | `DMOVE <n> <pct> <ms>` | `DMOVE 0 30 3000` | Smooth animated move to absolute percent down |
 | `WAVE <s> <e> [spd] [off] [amp]` | `WAVE 0 7 50 30 90` | Start sine wave pattern |
 | `PLAY <n> [LOOP]` | `PLAY 1 LOOP` | Play keyframe sequence |
 | `SPLAY <n> [LOOP]` | `SPLAY 1 LOOP` | Play speed sequence (continuous servos) |
 | `STOP` | `STOP` | Stop wave or sequence |
-| `MODE <n> STD\|CONT` | `MODE 0 CONT` | Set servo to standard or continuous |
-| `SPEED <n> <spd>` | `SPEED 0 50` | Set continuous servo speed (-100 to 100) |
+| `MODE <n> STD\|CONT` | `MODE 2 CONT` | Set servo to standard or continuous |
+| `ROTATE <spd>` | `ROTATE 50` | Set installation rotation speed (-100 to 100) |
 
 ### Wave Parameters
 
@@ -112,13 +111,11 @@ const SpeedFrame speedSeq1[] PROGMEM = {
 
 For winches or other long-travel servos, percentage commands are often easier than working in raw degrees.
 
-```
-L0 10
-L1 50
-LMOVE 2 90 3000
+```text
 UP 0 80
 DOWN 1 25
 UMOVE 2 90 3000
+DMOVE 2 10 3000
 ALLUP 100 3000
 ALLDOWN 20
 ```
@@ -141,7 +138,20 @@ UP 0 80    # servo 0 further up, not relative
 DOWN 1 60  # servo 1 to 60% down
 ALLUP 100 3000   # all protected winches move fully up together over 3s
 ALLDOWN 25       # all protected winches move to 25% down
+RIG UP 80 35 3000    # winches go 80% up while rotation ramps to 35%
+RIG DOWN 20 -25      # winches go 20% down while rotation immediately runs reverse
 ```
+
+`RIG` is a manual integration-testing command. It targets all protected non-continuous winches plus the first configured continuous servo, and stays separate from `PLAY` / `SPLAY`.
+
+`RIG` parameters:
+
+- `UP` or `DOWN` chooses whether the shared winch target is interpreted as percent up or percent down
+- `<pct>` is the shared winch target position from `0` to `100`
+- `<spd>` is the rotation servo target speed from `-100` to `100`
+- `[ms]` is optional:
+  if omitted, the winches jump to position immediately and the rotation servo jumps to the target speed immediately
+  if provided, the winches move over that duration and the rotation servo ramps to the target speed over the same duration
 
 ## Release Safety
 
@@ -209,16 +219,16 @@ Continuous rotation servos spin instead of moving to positions. The PWM signal c
    MODE 0 CONT
    ```
 
-2. **Control speed** (-100 to 100, 0 = stop)
+2. **Control installation rotation** (-100 to 100, 0 = stop)
    ```
-   SPEED 0 50     # 50% speed forward
-   SPEED 0 -50    # 50% speed reverse
-   SPEED 0 0      # Stop
+   ROTATE 50      # 50% speed forward
+   ROTATE -50     # 50% speed reverse
+   ROTATE 0       # Stop
    ```
 
 3. **Stop the servo**
    ```
-   CENTER 0       # Same as SPEED 0 0
+   CENTER 2       # Same as ROTATE 0 when servo 2 is continuous
    STOP           # Stops all continuous servos
    ```
 
