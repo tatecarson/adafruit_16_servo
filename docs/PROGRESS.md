@@ -23,7 +23,7 @@ Servo calibration and control system for the Adafruit PCA9685 16-channel PWM dri
 ### 3. Continuous Servo Mode (Complete)
 - `MODE <n> CONT` - Marks a servo as continuous rotation
 - `MODE <n> STD` - Switches back to standard positional servo
-- `SPEED <n> <-100 to 100>` - Speed control command
+- `ROTATE <spd>` - Installation rotation control for the configured continuous servo
 - `STOP` - Also stops all continuous servos
 - `CENTER <n>` - Stops a continuous servo (sends stop pulse)
 - STATUS shows `[CONT]` or `[STD]` for each servo
@@ -48,9 +48,9 @@ Servo calibration and control system for the Adafruit PCA9685 16-channel PWM dri
 - Added helper functions for C-style string operations (`trimString`, `toUpperCase`, `findChar`, `startsWith`, `containsStr`)
 
 ### 7. Percent-of-Travel Commands (Complete)
-- `L<n> <pct>` command for moving a servo to a relative percentage of its configured travel
-- `LMOVE <n> <pct> <ms>` command for eased percent-based moves
-- Percent commands reuse each servo's configured `totalDegrees`, which fits the 5-turn winch setup
+- `UP <n> <pct>` / `DOWN <n> <pct>` for explicit installation-oriented winch positioning
+- `UMOVE <n> <pct> <ms>` / `DMOVE <n> <pct> <ms>` for eased directional percent moves
+- Directional percent commands still reuse each servo's configured `totalDegrees`, which fits the 5-turn winch setup
 
 ### 8. Combined Rig Manual Testing Command (Complete)
 - `RIG <UP|DOWN> <pct> <spd> [ms]` command for coordinated manual testing
@@ -123,6 +123,7 @@ adafruit_16_servo/
 ## Git Commits (Manual Rig Testing)
 
 22. `feat: add combined rig test command for winches and rotation`
+23. `refactor: clarify installation control commands`
 
 ## Future Features
 

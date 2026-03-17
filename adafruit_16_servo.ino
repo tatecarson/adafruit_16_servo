@@ -5,30 +5,32 @@
   ------> http://www.adafruit.com/products/815
 
   Serial Commands:
-    S<n> <pos>     - Move servo n to position (degrees, range per servo)
-    P<n> <pulse>   - Move servo n to raw pulse (150-600)
-    CAL <n> <min> <max> - Set servo n calibration (pulse values)
-    SWEEP <n>      - Test sweep servo n
-    CENTER <n>     - Move servo n to center (90 degrees)
-    OFF <n>        - Turn off servo n
-    MOVE <n> <deg> <ms> - Animated move with easing
-    L<n> <pct>     - Move servo n to percent of total travel
-    LMOVE <n> <pct> <ms> - Animated move to percent of travel
-    UP <n> <pct>   - Move servo n to absolute percent up
-    DOWN <n> <pct> - Move servo n to absolute percent down
-    UMOVE <n> <pct> <ms> - Animated move to absolute percent up
-    DMOVE <n> <pct> <ms> - Animated move to absolute percent down
-    ALLUP <pct> [ms]   - Move all protected winch servos up together
-    ALLDOWN <pct> [ms] - Move all protected winch servos down together
-    RIG <UP|DOWN> <pct> <spd> [ms] - Manual winch + rotation test
-    WAVE <start> <end> [speed] [offset] [amp] - Wave pattern
-    PLAY <n> [LOOP]    - Play keyframe sequence
-    SPLAY <n> [LOOP]   - Play speed sequence (continuous servos)
-    STOP               - Stop wave/sequence
-    MODE <n> STD|CONT  - Set servo mode (standard/continuous)
-    SPEED <n> <-100 to 100> - Set continuous servo speed
-    STATUS         - Show all servo calibrations
-    HELP           - Show commands
+    Testing / Calibration:
+      S<n> <pos>     - Move servo n to position (degrees, range per servo)
+      P<n> <pulse>   - Move servo n to raw pulse (150-600)
+      CAL <n> <min> <max> - Set servo n calibration (pulse values)
+      SWEEP <n>      - Test sweep servo n
+      CENTER <n>     - Move servo n to center (90 degrees)
+      OFF <n>        - Turn off servo n
+      RELEASE <n>    - Force-release servo n
+      STATUS         - Show all servo calibrations
+    Performance / Installation:
+      MOVE <n> <deg> <ms> - Animated move with easing
+      UP <n> <pct>   - Move servo n to absolute percent up
+      DOWN <n> <pct> - Move servo n to absolute percent down
+      UMOVE <n> <pct> <ms> - Animated move to absolute percent up
+      DMOVE <n> <pct> <ms> - Animated move to absolute percent down
+      ALLUP <pct> [ms]   - Move all protected winch servos up together
+      ALLDOWN <pct> [ms] - Move all protected winch servos down together
+      RIG <UP|DOWN> <pct> <spd> [ms] - Manual winch + rotation test
+      WAVE <start> <end> [speed] [offset] [amp] - Wave pattern
+      PLAY <n> [LOOP]    - Play keyframe sequence
+      SPLAY <n> [LOOP]   - Play speed sequence (continuous servos)
+      STOP               - Stop wave/sequence
+      MODE <n> STD|CONT  - Set servo mode (standard/continuous)
+      ROTATE <spd>       - Set installation rotation speed
+      TIMESCALE <n>      - Scale sequence timing n times slower
+      HELP               - Show commands
  ****************************************************/
 
 #include <Wire.h>
