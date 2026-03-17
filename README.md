@@ -54,7 +54,8 @@ Interactive Serial interface for the Adafruit PCA9685 16-channel PWM/Servo drive
 | `WAVE <s> <e> [spd] [off] [amp]` | `WAVE 0 7 50 30 90` | Start sine wave pattern |
 | `PLAY <n> [LOOP]` | `PLAY 1 LOOP` | Play keyframe sequence |
 | `SPLAY <n> [LOOP]` | `SPLAY 1 LOOP` | Play speed sequence (continuous servos) |
-| `STOP` | `STOP` | Stop wave or sequence |
+| `STOP` | `STOP` | Stop all active motion and sequences |
+| `STOP <n>` | `STOP 0` | Stop and hold one servo at its current position |
 | `MODE <n> STD\|CONT` | `MODE 2 CONT` | Set servo to standard or continuous |
 | `ROTATE <spd>` | `ROTATE 50` | Set installation rotation speed (-100 to 100) |
 

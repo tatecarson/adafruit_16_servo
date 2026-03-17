@@ -26,7 +26,7 @@ void showHelp() {
   Serial.println(F("WAVE <s> <e> [spd] [off] [amp]  Start wave pattern"));
   Serial.println(F("PLAY <n> [LOOP]       Play sequence n"));
   Serial.println(F("SPLAY <n> [LOOP]      Speed sequence (continuous)"));
-  Serial.println(F("STOP                  Stop wave/sequence"));
+  Serial.println(F("STOP [n]              Stop all motion or hold one servo"));
   Serial.println(F("TIMESCALE <n>         Scale sequence timing n times slower"));
   Serial.println(F("MODE <n> STD|CONT     Set servo mode"));
   Serial.println(F("ROTATE <spd>          Installation rotation speed"));
@@ -371,6 +371,13 @@ void processCommand(char* cmd) {
       Serial.print(F(" amp=")); Serial.println(waveAmplitude);
     }
   }
+  else if (startsWith(cmd, "STOP ")) {
+    int space = findChar(cmd, ' ', 0);
+    if (space > 0) {
+      uint8_t servo = atoi(cmd + space + 1);
+      stopServoNow(servo);
+    }
+  }
   else if (strcmp(cmd, "STOP") == 0 || strcmp(cmd, "STOP ALL") == 0) {
     waveActive = false;
     sequenceActive = false;
@@ -378,6 +385,7 @@ void processCommand(char* cmd) {
     for (uint8_t i = 0; i < NUM_SERVOS; i++) {
       servoState[i].moving = false;
       servoState[i].speedRamping = false;
+      servoState[i].stopped = false;
       if (servoConfig[i].continuous) {
         setServoSpeed(i, 0);
       }

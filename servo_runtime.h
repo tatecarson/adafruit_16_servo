@@ -17,6 +17,7 @@ struct ServoConfig {
 
 struct ServoState {
   uint16_t posPulse;
+  bool stopped;
 
   uint16_t targetPulse;
   uint16_t startPulse;
@@ -91,6 +92,8 @@ void rampServoSpeed(uint8_t servo, int8_t targetSpeed, uint32_t rampMs);
 void moveServoAnimated(uint8_t servo, uint16_t targetPulse, uint32_t duration);
 void moveServoDegrees(uint8_t servo, uint16_t degrees, uint32_t duration);
 void stopActivePatterns();
+void clearServoStop(uint8_t servo);
+void stopServoNow(uint8_t servo);
 void setServoPercent(uint8_t servo, uint8_t percent);
 void moveServoPercent(uint8_t servo, uint8_t percent, uint32_t duration);
 void setServoPercentUp(uint8_t servo, uint8_t percentUp);

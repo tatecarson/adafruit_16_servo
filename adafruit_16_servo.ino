@@ -26,7 +26,7 @@
       WAVE <start> <end> [speed] [offset] [amp] - Wave pattern
       PLAY <n> [LOOP]    - Play keyframe sequence
       SPLAY <n> [LOOP]   - Play speed sequence (continuous servos)
-      STOP               - Stop wave/sequence
+      STOP [n]           - Stop all motion or hold one servo
       MODE <n> STD|CONT  - Set servo mode (standard/continuous)
       ROTATE <spd>       - Set installation rotation speed
       TIMESCALE <n>      - Scale sequence timing n times slower

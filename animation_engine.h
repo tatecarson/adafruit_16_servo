@@ -6,7 +6,7 @@ void updateAnimations() {
   unsigned long now = millis();
 
   for (uint8_t i = 0; i < NUM_SERVOS; i++) {
-    if (!servoState[i].moving) continue;
+    if (servoState[i].stopped || !servoState[i].moving) continue;
 
     unsigned long elapsed = now - servoState[i].moveStartMs;
 
@@ -29,7 +29,7 @@ void updateSpeedRamps() {
   unsigned long now = millis();
 
   for (uint8_t i = 0; i < NUM_SERVOS; i++) {
-    if (!servoState[i].speedRamping) continue;
+    if (servoState[i].stopped || !servoState[i].speedRamping) continue;
 
     unsigned long elapsed = now - servoState[i].speedRampStartMs;
 
@@ -58,6 +58,7 @@ void updateWave() {
   unsigned long elapsed = millis() - waveStartTime;
 
   for (uint8_t i = waveStartServo; i <= waveEndServo; i++) {
+    if (servoState[i].stopped) continue;
     uint8_t servoIndex = i - waveStartServo;
     float phase = (float)(elapsed) / (float)(waveSpeed * 360 / 1000);
     phase += (float)(servoIndex * wavePhaseOffset) / 360.0f;
@@ -96,7 +97,9 @@ void updateSequence() {
       return;
     }
 
-    moveServoDegrees(kf.servo, kf.degrees, (uint32_t)kf.duration * timeMultiplier);
+    if (!servoState[kf.servo].stopped) {
+      moveServoDegrees(kf.servo, kf.degrees, (uint32_t)kf.duration * timeMultiplier);
+    }
     lastTriggeredKeyframe = i + 1;
   }
 }
@@ -129,7 +132,9 @@ void updateSpeedSequence() {
       return;
     }
 
-    rampServoSpeed(sf.servo, sf.speed, (uint32_t)sf.rampMs * timeMultiplier);
+    if (!servoState[sf.servo].stopped) {
+      rampServoSpeed(sf.servo, sf.speed, (uint32_t)sf.rampMs * timeMultiplier);
+    }
     lastTriggeredSpeedFrame = i + 1;
   }
 }

@@ -59,6 +59,7 @@ void setServoPulse(uint8_t servo, uint16_t pulse) {
     Serial.println(F("Invalid servo"));
     return;
   }
+  servoState[servo].stopped = false;
   pulse = constrain(pulse, servoConfig[servo].minPulse, servoConfig[servo].maxPulse);
   servoState[servo].posPulse = pulse;
   pwm.setPWM(servo, 0, pulse);
@@ -80,6 +81,7 @@ void setServoSpeed(uint8_t servo, int8_t speed) {
     Serial.println(F("Not a continuous servo (use MODE command)"));
     return;
   }
+  servoState[servo].stopped = false;
   uint16_t pulse = speedToPulse(servo, speed);
   servoState[servo].posPulse = pulse;
   pwm.setPWM(servo, 0, pulse);
@@ -97,6 +99,7 @@ void rampServoSpeed(uint8_t servo, int8_t targetSpeed, uint32_t rampMs) {
     Serial.println(F("Not a continuous servo"));
     return;
   }
+  servoState[servo].stopped = false;
 
   int8_t currentSpeed = 0;
   if (servoState[servo].posPulse != servoConfig[servo].stopPulse) {
@@ -127,6 +130,7 @@ void rampServoSpeed(uint8_t servo, int8_t targetSpeed, uint32_t rampMs) {
 
 void moveServoAnimated(uint8_t servo, uint16_t targetPulse, uint32_t duration) {
   if (servo >= NUM_SERVOS) return;
+  servoState[servo].stopped = false;
   targetPulse = constrain(targetPulse, servoConfig[servo].minPulse, servoConfig[servo].maxPulse);
 
   servoState[servo].startPulse = servoState[servo].posPulse;
@@ -147,12 +151,41 @@ void stopActivePatterns() {
   speedSeqActive = false;
 }
 
+void clearServoStop(uint8_t servo) {
+  if (servo >= NUM_SERVOS) return;
+  servoState[servo].stopped = false;
+}
+
+void stopServoNow(uint8_t servo) {
+  if (servo >= NUM_SERVOS) {
+    Serial.println(F("Invalid servo"));
+    return;
+  }
+
+  servoState[servo].moving = false;
+  servoState[servo].speedRamping = false;
+  servoState[servo].stopped = true;
+
+  if (servoConfig[servo].continuous) {
+    uint16_t pulse = servoConfig[servo].stopPulse;
+    servoState[servo].posPulse = pulse;
+    pwm.setPWM(servo, 0, pulse);
+    Serial.print(F("Servo ")); Serial.print(servo);
+    Serial.println(F(" stopped"));
+  } else {
+    pwm.setPWM(servo, 0, servoState[servo].posPulse);
+    Serial.print(F("Servo ")); Serial.print(servo);
+    Serial.println(F(" held"));
+  }
+}
+
 void setServoPercent(uint8_t servo, uint8_t percent) {
   if (servo >= NUM_SERVOS) {
     Serial.println(F("Invalid servo"));
     return;
   }
   stopActivePatterns();
+  clearServoStop(servo);
   servoState[servo].moving = false;
   setServoDegrees(servo, percentToDegrees(servo, percent));
 }
@@ -163,6 +196,7 @@ void moveServoPercent(uint8_t servo, uint8_t percent, uint32_t duration) {
     return;
   }
   stopActivePatterns();
+  clearServoStop(servo);
   moveServoDegrees(servo, percentToDegrees(servo, percent), duration);
 }
 
@@ -172,6 +206,7 @@ void setServoPercentUp(uint8_t servo, uint8_t percentUp) {
     return;
   }
   stopActivePatterns();
+  clearServoStop(servo);
   servoState[servo].moving = false;
   setServoDegrees(servo, upPercentToDegrees(servo, percentUp));
 }
@@ -182,6 +217,7 @@ void moveServoPercentUp(uint8_t servo, uint8_t percentUp, uint32_t duration) {
     return;
   }
   stopActivePatterns();
+  clearServoStop(servo);
   moveServoDegrees(servo, upPercentToDegrees(servo, percentUp), duration);
 }
 
@@ -189,6 +225,7 @@ void setAllProtectedWinchesPercent(bool percentUp, uint8_t percent) {
   stopActivePatterns();
   for (uint8_t i = 0; i < NUM_SERVOS; i++) {
     if (servoConfig[i].continuous || servoConfig[i].allowRelease) continue;
+    clearServoStop(i);
     servoState[i].moving = false;
     if (percentUp) {
       setServoDegrees(i, upPercentToDegrees(i, percent));
@@ -202,6 +239,7 @@ void moveAllProtectedWinchesPercent(bool percentUp, uint8_t percent, uint32_t du
   stopActivePatterns();
   for (uint8_t i = 0; i < NUM_SERVOS; i++) {
     if (servoConfig[i].continuous || servoConfig[i].allowRelease) continue;
+    clearServoStop(i);
     if (percentUp) {
       moveServoDegrees(i, upPercentToDegrees(i, percent), duration);
     } else {
@@ -228,6 +266,7 @@ bool setTestRigState(bool percentUp, uint8_t percent, int8_t speed, uint32_t dur
 
   rotationServo = (uint8_t)continuousServo;
   stopActivePatterns();
+  clearServoStop(rotationServo);
 
   if (duration == 0) {
     setAllProtectedWinchesPercent(percentUp, percent);
