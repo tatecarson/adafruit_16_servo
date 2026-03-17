@@ -57,7 +57,7 @@ inline void applyCustomServoSetup(ServoConfig servoConfig[], ServoState servoSta
   servoConfig[2].totalDegrees = 1800;
   servoConfig[2].allowRelease = false;
   servoConfig[2].downDegrees = 1500;  // TODO: calibrate actual winch travel
-  servoConfig[2].reverseDir = false;
+  servoConfig[2].reverseDir = true;
 
   // Servo 3: goBILDA 2000 Series 5-Turn Dual Mode (25-3 Speed) - continuous
   servoConfig[3].minPulse = 186;

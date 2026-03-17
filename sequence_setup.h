@@ -44,22 +44,20 @@ static const uint8_t SEQUENCE_END_MARKER_SERVO = 255;
 
 // --- Keyframe (positional) sequences ---
 
-// Example sequence 1:
-// - Multiple servos can overlap in time (moves are non-blocking).
-// - `degrees` are converted to pulses with per-servo calibration, so the same
-//   degrees may correspond to different absolute pulse widths per servo.
-// - Stored in PROGMEM to save RAM; use memcpy_P() to read.
+// Sequence 1: "Staggered sweep"
+// All servos sweep down, up, then to center with a slight stagger.
+// Stored in PROGMEM to save RAM; use memcpy_P() to read.
 const Keyframe sequence1[] PROGMEM = {
-  {0, 0, 0, 500},          // Servo 0 to 0° at t=0, over 500ms
-  {1, 0, 100, 500},        // Servo 1 to 0° at t=100ms
-  {2, 0, 200, 500},        // Servo 2 to 0° at t=200ms
-  {0, 1800, 1000, 500},    // Servo 0 to max at t=1s
-  {1, 1800, 1100, 500},
-  {2, 1800, 1200, 500},
-  {0, 900, 2000, 500},     // Return to center
-  {1, 900, 2100, 500},
-  {2, 900, 2200, 500},
-  {SEQUENCE_END_MARKER_SERVO, 0, 2700, 0}  // End marker
+  {0, 0, 0, 500},          // All servos to bottom, staggered
+  {1, 0, 100, 500},
+  {2, 0, 200, 500},
+  {0, 1500, 1000, 500},    // All servos to top, staggered
+  {1, 1500, 1100, 500},
+  {2, 1500, 1200, 500},
+  {0, 750, 2000, 500},     // Return to center
+  {1, 750, 2100, 500},
+  {2, 750, 2200, 500},
+  {SEQUENCE_END_MARKER_SERVO, 0, 2700, 0}
 };
 
 static const uint8_t sequence1Length = sizeof(sequence1) / sizeof(sequence1[0]);
@@ -67,9 +65,9 @@ static const uint8_t sequence1Length = sizeof(sequence1) / sizeof(sequence1[0]);
 // Sequence 2: "Slow raise and lower"
 // Raises entire ring level over 4s, holds 2s, lowers over 4s.
 const Keyframe sequence2[] PROGMEM = {
-  {0, 1800, 0, 4000},       // All three raise together over 4s
-  {1, 1800, 0, 4000},
-  {2, 1800, 0, 4000},
+  {0, 1500, 0, 4000},       // All three raise together over 4s
+  {1, 1500, 0, 4000},
+  {2, 1500, 0, 4000},
   {0, 0, 6000, 4000},       // Hold 2s, then lower over 4s
   {1, 0, 6000, 4000},
   {2, 0, 6000, 4000},
@@ -86,13 +84,13 @@ const Keyframe sequence3[] PROGMEM = {
   {1, 0, 0, 1000},
   {2, 0, 0, 1000},
   // Tilt toward servo 0
-  {0, 1200, 1500, 2000},
+  {0, 1000, 1500, 2000},
   // Level out, transition tilt to servo 1
   {0, 0, 4000, 2000},
-  {1, 1200, 4000, 2000},
+  {1, 1000, 4000, 2000},
   // Transition tilt to servo 2
   {1, 0, 6500, 2000},
-  {2, 1200, 6500, 2000},
+  {2, 1000, 6500, 2000},
   // Return to level
   {2, 0, 9000, 2000},
   {SEQUENCE_END_MARKER_SERVO, 0, 11000, 0}
@@ -103,15 +101,15 @@ static const uint8_t sequence3Length = sizeof(sequence3) / sizeof(sequence3[0]);
 // Sequence 4: "Gentle bob"
 // All winches oscillate low-to-mid — breathing/bobbing motion. Good for looping.
 const Keyframe sequence4[] PROGMEM = {
-  {0, 300, 0, 1500},        // Rise to ~1/6 height
-  {1, 300, 0, 1500},
-  {2, 300, 0, 1500},
-  {0, 900, 1500, 1500},     // Rise to mid
-  {1, 900, 1500, 1500},
-  {2, 900, 1500, 1500},
-  {0, 300, 3000, 1500},     // Back down
-  {1, 300, 3000, 1500},
-  {2, 300, 3000, 1500},
+  {0, 250, 0, 1500},        // Rise to ~1/6 height
+  {1, 250, 0, 1500},
+  {2, 250, 0, 1500},
+  {0, 750, 1500, 1500},     // Rise to mid
+  {1, 750, 1500, 1500},
+  {2, 750, 1500, 1500},
+  {0, 250, 3000, 1500},     // Back down
+  {1, 250, 3000, 1500},
+  {2, 250, 3000, 1500},
   {SEQUENCE_END_MARKER_SERVO, 0, 4500, 0}
 };
 
@@ -121,21 +119,21 @@ static const uint8_t sequence4Length = sizeof(sequence4) / sizeof(sequence4[0]);
 // Rolling wave — each winch takes turns as the high point. Best with LOOP.
 const Keyframe sequence5[] PROGMEM = {
   // Servo 0 leads up
-  {0, 1200, 0, 1500},
-  {1, 400, 0, 1500},
-  {2, 400, 0, 1500},
+  {0, 1000, 0, 1500},
+  {1, 300, 0, 1500},
+  {2, 300, 0, 1500},
   // Servo 1 takes over
-  {0, 400, 1500, 1500},
-  {1, 1200, 1500, 1500},
-  {2, 400, 1500, 1500},
+  {0, 300, 1500, 1500},
+  {1, 1000, 1500, 1500},
+  {2, 300, 1500, 1500},
   // Servo 2 takes over
-  {0, 400, 3000, 1500},
-  {1, 400, 3000, 1500},
-  {2, 1200, 3000, 1500},
+  {0, 300, 3000, 1500},
+  {1, 300, 3000, 1500},
+  {2, 1000, 3000, 1500},
   // Reset to start position for smooth loop
-  {0, 1200, 4500, 1500},
-  {1, 400, 4500, 1500},
-  {2, 400, 4500, 1500},
+  {0, 1000, 4500, 1500},
+  {1, 300, 4500, 1500},
+  {2, 300, 4500, 1500},
   {SEQUENCE_END_MARKER_SERVO, 0, 6000, 0}
 };
 
@@ -184,15 +182,11 @@ inline bool selectPositionSequence(uint8_t seqNum, const Keyframe*& outSeq, uint
 // - Uses per-servo min/max/stop calibration to translate `speed` into pulses.
 // - Stored in PROGMEM to save RAM; use memcpy_P() to read.
 const SpeedFrame speedSeq1[] PROGMEM = {
-  {0, 50, 0, 500},         // Servo 0 ramp to 50% over 500ms at t=0
-  {1, -50, 0, 500},        // Servo 1 ramp to -50% (opposite direction)
-  {0, 0, 3000, 500},       // Servo 0 ramp to stop at t=3s
-  {1, 0, 3000, 500},       // Servo 1 ramp to stop
-  {0, -50, 4000, 500},     // Reverse directions
-  {1, 50, 4000, 500},
-  {0, 0, 7000, 500},       // Stop
-  {1, 0, 7000, 500},
-  {SEQUENCE_END_MARKER_SERVO, 0, 7500, 0}  // End marker (triggers after last frame completes)
+  {3, 50, 0, 500},         // Servo 3 ramp to 50% over 500ms at t=0
+  {3, 0, 3000, 500},       // Ramp to stop at t=3s
+  {3, -50, 4000, 500},     // Reverse direction
+  {3, 0, 7000, 500},       // Stop
+  {SEQUENCE_END_MARKER_SERVO, 0, 7500, 0}
 };
 
 static const uint8_t speedSeq1Length = sizeof(speedSeq1) / sizeof(speedSeq1[0]);
