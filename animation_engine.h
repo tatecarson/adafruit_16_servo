@@ -56,16 +56,23 @@ void updateWave() {
   if (!waveActive) return;
 
   unsigned long elapsed = millis() - waveStartTime;
+  float cycleMs = (float)waveSpeed * 360.0f;
+  if (cycleMs < 1.0f) cycleMs = 1.0f;
 
   for (uint8_t i = waveStartServo; i <= waveEndServo; i++) {
-    if (servoState[i].stopped) continue;
+    if (servoState[i].stopped || servoConfig[i].continuous) continue;
     uint8_t servoIndex = i - waveStartServo;
-    float phase = (float)(elapsed) / (float)(waveSpeed * 360 / 1000);
+    uint16_t minDegrees = servoConfig[i].upDegrees;
+    uint16_t maxDegrees = servoConfig[i].downDegrees;
+    if (maxDegrees == 0) maxDegrees = servoConfig[i].totalDegrees;
+
+    float phase = (float)elapsed / cycleMs;
     phase += (float)(servoIndex * wavePhaseOffset) / 360.0f;
 
     float sineVal = sin(phase * 2.0f * PI);
-    float degrees = waveCenter + (sineVal * (float)waveAmplitude / 2.0f);
-    uint16_t pulse = degreesToPulse(i, (uint16_t)constrain(degrees, 0, servoConfig[i].totalDegrees));
+    float centerDegrees = ((float)minDegrees + (float)maxDegrees) / 2.0f;
+    float degrees = centerDegrees + (sineVal * (float)waveAmplitude / 2.0f);
+    uint16_t pulse = degreesToPulse(i, (uint16_t)constrain(degrees, minDegrees, maxDegrees));
 
     if (pulse != servoState[i].posPulse) {
       servoState[i].posPulse = pulse;
@@ -98,7 +105,7 @@ void updateSequence() {
     }
 
     if (!servoState[kf.servo].stopped) {
-      moveServoDegrees(kf.servo, kf.degrees, (uint32_t)kf.duration * timeMultiplier);
+      moveSequenceDegrees(kf.servo, kf.degrees, (uint32_t)kf.duration * timeMultiplier);
     }
     lastTriggeredKeyframe = i + 1;
   }

@@ -11,6 +11,13 @@ uint16_t degreesToPulse(uint8_t servo, uint16_t degrees) {
   return map(degrees, 0, maxDeg, servoConfig[servo].minPulse, servoConfig[servo].maxPulse);
 }
 
+uint16_t sequenceDegreesToPulse(uint8_t servo, uint16_t degrees) {
+  uint16_t maxDeg = servoConfig[servo].downDegrees;
+  if (maxDeg == 0) maxDeg = servoConfig[servo].totalDegrees;
+  degrees = constrain(degrees, 0, maxDeg);
+  return map(degrees, 0, maxDeg, servoConfig[servo].minPulse, servoConfig[servo].maxPulse);
+}
+
 // Convert a percentage of the configured servo travel to degrees.
 uint16_t percentToDegrees(uint8_t servo, uint8_t percent) {
   percent = constrain(percent, 0, 100);
@@ -152,6 +159,11 @@ void moveServoDegrees(uint8_t servo, uint16_t degrees, uint32_t duration) {
   moveServoAnimated(servo, pulse, duration);
 }
 
+void moveSequenceDegrees(uint8_t servo, uint16_t degrees, uint32_t duration) {
+  uint16_t pulse = sequenceDegreesToPulse(servo, degrees);
+  moveServoAnimated(servo, pulse, duration);
+}
+
 void stopActivePatterns() {
   waveActive = false;
   sequenceActive = false;
@@ -252,6 +264,12 @@ void moveAllProtectedWinchesPercent(bool percentUp, uint8_t percent, uint32_t du
     } else {
       moveServoDegrees(i, percentToDegrees(i, percent), duration);
     }
+  }
+}
+
+void setTestPulse(uint16_t pulse) {
+  for (uint8_t i = 0; i < 3; i++) {
+    setServoPulse(i, pulse);
   }
 }
 

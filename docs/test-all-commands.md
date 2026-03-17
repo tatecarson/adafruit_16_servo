@@ -3,7 +3,7 @@
 Ordered from simplest to most complex, ending with sequences.
 Assumes servo 0-2 are standard winches (reverseDir configured), servo 3 is continuous rotation.
 
-**Note:** Sequences use raw degrees (not percent commands), so they bypass travel limits and reverseDir. Higher degrees = physically up on all winch servos. Sequences have been updated to stay within 0-1500 degrees.
+**Note:** Sequences use configured sequence-travel degrees, not percent commands. For the winches, higher degrees = physically up, and the current sequences are authored within the 0-1500 travel window.
 
 ---
 
@@ -34,9 +34,9 @@ Assumes servo 0-2 are standard winches (reverseDir configured), servo 3 is conti
 - Only run `RELEASE 0` if mechanically safe — servo loses holding torque
 
 **Result:**
-- [ ] OFF blocked on protected servo
-- [ ] OFF works on unprotected servo
-- [ ] RELEASE (skip if unsafe)
+- [x] OFF blocked on protected servo
+- [x] OFF works on unprotected servo
+- [x] RELEASE (skip if unsafe)
 
 ---
 
@@ -46,13 +46,29 @@ Assumes servo 0-2 are standard winches (reverseDir configured), servo 3 is conti
 1. `ROTATE 0` — stop
 2. `ROTATE 30` — slow forward
 3. `ROTATE 70` — faster forward
-4. `ROTATE -30` — reverse
+4. `ROTATE -30` — reverse - is slower but still responsive. Direction is correct.
 5. `ROTATE 0` — stop
 
 **Expected:**
 - Servo 3 (continuous) spins at different speeds
 - Positive/negative control direction
 - `ROTATE 0` reliably stops
+
+**Result:**
+- [x] Pass
+
+---
+
+## 4. TPULSE
+
+**Commands:**
+1. `TPULSE 200` — set servos 0-2 to the same lower pulse
+2. `TPULSE 320` — set servos 0-2 to the same mid pulse
+3. `TPULSE 420` — set servos 0-2 to the same higher pulse
+
+**Expected:**
+- Servos 0, 1, and 2 each move to the same commanded raw pulse
+- Useful for spotting per-servo mechanical or calibration mismatch without multi-line paste
 
 **Result:**
 - [ ] Pass
@@ -90,7 +106,7 @@ Assumes servo 0-2 are standard winches (reverseDir configured), servo 3 is conti
 - Takes approximately 2 seconds each way
 
 **Result:**
-- [ ] Pass
+- [x] Pass
 
 ---
 
@@ -107,7 +123,7 @@ Assumes servo 0-2 are standard winches (reverseDir configured), servo 3 is conti
 - Takes approximately 3 seconds each way
 
 **Result:**
-- [ ] Pass
+- [x] Pass
 
 ---
 
@@ -122,7 +138,7 @@ Assumes servo 0-2 are standard winches (reverseDir configured), servo 3 is conti
 - Serial prints "Servo 0 held"
 
 **Result:**
-- [ ] Pass
+- [x] Pass
 
 ---
 
@@ -138,7 +154,7 @@ Assumes servo 0-2 are standard winches (reverseDir configured), servo 3 is conti
 - Ring stays level if all servos are calibrated the same
 
 **Result:**
-- [ ] Pass
+- [x] Pass
 
 ---
 
@@ -154,7 +170,7 @@ Assumes servo 0-2 are standard winches (reverseDir configured), servo 3 is conti
 - Ring stays level throughout the move
 
 **Result:**
-- [ ] Pass
+- [ ] Fail, timing doesn't work, but skip for now since ALLUP/ALLDOWN instant version works
 
 ---
 
@@ -164,14 +180,19 @@ Assumes servo 0-2 are standard winches (reverseDir configured), servo 3 is conti
 1. `WAVE 0 2 50 30 90` — wave pattern on servos 0-2
 2. Observe for 10 seconds
 3. `STOP`
+4. `WAVE 0 3 50 30 90` — include the rotation servo in the requested range
+5. Observe for 5 seconds and confirm servo 3 does not respond
+6. `STOP`
 
 **Expected:**
 - Servos 0-2 oscillate in a sine wave with phase offset between them
+- Continuous servos in the requested range are ignored
 - Ring tilts and rotates smoothly
+- Servo 3 remains unaffected even when the range includes channel 3
 - `STOP` halts the wave immediately
 
 **Result:**
-- [ ] Pass
+- [x] Pass
 
 ---
 
@@ -190,7 +211,7 @@ Assumes servo 0-2 are standard winches (reverseDir configured), servo 3 is conti
 - Without duration, changes are instant
 
 **Result:**
-- [ ] Pass
+- [x] Pass
 
 ---
 
@@ -224,7 +245,7 @@ Sequence: servos 0-2 sweep down, up, then center with a slight stagger.
 - t=2.7s: "Sequence complete" prints
 
 **Result:**
-- [ ] Pass
+- [ ] doesn't really work
 
 ---
 
@@ -242,7 +263,7 @@ Sequence: all three servos raise together over 4s, hold 2s, lower over 4s.
 - Motion should be smooth and level
 
 **Result:**
-- [ ] Pass
+- [x] Pass
 
 ---
 
@@ -261,7 +282,7 @@ Sequence: ring tilts toward each winch point in turn, sweeping around.
 - t=11s: "Sequence complete"
 
 **Result:**
-- [ ] Pass
+- [x] Pass
 
 ---
 
@@ -279,7 +300,7 @@ Sequence: all winches oscillate low-to-mid for a breathing/bobbing effect. Good 
 - Ring stays level, gentle up-and-down motion
 
 **Result:**
-- [ ] Pass
+- [x] Pass
 
 ---
 
@@ -296,7 +317,7 @@ Sequence: all winches oscillate low-to-mid for a breathing/bobbing effect. Good 
 - `STOP` halts immediately
 
 **Result:**
-- [ ] Pass
+- [x] Pass
 
 ---
 
@@ -314,7 +335,7 @@ Sequence: rolling wave where each winch takes turns as the high point. Best with
 - t=6s: "Sequence complete"
 
 **Result:**
-- [ ] Pass
+- [x] Pass
 
 ---
 
@@ -331,7 +352,7 @@ Sequence: rolling wave where each winch takes turns as the high point. Best with
 - `STOP` halts immediately
 
 **Result:**
-- [ ] Pass
+- [x] Pass
 
 ---
 
@@ -349,7 +370,7 @@ Sequence: servo 3 (continuous) ramps to 50%, stops, reverses, stops.
 - t=7.5s: "Speed sequence complete"
 
 **Result:**
-- [ ] Pass
+- [x] Pass
 
 ---
 
@@ -365,4 +386,4 @@ Sequence: servo 3 (continuous) ramps to 50%, stops, reverses, stops.
 - All timing doubles but motion remains smooth
 
 **Result:**
-- [ ] Pass
+- [x] Pass

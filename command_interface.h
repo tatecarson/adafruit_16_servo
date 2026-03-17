@@ -7,6 +7,7 @@ void showHelp() {
   Serial.println(F("Testing / Calibration:"));
   Serial.println(F("S<n> <deg>            Move servo n to degrees"));
   Serial.println(F("P<n> <pulse>          Move servo n to raw pulse"));
+  Serial.println(F("TPULSE <pulse>        Set servos 0-2 to one raw pulse"));
   Serial.println(F("CAL <n> <min> <max>   Set calibration"));
   Serial.println(F("SWEEP <n>             Test sweep servo n"));
   Serial.println(F("OFF <n>               Turn off servo n (blocked on protected winches)"));
@@ -238,6 +239,17 @@ void processCommand(char* cmd) {
       Serial.print(F("Playing speed sequence ")); Serial.print(seqNum);
       if (loop) Serial.print(F(" (looping)"));
       Serial.println();
+    }
+  }
+  else if (startsWith(cmd, "TPULSE")) {
+    int space = findChar(cmd, ' ', 0);
+    if (space > 0) {
+      uint16_t pulse = atoi(cmd + space + 1);
+      setTestPulse(pulse);
+      Serial.print(F("Test pulse -> "));
+      Serial.println(pulse);
+    } else {
+      Serial.println(F("Use: TPULSE <pulse>"));
     }
   }
   else if (cmd[0] == 'P' && cmd[1] >= '0' && cmd[1] <= '9') {

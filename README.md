@@ -36,6 +36,7 @@ Interactive Serial interface for the Adafruit PCA9685 16-channel PWM/Servo drive
 | `ALLDOWN <pct> [ms]` | `ALLDOWN 25` | Move all protected winch servos down together |
 | `RIG <UP\|DOWN> <pct> <spd> [ms]` | `RIG UP 80 35 3000` | Manual test: move all protected winches and set rotation speed together |
 | `P<n> <pulse>` | `P0 375` | Move servo n to raw pulse value |
+| `TPULSE <pulse>` | `TPULSE 320` | Set servos 0-2 to the same raw pulse for comparison |
 | `CAL <n> <min> <max>` | `CAL 0 160 580` | Set min/max pulse calibration |
 | `SWEEP <n>` | `SWEEP 0` | Test sweep through full range |
 | `OFF <n>` | `OFF 0` | Stop sending PWM signal; blocked on protected winches |
@@ -50,7 +51,7 @@ Interactive Serial interface for the Adafruit PCA9685 16-channel PWM/Servo drive
 | `MOVE <n> <deg> <ms>` | `MOVE 0 180 2000` | Smooth animated move with easing |
 | `UMOVE <n> <pct> <ms>` | `UMOVE 0 80 3000` | Smooth animated move to absolute percent up |
 | `DMOVE <n> <pct> <ms>` | `DMOVE 0 30 3000` | Smooth animated move to absolute percent down |
-| `WAVE <s> <e> [spd] [off] [amp]` | `WAVE 0 7 50 30 90` | Start sine wave pattern |
+| `WAVE <s> <e> [spd] [off] [amp]` | `WAVE 0 2 50 30 90` | Start sine wave pattern on positional servos in the range |
 | `PLAY <n> [LOOP]` | `PLAY 1 LOOP` | Play keyframe sequence |
 | `SPLAY <n> [LOOP]` | `SPLAY 1 LOOP` | Play speed sequence (continuous servos) |
 | `STOP` | `STOP` | Stop all active motion and sequences |
@@ -78,7 +79,7 @@ const Keyframe sequence1[] PROGMEM = {
 ```
 
 - `servo`: Which servo (0-15)
-- `degrees`: Target position (0-180)
+- `degrees`: Target position in the servo's configured sequence travel range (`downDegrees` if set, otherwise `totalDegrees`)
 - `time_ms`: When to start this move (ms from sequence start)
 - `duration_ms`: How long the move takes
 
