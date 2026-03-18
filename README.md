@@ -84,6 +84,15 @@ const Keyframe sequence1[] PROGMEM = {
 - `time_ms`: When to start this move (ms from sequence start)
 - `duration_ms`: How long the move takes
 
+Current `PLAY` sequences in this repo:
+
+- `PLAY 1`: staggered sweep
+- `PLAY 2`: slow raise and lower
+- `PLAY 3`: tilt sweep
+- `PLAY 4`: gentle bob
+- `PLAY 5`: wave tilt
+- `PLAY 6`: tripod walk, where two winches lift and the third stays low enough to touch the base
+
 ### Speed Sequences (Continuous Servos)
 
 Speed sequences choreograph continuous servos with timed speed changes and ramping:

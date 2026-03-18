@@ -139,6 +139,31 @@ const Keyframe sequence5[] PROGMEM = {
 
 static const uint8_t sequence5Length = sizeof(sequence5) / sizeof(sequence5[0]);
 
+// Sequence 6: "Tripod walk"
+// Two winches raise while the third stays on the base, then the contact point
+// rotates around the triangle. Good for a stepping / pivoting motion.
+const Keyframe sequence6[] PROGMEM = {
+  // Start with all three touching the base
+  {0, 0, 0, 1200},
+  {1, 0, 0, 1200},
+  {2, 0, 0, 1200},
+  // Servo 0 stays down while 1 and 2 lift
+  {1, 1100, 1200, 1800},
+  {2, 1100, 1200, 1800},
+  // Servo 1 becomes the contact point
+  {0, 1100, 3600, 1800},
+  {1, 0, 3600, 1800},
+  // Servo 2 becomes the contact point
+  {1, 1100, 6000, 1800},
+  {2, 0, 6000, 1800},
+  // Return to the first tripod stance for a clean loop
+  {0, 0, 8400, 1800},
+  {2, 1100, 8400, 1800},
+  {SEQUENCE_END_MARKER_SERVO, 0, 10400, 0}
+};
+
+static const uint8_t sequence6Length = sizeof(sequence6) / sizeof(sequence6[0]);
+
 // Map a sequence number from the Serial command (`PLAY <n>`) to a PROGMEM
 // array and length.
 //
@@ -170,6 +195,11 @@ inline bool selectPositionSequence(uint8_t seqNum, const Keyframe*& outSeq, uint
   if (seqNum == 5) {
     outSeq = sequence5;
     outLen = sequence5Length;
+    return true;
+  }
+  if (seqNum == 6) {
+    outSeq = sequence6;
+    outLen = sequence6Length;
     return true;
   }
   return false;

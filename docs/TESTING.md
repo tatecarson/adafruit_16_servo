@@ -159,6 +159,23 @@ Current installation reference from `servo_setup.h`:
 
 ---
 
+## Test 11b: Tripod Walk Sequence
+
+**Commands:**
+1. `PLAY 6`
+2. Observe the three winches through one full cycle
+
+**Expected:** Two winches lift while the third remains low enough to keep the platform touching the base, and the touch point rotates across servos 0, 1, and 2
+
+**Result:**
+- [ ] Not tested yet on current hardware
+- [ ] Fail - describe:
+
+**Bench verification:**
+- [x] `arduino-cli compile --fqbn arduino:avr:uno .`
+
+---
+
 ## Test 12: Sequence Loop
 
 **Commands:**

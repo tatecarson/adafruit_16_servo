@@ -57,6 +57,11 @@ Servo calibration and control system for the Adafruit PCA9685 16-channel PWM dri
 - Reuses protected winch targeting plus continuous-servo speed/ramp control
 - Intended for live testing outside of `PLAY` / `SPLAY`
 
+### 9. Installation Sequence Library Updates (Complete)
+- Added `PLAY 6` tripod walk sequence for the three winches
+- Keeps one winch low enough to touch the base while the other two lift
+- Rotates the base contact point between servos 0, 1, and 2 for a stepping motion
+
 ## In Progress
 
 (None)
@@ -125,6 +130,10 @@ adafruit_16_servo/
 22. `feat: add combined rig test command for winches and rotation`
 23. `refactor: clarify installation control commands`
 24. `feat: add per-servo stop command`
+
+## Git Commits (Sequence Library)
+
+25. `feat: add tripod walk winch sequence`
 
 ## Future Features
 
