@@ -106,6 +106,15 @@ void updateSequence() {
 
     if (!servoState[kf.servo].stopped) {
       moveSequenceDegrees(kf.servo, kf.degrees, (uint32_t)kf.duration * timeMultiplier);
+      Serial.print(F("t="));
+      Serial.print(elapsed / 1000.0f, 1);
+      Serial.print(F("s  Servo "));
+      Serial.print(kf.servo);
+      Serial.print(F(" -> "));
+      Serial.print(kf.degrees);
+      Serial.print(F("° over "));
+      Serial.print((uint32_t)kf.duration * timeMultiplier);
+      Serial.println(F("ms"));
     }
     lastTriggeredKeyframe = i + 1;
   }
@@ -141,6 +150,15 @@ void updateSpeedSequence() {
 
     if (!servoState[sf.servo].stopped) {
       rampServoSpeed(sf.servo, sf.speed, (uint32_t)sf.rampMs * timeMultiplier);
+      Serial.print(F("t="));
+      Serial.print(elapsed / 1000.0f, 1);
+      Serial.print(F("s  Servo "));
+      Serial.print(sf.servo);
+      Serial.print(F(" -> speed "));
+      Serial.print(sf.speed);
+      Serial.print(F("% ramp "));
+      Serial.print((uint32_t)sf.rampMs * timeMultiplier);
+      Serial.println(F("ms"));
     }
     lastTriggeredSpeedFrame = i + 1;
   }
