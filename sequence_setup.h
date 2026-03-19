@@ -17,7 +17,7 @@
 // - Use `servo = 255` as an end marker (last entry in each sequence). The
 //   playback engine treats this as "sequence complete" (or loop point).
 // - Add more sequences by copying the pattern for `sequence1` / `speedSeq1`
-//   and extending `selectPositionSequence()` / `selectSpeedSequence()`.
+//   and extending the selector functions at the bottom of this file.
 //
 // Keyframe (positional) sequence structure:
 //   { servo, degrees, timeMs, durationMs }
@@ -42,11 +42,12 @@
 
 static const uint8_t SEQUENCE_END_MARKER_SERVO = 255;
 
-// --- Keyframe (positional) sequences ---
+// ============================================================================
+// PLAY sequences (positional keyframes)
+// ============================================================================
 
 // Sequence 1: "Staggered sweep"
 // All servos sweep down, up, then to center with a slight stagger.
-// Stored in PROGMEM to save RAM; use memcpy_P() to read.
 const Keyframe sequence1[] PROGMEM = {
   {0, 0, 0, 500},          // All servos to bottom, staggered
   {1, 0, 100, 500},
@@ -59,7 +60,6 @@ const Keyframe sequence1[] PROGMEM = {
   {2, 750, 2200, 500},
   {SEQUENCE_END_MARKER_SERVO, 0, 2700, 0}
 };
-
 static const uint8_t sequence1Length = sizeof(sequence1) / sizeof(sequence1[0]);
 
 // Sequence 2: "Slow raise and lower"
@@ -73,7 +73,6 @@ const Keyframe sequence2[] PROGMEM = {
   {2, 0, 6000, 4000},
   {SEQUENCE_END_MARKER_SERVO, 0, 10000, 0}
 };
-
 static const uint8_t sequence2Length = sizeof(sequence2) / sizeof(sequence2[0]);
 
 // Sequence 3: "Tilt sweep"
@@ -95,7 +94,6 @@ const Keyframe sequence3[] PROGMEM = {
   {2, 0, 9000, 2000},
   {SEQUENCE_END_MARKER_SERVO, 0, 11000, 0}
 };
-
 static const uint8_t sequence3Length = sizeof(sequence3) / sizeof(sequence3[0]);
 
 // Sequence 4: "Gentle bob"
@@ -112,7 +110,6 @@ const Keyframe sequence4[] PROGMEM = {
   {2, 250, 3000, 1500},
   {SEQUENCE_END_MARKER_SERVO, 0, 4500, 0}
 };
-
 static const uint8_t sequence4Length = sizeof(sequence4) / sizeof(sequence4[0]);
 
 // Sequence 5: "Wave tilt"
@@ -136,7 +133,6 @@ const Keyframe sequence5[] PROGMEM = {
   {2, 300, 4500, 1500},
   {SEQUENCE_END_MARKER_SERVO, 0, 6000, 0}
 };
-
 static const uint8_t sequence5Length = sizeof(sequence5) / sizeof(sequence5[0]);
 
 // Sequence 6: "Tripod walk"
@@ -161,51 +157,119 @@ const Keyframe sequence6[] PROGMEM = {
   {2, 1100, 8400, 1800},
   {SEQUENCE_END_MARKER_SERVO, 0, 10400, 0}
 };
-
 static const uint8_t sequence6Length = sizeof(sequence6) / sizeof(sequence6[0]);
 
-// Map a sequence number from the Serial command (`PLAY <n>`) to a PROGMEM
-// array and length.
-//
-// When adding a new sequence:
-// - create `const Keyframe sequenceN[] PROGMEM = { ... }`
-// - create `static const uint8_t sequenceNLength = ...`
-// - add a `seqNum == N` branch below
-inline bool selectPositionSequence(uint8_t seqNum, const Keyframe*& outSeq, uint8_t& outLen) {
-  if (seqNum == 1) {
-    outSeq = sequence1;
-    outLen = sequence1Length;
-    return true;
-  }
-  if (seqNum == 2) {
-    outSeq = sequence2;
-    outLen = sequence2Length;
-    return true;
-  }
-  if (seqNum == 3) {
-    outSeq = sequence3;
-    outLen = sequence3Length;
-    return true;
-  }
-  if (seqNum == 4) {
-    outSeq = sequence4;
-    outLen = sequence4Length;
-    return true;
-  }
-  if (seqNum == 5) {
-    outSeq = sequence5;
-    outLen = sequence5Length;
-    return true;
-  }
-  if (seqNum == 6) {
-    outSeq = sequence6;
-    outLen = sequence6Length;
-    return true;
-  }
-  return false;
-}
+// Sequence 7: "Progressive winch drop and reverse"
+// One winch drops to shallow, then two to medium, then all three to deep (full
+// down). Mirrors in reverse. Uses many small keyframes for smooth motion on
+// loaded servos (duration alone is unreliable under load).
+// Total duration: ~90 seconds. Peak (all down) at ~45s.
+const Keyframe sequence7[] PROGMEM = {
+  // --- Phase 1 (0-15s): Winch 0 drops 0→500 (shallow) ---
+  {0, 50,   0, 1400},
+  {0, 100,  1500, 1400},
+  {0, 150,  3000, 1400},
+  {0, 200,  4500, 1400},
+  {0, 250,  6000, 1400},
+  {0, 300,  7500, 1400},
+  {0, 350,  9000, 1400},
+  {0, 400, 10500, 1400},
+  {0, 450, 12000, 1400},
+  {0, 500, 13500, 1400},
 
-// --- Chained sequence programs ---
+  // --- Phase 2 (15-30s): W0 500→1000, W1 0→1000 ---
+  {0, 550, 15000, 1400},  {1, 100, 15000, 1400},
+  {0, 600, 16500, 1400},  {1, 200, 16500, 1400},
+  {0, 650, 18000, 1400},  {1, 300, 18000, 1400},
+  {0, 700, 19500, 1400},  {1, 400, 19500, 1400},
+  {0, 750, 21000, 1400},  {1, 500, 21000, 1400},
+  {0, 800, 22500, 1400},  {1, 600, 22500, 1400},
+  {0, 850, 24000, 1400},  {1, 700, 24000, 1400},
+  {0, 900, 25500, 1400},  {1, 800, 25500, 1400},
+  {0, 950, 27000, 1400},  {1, 900, 27000, 1400},
+  {0, 1000, 28500, 1400}, {1, 1000, 28500, 1400},
+
+  // --- Phase 3 (30-45s): All three drop to 1500 (deep) — peak ---
+  {0, 1050, 30000, 1400}, {1, 1050, 30000, 1400}, {2, 150, 30000, 1400},
+  {0, 1100, 31500, 1400}, {1, 1100, 31500, 1400}, {2, 300, 31500, 1400},
+  {0, 1150, 33000, 1400}, {1, 1150, 33000, 1400}, {2, 450, 33000, 1400},
+  {0, 1200, 34500, 1400}, {1, 1200, 34500, 1400}, {2, 600, 34500, 1400},
+  {0, 1250, 36000, 1400}, {1, 1250, 36000, 1400}, {2, 750, 36000, 1400},
+  {0, 1300, 37500, 1400}, {1, 1300, 37500, 1400}, {2, 900, 37500, 1400},
+  {0, 1350, 39000, 1400}, {1, 1350, 39000, 1400}, {2, 1050, 39000, 1400},
+  {0, 1400, 40500, 1400}, {1, 1400, 40500, 1400}, {2, 1200, 40500, 1400},
+  {0, 1450, 42000, 1400}, {1, 1450, 42000, 1400}, {2, 1350, 42000, 1400},
+  {0, 1500, 43500, 1400}, {1, 1500, 43500, 1400}, {2, 1500, 43500, 1400},
+
+  // --- Phase 4 (45-60s): All three rise 1500→1000 ---
+  {0, 1450, 45000, 1400}, {1, 1450, 45000, 1400}, {2, 1450, 45000, 1400},
+  {0, 1400, 46500, 1400}, {1, 1400, 46500, 1400}, {2, 1400, 46500, 1400},
+  {0, 1350, 48000, 1400}, {1, 1350, 48000, 1400}, {2, 1350, 48000, 1400},
+  {0, 1300, 49500, 1400}, {1, 1300, 49500, 1400}, {2, 1300, 49500, 1400},
+  {0, 1250, 51000, 1400}, {1, 1250, 51000, 1400}, {2, 1250, 51000, 1400},
+  {0, 1200, 52500, 1400}, {1, 1200, 52500, 1400}, {2, 1200, 52500, 1400},
+  {0, 1150, 54000, 1400}, {1, 1150, 54000, 1400}, {2, 1150, 54000, 1400},
+  {0, 1100, 55500, 1400}, {1, 1100, 55500, 1400}, {2, 1100, 55500, 1400},
+  {0, 1050, 57000, 1400}, {1, 1050, 57000, 1400}, {2, 1050, 57000, 1400},
+  {0, 1000, 58500, 1400}, {1, 1000, 58500, 1400}, {2, 1000, 58500, 1400},
+
+  // --- Phase 5 (60-75s): W2 1000→0, W0+W1 1000→500 ---
+  {0, 950, 60000, 1400}, {1, 950, 60000, 1400}, {2, 900, 60000, 1400},
+  {0, 900, 61500, 1400}, {1, 900, 61500, 1400}, {2, 800, 61500, 1400},
+  {0, 850, 63000, 1400}, {1, 850, 63000, 1400}, {2, 700, 63000, 1400},
+  {0, 800, 64500, 1400}, {1, 800, 64500, 1400}, {2, 600, 64500, 1400},
+  {0, 750, 66000, 1400}, {1, 750, 66000, 1400}, {2, 500, 66000, 1400},
+  {0, 700, 67500, 1400}, {1, 700, 67500, 1400}, {2, 400, 67500, 1400},
+  {0, 650, 69000, 1400}, {1, 650, 69000, 1400}, {2, 300, 69000, 1400},
+  {0, 600, 70500, 1400}, {1, 600, 70500, 1400}, {2, 200, 70500, 1400},
+  {0, 550, 72000, 1400}, {1, 550, 72000, 1400}, {2, 100, 72000, 1400},
+  {0, 500, 73500, 1400}, {1, 500, 73500, 1400}, {2, 0,   73500, 1400},
+
+  // --- Phase 6 (75-90s): W0+W1 500→0 ---
+  {0, 450, 75000, 1400}, {1, 450, 75000, 1400},
+  {0, 400, 76500, 1400}, {1, 400, 76500, 1400},
+  {0, 350, 78000, 1400}, {1, 350, 78000, 1400},
+  {0, 300, 79500, 1400}, {1, 300, 79500, 1400},
+  {0, 250, 81000, 1400}, {1, 250, 81000, 1400},
+  {0, 200, 82500, 1400}, {1, 200, 82500, 1400},
+  {0, 150, 84000, 1400}, {1, 150, 84000, 1400},
+  {0, 100, 85500, 1400}, {1, 100, 85500, 1400},
+  {0, 50,  87000, 1400}, {1, 50,  87000, 1400},
+  {0, 0,   88500, 1400}, {1, 0,   88500, 1400},
+
+  {SEQUENCE_END_MARKER_SERVO, 0, 90000, 0}
+};
+static const uint8_t sequence7Length = sizeof(sequence7) / sizeof(sequence7[0]);
+
+// ============================================================================
+// SPLAY sequences (speed / continuous rotation)
+// ============================================================================
+
+// Speed sequence 1: "Demo rotation"
+// Intended for continuous-rotation servos (MODE <n> CONT).
+// Uses per-servo min/max/stop calibration to translate `speed` into pulses.
+const SpeedFrame speedSeq1[] PROGMEM = {
+  {3, 50, 0, 500},         // Servo 3 ramp to 50% over 500ms at t=0
+  {3, 0, 3000, 500},       // Ramp to stop at t=3s
+  {3, -50, 4000, 500},     // Reverse direction
+  {3, 0, 7000, 500},       // Stop
+  {SEQUENCE_END_MARKER_SERVO, 0, 7500, 0}
+};
+static const uint8_t speedSeq1Length = sizeof(speedSeq1) / sizeof(speedSeq1[0]);
+
+// Speed sequence 2: "Drift rotation accelerate/decelerate"
+// Ramps servo 3 from speed 30 up to 90 over 45s, then back down to 30 over 45s.
+const SpeedFrame speedSeq2[] PROGMEM = {
+  {3, 30,     0,     0},      // Start at speed 30
+  {3, 90,     0, 45000},      // Ramp to 90 over 45s
+  {3, 30, 45000, 45000},      // Ramp back to 30 over 45s
+  {SEQUENCE_END_MARKER_SERVO, 0, 90000, 0}
+};
+static const uint8_t speedSeq2Length = sizeof(speedSeq2) / sizeof(speedSeq2[0]);
+
+// ============================================================================
+// RUN programs (chained PLAY + SPLAY sequences, run in parallel)
+// ============================================================================
 //
 // Programs stitch together existing PLAY / SPLAY sequences so longer-running
 // shows can be assembled without duplicating frame data.
@@ -214,17 +278,17 @@ inline bool selectPositionSequence(uint8_t seqNum, const Keyframe*& outSeq, uint
 //   { sequenceNumber, repeatCount }
 // - sequenceNumber: the existing PLAY or SPLAY ID to trigger
 // - repeatCount: number of consecutive times to run that sequence (minimum 1)
+
+// Program 1: "Showcase"
 const ProgramSequenceStep program1PositionTrack[] PROGMEM = {
   {2, 2},   // Slow raise/lower twice
   {3, 1},   // Sweep the tilt around the ring
   {4, 4},   // Gentle bob for a while
   {5, 6},   // Rolling wave tilt for longer texture
 };
-
 const ProgramSequenceStep program1SpeedTrack[] PROGMEM = {
   {1, 1},   // Rotation sequence loops independently while the position track runs
 };
-
 const SequenceProgramDefinition program1 = {
   program1PositionTrack,
   sizeof(program1PositionTrack) / sizeof(program1PositionTrack[0]),
@@ -232,42 +296,46 @@ const SequenceProgramDefinition program1 = {
   sizeof(program1SpeedTrack) / sizeof(program1SpeedTrack[0]),
 };
 
-inline bool selectSequenceProgram(uint8_t programNum, const SequenceProgramDefinition*& outProgram) {
-  if (programNum == 1) {
-    outProgram = &program1;
-    return true;
-  }
+// Program 2: "Drift"
+// Rotation accelerates/decelerates while winches progressively drop and reverse.
+// Position and speed tracks run in parallel; peak rotation aligns with all
+// winches fully down at ~45s.
+const ProgramSequenceStep program2PositionTrack[] PROGMEM = {
+  {7, 1},   // Progressive winch drop and reverse
+};
+const ProgramSequenceStep program2SpeedTrack[] PROGMEM = {
+  {2, 1},   // Drift rotation accelerate/decelerate
+};
+const SequenceProgramDefinition program2 = {
+  program2PositionTrack,
+  sizeof(program2PositionTrack) / sizeof(program2PositionTrack[0]),
+  program2SpeedTrack,
+  sizeof(program2SpeedTrack) / sizeof(program2SpeedTrack[0]),
+};
+
+// ============================================================================
+// Selector functions (map serial command numbers to PROGMEM data)
+// ============================================================================
+
+inline bool selectPositionSequence(uint8_t seqNum, const Keyframe*& outSeq, uint8_t& outLen) {
+  if (seqNum == 1) { outSeq = sequence1; outLen = sequence1Length; return true; }
+  if (seqNum == 2) { outSeq = sequence2; outLen = sequence2Length; return true; }
+  if (seqNum == 3) { outSeq = sequence3; outLen = sequence3Length; return true; }
+  if (seqNum == 4) { outSeq = sequence4; outLen = sequence4Length; return true; }
+  if (seqNum == 5) { outSeq = sequence5; outLen = sequence5Length; return true; }
+  if (seqNum == 6) { outSeq = sequence6; outLen = sequence6Length; return true; }
+  if (seqNum == 7) { outSeq = sequence7; outLen = sequence7Length; return true; }
   return false;
 }
 
-// --- Speed (continuous) sequences ---
-
-// Example speed sequence 1:
-// - Intended for continuous-rotation servos (MODE <n> CONT).
-// - Uses per-servo min/max/stop calibration to translate `speed` into pulses.
-// - Stored in PROGMEM to save RAM; use memcpy_P() to read.
-const SpeedFrame speedSeq1[] PROGMEM = {
-  {3, 50, 0, 500},         // Servo 3 ramp to 50% over 500ms at t=0
-  {3, 0, 3000, 500},       // Ramp to stop at t=3s
-  {3, -50, 4000, 500},     // Reverse direction
-  {3, 0, 7000, 500},       // Stop
-  {SEQUENCE_END_MARKER_SERVO, 0, 7500, 0}
-};
-
-static const uint8_t speedSeq1Length = sizeof(speedSeq1) / sizeof(speedSeq1[0]);
-
-// Map a sequence number from the Serial command (`SPLAY <n>`) to a PROGMEM
-// array and length.
-//
-// When adding a new speed sequence:
-// - create `const SpeedFrame speedSeqN[] PROGMEM = { ... }`
-// - create `static const uint8_t speedSeqNLength = ...`
-// - add a `seqNum == N` branch below
 inline bool selectSpeedSequence(uint8_t seqNum, const SpeedFrame*& outSeq, uint8_t& outLen) {
-  if (seqNum == 1) {
-    outSeq = speedSeq1;
-    outLen = speedSeq1Length;
-    return true;
-  }
+  if (seqNum == 1) { outSeq = speedSeq1; outLen = speedSeq1Length; return true; }
+  if (seqNum == 2) { outSeq = speedSeq2; outLen = speedSeq2Length; return true; }
+  return false;
+}
+
+inline bool selectSequenceProgram(uint8_t programNum, const SequenceProgramDefinition*& outProgram) {
+  if (programNum == 1) { outProgram = &program1; return true; }
+  if (programNum == 2) { outProgram = &program2; return true; }
   return false;
 }
