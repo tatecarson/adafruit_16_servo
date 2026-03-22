@@ -302,10 +302,10 @@ static const uint8_t speedSeq1Length = sizeof(speedSeq1) / sizeof(speedSeq1[0]);
 // Speed sequence 2: "Drift rotation accelerate/decelerate"
 // Ramps servo 3 from speed 30 up to 90 over 45s, then back down to 30 over 45s.
 const SpeedFrame speedSeq2[] PROGMEM = {
-  {3, 30,     0,     0},      // Start at speed 30
-  {3, 90,     0, 90000},      // Ramp to 90 over 45s
-  {3, 30, 90000, 90000},      // Ramp back to 30 over 45s
-  {SEQUENCE_END_MARKER_SERVO, 0, 90000, 0}
+  {3, 30,      0,     0},      // t=0s:   Start at speed 30 (instant)
+  {3, 90,      0, 45000},      // t=0s:   Ramp up to 90 over 45s
+  {3, 30,  90000, 45000},      // t=90s:  Ramp down to 30 over 45s (held 90 for 45s)
+  {SEQUENCE_END_MARKER_SERVO, 0, 165000, 0}  // t=165s: End (held 30 for 30s)
 };
 static const uint8_t speedSeq2Length = sizeof(speedSeq2) / sizeof(speedSeq2[0]);
 
