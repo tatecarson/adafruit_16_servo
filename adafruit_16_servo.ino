@@ -130,6 +130,41 @@ static void wifiAndOtaBegin() {
   printWifiStatus();
 }
 
+// Streamed JSON snapshot for /status.json. Keep keys short to keep the
+// payload under the TCP MTU on a single send.
+void writeStatusJson(WiFiClient& client) {
+  client.print(F("{\"node\":")); client.print(syncNodeId());
+  client.print(F(",\"ip\":\"")); client.print(WiFi.localIP()); client.print('"');
+  client.print(F(",\"uptimeMs\":")); client.print(millis());
+  client.print(F(",\"otaInProgress\":")); client.print(otaInProgress ? F("true") : F("false"));
+  client.print(F(",\"sequence\":{\"active\":")); client.print(sequenceActive ? F("true") : F("false"));
+  client.print(F(",\"loop\":")); client.print(sequenceLoop ? F("true") : F("false"));
+  client.print(F(",\"len\":")); client.print(currentSequenceLength);
+  client.print(F(",\"startedMs\":")); client.print(sequenceActive ? (millis() - sequenceStartTime) : 0UL);
+  client.print('}');
+  client.print(F(",\"speedSeq\":{\"active\":")); client.print(speedSeqActive ? F("true") : F("false"));
+  client.print(F(",\"loop\":")); client.print(speedSeqLoop ? F("true") : F("false"));
+  client.print(F(",\"len\":")); client.print(currentSpeedSeqLength);
+  client.print(F(",\"startedMs\":")); client.print(speedSeqActive ? (millis() - speedSeqStartTime) : 0UL);
+  client.print('}');
+  client.print(F(",\"wave\":{\"active\":")); client.print(waveActive ? F("true") : F("false"));
+  client.print(F(",\"start\":")); client.print(waveStartServo);
+  client.print(F(",\"end\":")); client.print(waveEndServo);
+  client.print('}');
+  client.print(F(",\"timescale\":")); client.print(timeMultiplier);
+  client.print(F(",\"servos\":["));
+  for (uint8_t i = 0; i < NUM_SERVOS; i++) {
+    if (i) client.print(',');
+    client.print(F("{\"i\":")); client.print(i);
+    client.print(F(",\"pulse\":")); client.print(servoState[i].posPulse);
+    client.print(F(",\"target\":")); client.print(servoState[i].targetPulse);
+    client.print(F(",\"moving\":")); client.print(servoState[i].moving ? F("true") : F("false"));
+    client.print(F(",\"cont\":")); client.print(servoConfig[i].continuous ? F("true") : F("false"));
+    client.print('}');
+  }
+  client.print(F("]}"));
+}
+
 Adafruit_PWMServoDriver pwm = Adafruit_PWMServoDriver();
 
 ServoConfig servoConfig[NUM_SERVOS];

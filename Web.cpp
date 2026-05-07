@@ -5,6 +5,9 @@
 // Provided by command_interface.h in the servo sketch.
 void dispatchCommand(const char* cmd, bool fromNetwork);
 
+// Provided by adafruit_16_servo.ino — needs access to the runtime globals.
+void writeStatusJson(WiFiClient& client);
+
 static WiFiServer controlServer(80);
 
 static int hexValue(char c) {
@@ -90,11 +93,21 @@ void webPoll() {
         // fromNetwork=false so dispatchCommand will broadcast it to peers.
         dispatchCommand(cmd.c_str(), false);
       }
+    } else if (path == "/status.json" || path.startsWith("/status.json?")) {
+      client.println("HTTP/1.1 200 OK");
+      client.println("Connection: close");
+      client.println("Content-Type: application/json");
+      client.println("Access-Control-Allow-Origin: null");
+      client.println();
+      writeStatusJson(client);
+      delay(5);
+      client.stop();
+      return;
     } else if (path == "/peers.json" || path.startsWith("/peers.json?")) {
       // CORS: only allow origins that browsers serialize as "null"
       // (file:// pages, sandboxed iframes). Tightens the previous "*" wildcard
       // so a random website on the LAN cannot fingerprint the cluster.
-      // The bundled led_message_controller.html is opened from disk, so its
+      // The bundled servo_controller.html is opened from disk, so its
       // Origin header is "null" and the page works under this policy.
       client.println("HTTP/1.1 200 OK");
       client.println("Connection: close");

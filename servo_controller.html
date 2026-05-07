@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Servo Cluster Controller</title>
+<style>
+  :root { color-scheme: dark light; font: 14px/1.4 system-ui, sans-serif; }
+  body { margin: 0; padding: 16px; max-width: 1100px; }
+  h1 { font-size: 18px; margin: 0 0 12px; }
+  h2 { font-size: 14px; margin: 16px 0 6px; opacity: .7; text-transform: uppercase; letter-spacing: .05em; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  button { padding: 6px 10px; border: 1px solid #888; background: #1a1a1a; color: inherit; border-radius: 4px; cursor: pointer; font: inherit; }
+  button:hover { background: #2a2a2a; }
+  button:disabled { opacity: .4; cursor: not-allowed; }
+  button.danger { border-color: #c44; }
+  input[type=text], input[type=number] { padding: 6px 8px; border: 1px solid #888; background: #111; color: inherit; border-radius: 4px; font: inherit; }
+  .boards { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 12px; }
+  .board { border: 1px solid #444; border-radius: 6px; padding: 10px; background: #111; }
+  .board.dead { opacity: .5; }
+  .board header { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 6px; }
+  .board header .name { font-weight: 600; }
+  .board header .ip { font-family: ui-monospace, monospace; font-size: 12px; opacity: .7; }
+  .badge { display: inline-block; padding: 1px 6px; border-radius: 3px; font-size: 11px; margin-right: 4px; }
+  .badge.on { background: #2a6; color: #fff; }
+  .badge.off { background: #333; opacity: .6; }
+  .badge.warn { background: #c84; color: #fff; }
+  table.servos { width: 100%; border-collapse: collapse; margin-top: 6px; font-family: ui-monospace, monospace; font-size: 11px; }
+  table.servos td, table.servos th { padding: 1px 4px; text-align: right; border-bottom: 1px solid #222; }
+  table.servos th { opacity: .5; font-weight: normal; }
+  table.servos td.idx { text-align: left; opacity: .6; }
+  .bar { display: inline-block; height: 8px; background: #4a8; border-radius: 2px; vertical-align: middle; }
+  .toolbar { position: sticky; top: 0; background: var(--bg, #181818); padding: 8px 0; margin-bottom: 8px; border-bottom: 1px solid #333; z-index: 10; }
+  small { opacity: .6; }
+</style>
+</head>
+<body>
+<h1>Servo Cluster Controller</h1>
+
+<div class="toolbar">
+  <div class="row">
+    <strong>Broadcast:</strong>
+    <button data-cmd="PLAY 0">PLAY 0</button>
+    <button data-cmd="PLAY 1">PLAY 1</button>
+    <button data-cmd="PLAY 2">PLAY 2</button>
+    <button data-cmd="PLAY 3">PLAY 3</button>
+    <button data-cmd="PLAY 0 LOOP">PLAY 0 LOOP</button>
+    <button data-cmd="SPLAY 0">SPLAY 0</button>
+    <button data-cmd="SPLAY 1">SPLAY 1</button>
+    <button data-cmd="STOP" class="danger">STOP</button>
+  </div>
+  <div class="row" style="margin-top:6px">
+    <small>(Sent to first reachable board; the board mirrors via UDP to peers.)</small>
+  </div>
+  <div class="row" style="margin-top:8px">
+    <strong>Custom:</strong>
+    <input id="freeCmd" type="text" placeholder="e.g. MOVE 3 90 1500" style="flex:1; min-width:200px">
+    <select id="freeTarget" title="Target board"></select>
+    <button id="freeSend">Send</button>
+  </div>
+  <div class="row" style="margin-top:8px">
+    <strong>Boards:</strong>
+    <input id="boardList" type="text" style="flex:1; min-width:280px"
+           placeholder="comma-separated IPs, e.g. 192.168.8.138,192.168.8.213">
+    <button id="saveBoards">Save</button>
+    <label><input id="autoPoll" type="checkbox" checked> auto-poll</label>
+    <input id="pollMs" type="number" min="200" step="100" value="800" style="width:80px"> ms
+  </div>
+</div>
+
+<div id="boards" class="boards"></div>
+
+<script>
+"use strict";
+
+// ---- Config ----
+const DEFAULT_BOARDS = ["192.168.8.138", "192.168.8.213", "192.168.8.198"];
+const LS_KEY = "servoCluster.boards";
+
+// ---- State ----
+let boards = JSON.parse(localStorage.getItem(LS_KEY) || "null") || DEFAULT_BOARDS.slice();
+let pollHandle = null;
+const lastSeen = new Map(); // ip -> ts of last successful response
+
+// ---- DOM ----
+const $ = sel => document.querySelector(sel);
+const boardsEl = $("#boards");
+const boardListEl = $("#boardList");
+const freeTargetEl = $("#freeTarget");
+const autoPollEl = $("#autoPoll");
+const pollMsEl = $("#pollMs");
+
+function renderBoardList() {
+  boardListEl.value = boards.join(",");
+  freeTargetEl.innerHTML = boards.map(ip => `<option value="${ip}">${ip}</option>`).join("");
+}
+
+// ---- HTTP ----
+async function fetchStatus(ip) {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), 2500);
+  try {
+    const r = await fetch(`http://${ip}/status.json`, { signal: ctrl.signal, cache: "no-store" });
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    const j = await r.json();
+    lastSeen.set(ip, Date.now());
+    return j;
+  } finally {
+    clearTimeout(t);
+  }
+}
+
+async function sendCommand(ip, cmd) {
+  // GET /cmd?c=<encoded>. The board runs locally then broadcasts to peers
+  // via UDP, so we only need to hit one board to fan out.
+  const url = `http://${ip}/cmd?c=${encodeURIComponent(cmd)}`;
+  try {
+    await fetch(url, { method: "GET", mode: "no-cors", cache: "no-store" });
+    return true;
+  } catch (e) {
+    console.warn("send failed", ip, e);
+    return false;
+  }
+}
+
+// Try each board until one accepts. The accepted board will mirror via UDP.
+async function broadcastCommand(cmd) {
+  for (const ip of boards) {
+    if (await sendCommand(ip, cmd)) return ip;
+  }
+  return null;
+}
+
+// ---- Render ----
+function badge(label, on, cls = on ? "on" : "off") {
+  return `<span class="badge ${cls}">${label}</span>`;
+}
+
+function renderBoard(ip, status, err) {
+  const dead = !status;
+  const age = lastSeen.has(ip) ? Math.round((Date.now() - lastSeen.get(ip)) / 1000) : null;
+  let body;
+  if (dead) {
+    body = `<p><small>${err || "no response"}${age != null ? ` (last seen ${age}s ago)` : ""}</small></p>`;
+  } else {
+    const seq = status.sequence, ssq = status.speedSeq, wv = status.wave;
+    body = `
+      <div class="row">
+        ${badge("OTA", status.otaInProgress, status.otaInProgress ? "warn" : "off")}
+        ${badge(`SEQ${seq.active ? ` len=${seq.len}` : ""}`, seq.active)}
+        ${badge(`SPEED${ssq.active ? ` len=${ssq.len}` : ""}`, ssq.active)}
+        ${badge(`WAVE${wv.active ? ` ${wv.start}-${wv.end}` : ""}`, wv.active)}
+        ${badge(`x${status.timescale}`, status.timescale > 1, status.timescale > 1 ? "warn" : "off")}
+      </div>
+      <table class="servos">
+        <thead><tr><th>#</th><th>pulse</th><th>→target</th><th>mode</th><th></th></tr></thead>
+        <tbody>${status.servos.map(s => {
+          const span = Math.max(1, Math.abs(s.target - s.pulse));
+          const moving = s.moving ? "→" : "·";
+          const mode = s.cont ? "CONT" : "STD";
+          return `<tr>
+            <td class="idx">${s.i}${moving}</td>
+            <td>${s.pulse}</td>
+            <td>${s.target}</td>
+            <td>${mode}</td>
+            <td><span class="bar" style="width:${Math.min(100, span)}px"></span></td>
+          </tr>`;
+        }).join("")}</tbody>
+      </table>`;
+  }
+  return `
+    <div class="board ${dead ? "dead" : ""}">
+      <header>
+        <span class="name">node ${status?.node ?? "?"}</span>
+        <span class="ip">${ip}${status ? ` · up ${Math.round(status.uptimeMs/1000)}s` : ""}</span>
+      </header>
+      ${body}
+    </div>`;
+}
+
+async function pollOnce() {
+  const results = await Promise.all(boards.map(async ip => {
+    try { return [ip, await fetchStatus(ip), null]; }
+    catch (e) { return [ip, null, e.message]; }
+  }));
+  boardsEl.innerHTML = results.map(([ip, s, err]) => renderBoard(ip, s, err)).join("");
+}
+
+function startPolling() {
+  stopPolling();
+  if (!autoPollEl.checked) return;
+  const interval = Math.max(200, parseInt(pollMsEl.value, 10) || 800);
+  pollOnce();
+  pollHandle = setInterval(pollOnce, interval);
+}
+function stopPolling() {
+  if (pollHandle) { clearInterval(pollHandle); pollHandle = null; }
+}
+
+// ---- Wire UI ----
+document.querySelectorAll("[data-cmd]").forEach(btn => {
+  btn.addEventListener("click", async () => {
+    const cmd = btn.dataset.cmd;
+    btn.disabled = true;
+    const ip = await broadcastCommand(cmd);
+    btn.disabled = false;
+    if (!ip) alert("No board accepted the command");
+    else setTimeout(pollOnce, 200);
+  });
+});
+
+$("#freeSend").addEventListener("click", async () => {
+  const cmd = $("#freeCmd").value.trim();
+  if (!cmd) return;
+  const ip = freeTargetEl.value;
+  await sendCommand(ip, cmd);
+  setTimeout(pollOnce, 200);
+});
+$("#freeCmd").addEventListener("keydown", e => { if (e.key === "Enter") $("#freeSend").click(); });
+
+$("#saveBoards").addEventListener("click", () => {
+  const list = boardListEl.value.split(",").map(s => s.trim()).filter(Boolean);
+  if (!list.length) return;
+  boards = list;
+  localStorage.setItem(LS_KEY, JSON.stringify(boards));
+  renderBoardList();
+  startPolling();
+});
+
+autoPollEl.addEventListener("change", startPolling);
+pollMsEl.addEventListener("change", startPolling);
+
+// ---- Init ----
+renderBoardList();
+startPolling();
+</script>
+</body>
+</html>
