@@ -8,8 +8,9 @@
 set -euo pipefail
 
 BOARDS=(
-  # Fill in once each servo board has been flashed via USB and given a
-  # reserved DHCP lease. e.g. 192.168.8.140
+  192.168.8.138
+  192.168.8.213
+  192.168.8.198
 )
 
 FQBN="arduino:renesas_uno:unor4wifi"
