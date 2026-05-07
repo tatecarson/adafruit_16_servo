@@ -1,6 +1,7 @@
 #pragma once
 
 #include "servo_runtime.h"
+#include "Sync.h"
 
 void showHelp() {
   Serial.println(F("\n--- Commands ---"));
@@ -440,5 +441,41 @@ void processCommand(char* cmd) {
   }
   else if (strlen(cmd) > 0) {
     Serial.println(F("Unknown command. Type HELP"));
+  }
+}
+
+// Whitelist of commands that should be mirrored to all peers when issued
+// locally. Per-servo pokes (S0 90, P1 ...) stay local-only on purpose.
+// Compared after trim+uppercase.
+inline bool shouldMirrorCommand(const char* upperCmd) {
+  return startsWith(upperCmd, "PLAY ") || strcmp(upperCmd, "PLAY") == 0
+      || startsWith(upperCmd, "SPLAY ") || strcmp(upperCmd, "SPLAY") == 0
+      || strcmp(upperCmd, "STOP") == 0;
+}
+
+// Single entry point used by Serial input, the HTTP /cmd handler, and the
+// UDP sync receive path. fromNetwork=true means "this came from a peer";
+// in that case we run the command locally but never re-broadcast (avoiding
+// feedback loops). When fromNetwork=false we run locally AND, if the
+// command is in the mirror whitelist, broadcast its canonical form.
+void dispatchCommand(const char* cmd, bool fromNetwork) {
+  if (cmd == nullptr || cmd[0] == '\0') return;
+
+  // processCommand mutates its argument; keep an untouched canonical copy
+  // for the broadcast payload + mirror check.
+  char buf[64];
+  strncpy(buf, cmd, sizeof(buf) - 1);
+  buf[sizeof(buf) - 1] = '\0';
+
+  char upper[64];
+  strncpy(upper, buf, sizeof(upper) - 1);
+  upper[sizeof(upper) - 1] = '\0';
+  trimString(upper);
+  toUpperCase(upper);
+
+  processCommand(buf);
+
+  if (!fromNetwork && shouldMirrorCommand(upper)) {
+    broadcastEvent(upper);
   }
 }

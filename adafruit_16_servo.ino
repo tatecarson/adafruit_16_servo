@@ -35,6 +35,12 @@
 
 #include <Wire.h>
 #include <Adafruit_PWMServoDriver.h>
+#include <WiFiS3.h>
+#include <ArduinoOTA.h>
+
+#include "Secrets.h"
+#include "Sync.h"
+#include "Web.h"
 
 #include "servo_runtime.h"
 #include "servo_setup.h"
@@ -44,6 +50,85 @@
 #include "animation_engine.h"
 #include "servo_maintenance.h"
 #include "command_interface.h"
+
+// Wi-Fi / OTA state. otaReady gates syncPoll() so we don't UDP before the
+// stack is up. otaInProgress pauses the animation loop during an upload so
+// the servo loop doesn't fight the OTA flash.
+static char wifiSsid[] = WIFI_SSID;
+static char wifiPass[] = WIFI_PASS;
+static_assert(sizeof(OTA_PASSWORD) > 1, "OTA_PASSWORD in Secrets.h must not be empty");
+bool otaReady = false;
+bool otaInProgress = false;
+bool otaError = false;
+
+static bool ipIsUnset(IPAddress ip) {
+  return ip[0] == 0 && ip[1] == 0 && ip[2] == 0 && ip[3] == 0;
+}
+
+static void onOtaStart() {
+  otaInProgress = true;
+  Serial.println(F("OTA upload started."));
+}
+
+static void onOtaApply() {
+  Serial.println(F("OTA upload complete. Applying update..."));
+}
+
+static void onOtaError(int code, const char* message) {
+  otaError = true;
+  otaInProgress = false;
+  Serial.print(F("OTA error ")); Serial.print(code);
+  Serial.print(F(": ")); Serial.println(message);
+}
+
+static bool waitForWifiAndIp(unsigned long timeoutMs) {
+  unsigned long startedAt = millis();
+  while (millis() - startedAt < timeoutMs) {
+    if (WiFi.status() == WL_CONNECTED && !ipIsUnset(WiFi.localIP())) return true;
+    delay(500);
+    Serial.print(".");
+  }
+  return false;
+}
+
+static void printWifiStatus() {
+  Serial.print(F("WiFi status: ")); Serial.println(WiFi.status());
+  Serial.print(F("SSID: ")); Serial.println(WiFi.SSID());
+  Serial.print(F("RSSI: ")); Serial.print(WiFi.RSSI()); Serial.println(F(" dBm"));
+  Serial.print(F("IP: ")); Serial.println(WiFi.localIP());
+}
+
+static void wifiAndOtaBegin() {
+  Serial.print(F("WiFi firmware: "));
+  Serial.println(WiFi.firmwareVersion());
+  WiFi.begin(wifiSsid, wifiPass);
+  if (!waitForWifiAndIp(30000)) {
+    Serial.println();
+    Serial.println(F("WiFi did not get a usable IP. Retrying once..."));
+    printWifiStatus();
+    WiFi.disconnect();
+    delay(1000);
+    WiFi.begin(wifiSsid, wifiPass);
+  }
+  Serial.println();
+  if (!waitForWifiAndIp(30000)) {
+    Serial.println(F("WiFi unavailable; continuing USB-only."));
+    printWifiStatus();
+    return;
+  }
+  ArduinoOTA.onStart(onOtaStart);
+  ArduinoOTA.beforeApply(onOtaApply);
+  ArduinoOTA.onError(onOtaError);
+  ArduinoOTA.begin(WiFi.localIP(), OTA_HOSTNAME, OTA_PASSWORD, InternalStorage);
+  webBegin();
+  syncBegin();
+  otaReady = true;
+  Serial.println(F("OTA + sync ready."));
+  Serial.print(F("Node id: ")); Serial.println(syncNodeId());
+  Serial.print(F("Sync UDP port: ")); Serial.println(SYNC_PORT);
+  Serial.print(F("Control: http://")); Serial.print(WiFi.localIP()); Serial.println(F("/"));
+  printWifiStatus();
+}
 
 Adafruit_PWMServoDriver pwm = Adafruit_PWMServoDriver();
 
@@ -131,7 +216,8 @@ bool inputComplete = false;
  * configurations, and reserves the serial input buffer.
  */
 void setup() {
-  Serial.begin(9600);
+  Serial.begin(115200);
+  delay(2000);
   Serial.println(F("Servo Calibration & Control"));
   Serial.println(F("Type HELP for commands"));
   Serial.println();
@@ -144,14 +230,27 @@ void setup() {
   pwm.setPWMFreq(SERVO_FREQ);
 
   delay(10);
+
+  // Wi-Fi is best-effort. If it fails the servo loop still works over USB.
+  wifiAndOtaBegin();
 }
 
 void loop() {
-  updateAnimations();
-  updateSpeedRamps();
-  updateWave();
-  updateSequence();
-  updateSpeedSequence();
+  if (otaReady) {
+    ArduinoOTA.poll();
+    webPoll();
+    syncPoll();
+  }
+
+  // Pause animation work during an active OTA upload so the flash isn't
+  // contended. Servo positions hold; sequences resume after reboot.
+  if (!otaInProgress) {
+    updateAnimations();
+    updateSpeedRamps();
+    updateWave();
+    updateSequence();
+    updateSpeedSequence();
+  }
 
   // Read serial input into fixed buffer
   while (Serial.available()) {
@@ -167,7 +266,7 @@ void loop() {
 
   // Process complete command
   if (inputComplete) {
-    processCommand(inputBuffer);
+    dispatchCommand(inputBuffer, false);
     inputIndex = 0;
     inputComplete = false;
   }
