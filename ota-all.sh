@@ -27,8 +27,27 @@ fi
 
 USER_PASS="arduino:${OTA_PASSWORD}"
 
+# arduino-cli requires the sketch directory name to match the .ino base
+# name. When this checkout sits in a worktree (e.g. .claude/worktrees/foo)
+# that won't hold, so stage into a temp dir whose name matches the sketch.
+SKETCH_NAME="adafruit_16_servo"
+SKETCH_DIR="$(pwd)"
+if [[ "$(basename "$SKETCH_DIR")" != "$SKETCH_NAME" ]]; then
+  # Dir name MUST exactly equal $SKETCH_NAME — arduino-cli looks for
+  # <dirname>.ino as the entry point.
+  STAGE="/tmp/ota-stage/${SKETCH_NAME}"
+  rm -rf "$STAGE"
+  mkdir -p "$STAGE"
+  # *.cpp may not exist on every branch; nullglob so it doesn't fail.
+  shopt -s nullglob
+  cp -R ./*.ino ./*.h ./*.cpp "$STAGE"/
+  shopt -u nullglob
+  if [[ -f Secrets.h ]]; then cp Secrets.h "$STAGE"/; fi
+  SKETCH_DIR="$STAGE"
+fi
+
 echo "Compiling..."
-arduino-cli compile --fqbn "$FQBN" --build-path "$BUILD_DIR" .
+arduino-cli compile --fqbn "$FQBN" --build-path "$BUILD_DIR" "$SKETCH_DIR"
 
 if [[ ! -f "$BIN" ]]; then
   echo "Build artifact not found at $BIN" >&2
