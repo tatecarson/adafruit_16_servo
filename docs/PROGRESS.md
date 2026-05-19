@@ -10,7 +10,7 @@ Servo calibration and control system for the Adafruit PCA9685 16-channel PWM dri
 ### 1. Core Servo Control
 - Serial command interface at 9600 baud
 - Per-servo calibration (min/max pulse values)
-- Commands: `S<n> <deg>`, `P<n> <pulse>`, `CAL`, `SWEEP`, `CENTER`, `OFF`, `STATUS`, `HELP`
+- Commands: `S<n> <deg>`, `P<n> <pulse>`, `CAL`, `SWEEP`, `OFF`, `STATUS`, `HELP`
 
 ### 2. Animation System (Tasks 1-9 Complete)
 - **Easing functions** - Smooth ease-in-out cubic motion
@@ -18,14 +18,14 @@ Servo calibration and control system for the Adafruit PCA9685 16-channel PWM dri
 - **MOVE command** - Animated movement: `MOVE 0 180 2000` (servo 0 to 180° over 2 seconds)
 - **WAVE command** - Sine wave patterns across servo groups: `WAVE 0 7 50 30 90`
 - **Keyframe sequences** - Pre-programmed choreography with `PLAY 1 LOOP`
-- **STOP command** - Halts all animations
+- **Chained programs** - Back-to-back `PLAY` / `SPLAY` sequence programs with `RUN 1 LOOP`
+- **STOP command** - Halts all animations globally, or `STOP <n>` halts one servo immediately
 
 ### 3. Continuous Servo Mode (Complete)
 - `MODE <n> CONT` - Marks a servo as continuous rotation
 - `MODE <n> STD` - Switches back to standard positional servo
 - `ROTATE <spd>` - Installation rotation control for the configured continuous servo
 - `STOP` - Also stops all continuous servos
-- `CENTER <n>` - Stops a continuous servo (sends stop pulse)
 - STATUS shows `[CONT]` or `[STD]` for each servo
 
 ### 4. Speed Sequences for Continuous Servos (Complete)
@@ -56,6 +56,11 @@ Servo calibration and control system for the Adafruit PCA9685 16-channel PWM dri
 - `RIG <UP|DOWN> <pct> <spd> [ms]` command for coordinated manual testing
 - Reuses protected winch targeting plus continuous-servo speed/ramp control
 - Intended for live testing outside of `PLAY` / `SPLAY`
+
+### 9. Installation Sequence Library Updates (Complete)
+- Added `PLAY 6` tripod walk sequence for the three winches
+- Keeps one winch low enough to touch the base while the other two lift
+- Rotates the base contact point between servos 0, 1, and 2 for a stepping motion
 
 ## In Progress
 
@@ -124,6 +129,11 @@ adafruit_16_servo/
 
 22. `feat: add combined rig test command for winches and rotation`
 23. `refactor: clarify installation control commands`
+24. `feat: add per-servo stop command`
+
+## Git Commits (Sequence Library)
+
+25. `feat: add tripod walk winch sequence`
 
 ## Future Features
 

@@ -1,11 +1,17 @@
 # Manual Testing Plan
 
+Current installation reference from `servo_setup.h`:
+- Servo 0: 5-turn standard winch
+- Servo 1: 5-turn standard winch
+- Servo 2: 5-turn standard winch
+- Servo 3: continuous rotation installation drive
+
 ## Setup Checklist
 
 - [x] Arduino connected via USB
 - [x] Serial Monitor open at 9600 baud
 - [x] External power connected to servo power terminals
-- [x] At least one servo connected (note which channel: 0, 1, 4)
+- [x] At least one winch servo connected (recommended: channel 0, 1, or 2)
 
 ---
 
@@ -35,19 +41,19 @@
 
 ## Test 3: Basic Servo Movement (Degrees)
 
-**Commands (using servo 4 - standard positional):**
-1. `CAL 4 150 450` - Set calibration first
-2. `S4 90` - Move servo 4 to center
-3. `S4 0` - Move servo 4 to minimum
-4. `S4 180` - Move servo 4 to maximum
+**Commands (using servo 0 - standard winch):**
+1. `STATUS` - Confirm servo 0 is standard, not continuous
+2. `S0 900` - Move servo 0 to mid travel
+3. `S0 0` - Move servo 0 to minimum
+4. `S0 1800` - Move servo 0 to maximum
 
-**Expected:** Servo physically moves to each position, Serial confirms each move
+**Expected:** Servo 0 physically moves to each position across its configured 5-turn range, Serial confirms each move
 
 **Result:**
-- [x] Pass (servo 4 with calibration)
+- [ ] Not tested yet on current hardware
 - [ ] Fail - describe:
 
-**Note:** Servo 0 is continuous rotation - use MODE/SPEED commands instead.
+**Note:** Current installation uses servo 3 for continuous rotation. Servos 0-2 are standard winch channels.
 
 ---
 
@@ -69,53 +75,43 @@
 ## Test 5: Calibration
 
 **Commands:**
-1. `CAL 0 200 550` - Set narrower range
+1. `CAL 0 110 480` - Restore expected range for servo 0
 2. `STATUS` - Verify calibration saved
-3. `S0 0` - Should go to pulse 200
-4. `S0 180` - Should go to pulse 550
+3. `S0 0` - Should go to pulse 110
+4. `S0 1800` - Should go to pulse 480
 
 **Expected:** Calibration updates, servo respects new range
 
 **Result:**
-- [x] Pass (used CAL 0 150 440 and CAL 4 150 450)
-- [ ] Fail - describe:
-
----
-
-## Test 6: Center Command
-
-**Command:** `CENTER 4`
-
-**Expected:** Servo moves to 90° (center of calibrated range)
-
-**Result:**
-- [x] Pass
+- [ ] Not tested yet on current hardware
 - [ ] Fail - describe:
 
 ---
 
 ## Test 7: Sweep
 
-**Command:** `SWEEP 4`
+**Command:** `SWEEP 0`
 
 **Expected:** Servo sweeps from min to max to min, returns to center
 
 **Result:**
-- [x] Pass
+- [ ] Not tested yet on current hardware
 - [ ] Fail - describe:
 
 ---
 
-## Test 8: Off Command
+## Test 8: Release Protection
 
 **Commands:**
-1. `OFF 4`
-2. Physically push the servo horn
+1. `OFF 0`
+2. Confirm Serial reports that servo 0 is release-protected
+3. `RELEASE 0` only if it is mechanically safe to drop holding torque
+4. If released, verify the winch can move freely or loses holding torque
 
-**Expected:** Servo goes limp (no holding torque), can be moved by hand
+**Expected:** `OFF 0` is blocked on the protected winch, and `RELEASE 0` only disengages when explicitly requested
 
 **Result:**
-- [x] Pass (PWM stops; HS-805BB+ has mechanical gear resistance even when off)
+- [ ] Not tested yet on current hardware
 - [ ] Fail - describe:
 
 ---
@@ -123,13 +119,13 @@
 ## Test 9: Animated Move (MOVE)
 
 **Commands:**
-1. `S4 0` - Start at 0°
-2. `MOVE 4 180 2000` - Animate to 180° over 2 seconds
+1. `S0 0` - Start at minimum
+2. `MOVE 0 1800 2000` - Animate to full travel over 2 seconds
 
 **Expected:** Smooth eased motion over ~2 seconds (not instant)
 
 **Result:**
-- [x] Pass
+- [ ] Not tested yet on current hardware
 - [ ] Fail - describe:
 
 ---
@@ -145,7 +141,7 @@
 
 **Result:**
 - [ ] Pass
-- [x] Skipped - requires multiple positional servos (only have servo 4)
+- [ ] Skipped - requires multiple connected winch channels
 
 ---
 
@@ -160,6 +156,23 @@
 **Result:**
 - [x] Pass (command executes, servo 0 moves; full test needs multiple positional servos)
 - [ ] Fail - describe:
+
+---
+
+## Test 11b: Tripod Walk Sequence
+
+**Commands:**
+1. `PLAY 6`
+2. Observe the three winches through one full cycle
+
+**Expected:** Two winches lift while the third remains low enough to keep the platform touching the base, and the touch point rotates across servos 0, 1, and 2
+
+**Result:**
+- [ ] Not tested yet on current hardware
+- [ ] Fail - describe:
+
+**Bench verification:**
+- [x] `arduino-cli compile --fqbn arduino:avr:uno .`
 
 ---
 
@@ -178,23 +191,24 @@
 
 ---
 
-## Test 13: Continuous Servo Mode (if you have a continuous servo)
+## Test 13: Continuous Servo Mode (installation rotation servo)
 
 **Setup required first:**
-1. Find stop pulse with `P0 <value>` (was 295 for SM-S4303R)
-2. `CAL 0 150 440` - Set range centered on stop pulse
-3. `MODE 0 CONT`
+1. Confirm servo 3 is the configured continuous channel in `servo_setup.h`
+2. Verify stop pulse is still correct with `P3 <value>` if needed
+3. Use `STATUS` to confirm servo 3 reports `[CONT]`
 
 **Commands:**
-1. `SPEED 0 0` - Stop
-2. `SPEED 0 50` - 50% speed forward
-3. `SPEED 0 -50` - 50% speed reverse
-4. `SPEED 0 0` - Stop
+1. `ROTATE 0` - Stop
+2. `ROTATE 35` - Slow forward rotation
+3. `ROTATE 70` - Faster forward rotation
+4. `ROTATE -35` - Reverse rotation
+5. `ROTATE 0` - Stop
 
-**Expected:** Servo spins at different speeds/directions, stops at 0
+**Expected:** Servo 3 spins at different speeds/directions, and `ROTATE 0` returns it to stop
 
 **Result:**
-- [x] Pass (after calibration)
+- [ ] Not tested yet on current hardware
 - [ ] Fail - describe:
 
 ---
@@ -203,41 +217,48 @@
 
 | Test | Issue Description | Severity |
 |------|-------------------|----------|
-| 3 | Servo 0 is continuous rotation, not positional | Hardware config |
+| 18 | Confirm whether `UP` / `DOWN` semantics match the physical installation direction labels | Behavior check |
 
 ---
 
-## Verification Note: Percent-of-Travel Commands
+## Verification Note: Directional Percent Commands
 
-Manual hardware verification for the new `L<n> <pct>` and `LMOVE <n> <pct> <ms>` commands has not been run in this session.
+Manual hardware verification for the current `UP` / `DOWN` / `UMOVE` / `DMOVE` commands should be run against the live winch installation.
 
-Build verification completed:
-- [x] `arduino-cli compile --fqbn arduino:avr:uno .`
-
-Suggested manual checks when hardware is connected:
-1. `L0 0`
-2. `L0 50`
-3. `L0 100`
-4. `LMOVE 0 25 2000`
+Suggested checks:
+1. Pick one winch channel, preferably servo 0
+2. Mark the drum or horn so direction changes are obvious
+3. Run:
+   - `DOWN 0 0`
+   - `DOWN 0 50`
+   - `DOWN 0 100`
+   - `UP 0 0`
+   - `UP 0 50`
+   - `UP 0 100`
+4. Repeat with animation:
+   - `DMOVE 0 25 2000`
+   - `UMOVE 0 75 2000`
 
 Expected:
-- Servo moves to minimum, midpoint, and maximum calibrated travel
-- `LMOVE` performs a smooth eased transition
+- `DOWN 0 0` goes to the fully up / retracted end
+- `DOWN 0 100` goes to the fully down / lowered end
+- `UP 0 0` goes to the fully down / lowered end
+- `UP 0 100` goes to the fully up / retracted end
+- `UMOVE` / `DMOVE` follow the same endpoints with smooth easing
+- `UP x p` and `DOWN x (100-p)` land at the same physical point
 
 ---
 
 ## Test 14: Speed Sequences (Continuous Servos)
 
-**Setup:** Servos 0 and 1 must be configured as continuous (already hardcoded in sketch)
+**Setup:** Servo 3 must be configured as continuous and the selected speed sequence must target the current installation layout
 
 **Commands:**
 1. `SPLAY 1` - Play speed sequence 1 once
 
 **Expected:**
-- t=0: Servos 0 and 1 start ramping (opposite directions, 500ms ramp)
-- t=3s: Both ramp to stop
-- t=4s: Both ramp to opposite speeds (reversed)
-- t=7s: Both stop
+- Sequence should drive the configured continuous servo(s) according to `sequence_setup.h`
+- Observe ramp-up, hold, reversal, and stop timing against the authored sequence
 - Serial shows "Playing speed sequence 1" then ramp messages, then "Speed sequence complete"
 
 **Result:**
@@ -317,7 +338,7 @@ Expected:
 
 ### 16e: Sweep Underflow Fix
 
-**Command:** `SWEEP 4`
+**Command:** `SWEEP 0`
 
 **Expected:** Sweep completes without hanging at end
 
@@ -401,10 +422,103 @@ Sequence data moved to PROGMEM saves ~114 bytes RAM.
 
 ---
 
+## Test 18: Winch Direction Semantics
+
+This test is the main check for the current `UP` / `DOWN` concern.
+
+**Setup:**
+1. Use servo 0 first
+2. Make sure the winch has enough clearance for full travel
+3. Add a tape flag or visual mark so travel direction is easy to see
+
+**Commands:**
+1. `STATUS`
+2. `DOWN 0 0`
+3. `DOWN 0 100`
+4. `UP 0 0`
+5. `UP 0 100`
+6. `DOWN 0 25`
+7. `UP 0 75`
+8. `DOWN 0 50`
+9. `UP 0 50`
+
+**Expected:**
+- `DOWN 0 0` and `UP 0 100` match
+- `DOWN 0 100` and `UP 0 0` match
+- `DOWN 0 25` and `UP 0 75` match
+- `DOWN 0 50` and `UP 0 50` match
+- The labels feel physically correct for the installation:
+  `UP` should retract / raise
+  `DOWN` should lower / extend
+
+**Result:**
+- [ ] Not tested yet on hardware
+
+---
+
+## Test 19: Animated Winch Direction Semantics
+
+**Commands:**
+1. `DMOVE 0 20 2000`
+2. Wait for completion
+3. `UMOVE 0 80 2000`
+4. Wait for completion
+5. `DMOVE 0 50 2000`
+6. `UMOVE 0 50 2000`
+
+**Expected:**
+- Animated commands reach the same endpoints as the non-animated commands
+- Motion is smooth and non-blocking
+- Final positions match the same `UP` / `DOWN` equivalence pairs
+
+**Result:**
+- [ ] Not tested yet on hardware
+
+---
+
+## Test 20: Installation Rotation Command
+
+**Commands:**
+1. `ROTATE 0`
+2. `ROTATE 20`
+3. `ROTATE 50`
+4. `ROTATE -20`
+5. `ROTATE 0`
+
+**Expected:**
+- Only the installation rotation servo responds
+- Positive and negative values reverse direction
+- Command no longer requires a servo number
+- `ROTATE 0` stops motion cleanly
+
+**Result:**
+- [ ] Not tested yet on hardware
+
+---
+
+## Test 21: Per-Servo Stop
+
+**Commands:**
+1. `UMOVE 0 80 4000`
+2. While servo 0 is still moving, send `STOP 0`
+3. `ROTATE 40`
+4. While the installation is rotating, send `STOP 3`
+
+**Expected:**
+- `STOP 0` immediately halts servo 0 and holds it at its current position
+- `STOP 3` immediately stops the continuous rotation servo
+- A later direct command to that servo should allow it to move again
+
+**Result:**
+- [ ] Not tested yet on hardware
+
+---
+
 ## Servo Calibration Notes
 
 | Channel | Servo Model | Type | Stop Pulse | Calibration |
 |---------|-------------|------|------------|-------------|
-| 0 | SM-S4303R | Continuous | 295 | `CAL 0 150 440` then `MODE 0 CONT` |
-| 1 | SM-S4303R | Continuous | 295 | `CAL 1 150 440` then `MODE 1 CONT` |
-| 4 | Hitec HS-805BB+ | Standard | N/A | `CAL 4 150 450` |
+| 0 | goBILDA 2000 Series 25-2 | Standard, 5-turn | N/A | `CAL 0 110 480` |
+| 1 | goBILDA 2000 Series 25-2 | Standard, 5-turn | N/A | `CAL 1 110 480` |
+| 2 | goBILDA 2000 Series 25-2 | Standard, 5-turn | N/A | `CAL 2 110 480` |
+| 3 | goBILDA 2000 Series 25-3 | Continuous | 298 | `CAL 3 186 410`, configured continuous in `servo_setup.h` |

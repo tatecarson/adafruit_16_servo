@@ -8,9 +8,9 @@ void showHelp() {
   Serial.println(F("Testing / Calibration:"));
   Serial.println(F("S<n> <deg>            Move servo n to degrees"));
   Serial.println(F("P<n> <pulse>          Move servo n to raw pulse"));
+  Serial.println(F("TPULSE <pulse>        Set servos 0-2 to one raw pulse"));
   Serial.println(F("CAL <n> <min> <max>   Set calibration"));
   Serial.println(F("SWEEP <n>             Test sweep servo n"));
-  Serial.println(F("CENTER <n>            Move to center (90 deg) / stop"));
   Serial.println(F("OFF <n>               Turn off servo n (blocked on protected winches)"));
   Serial.println(F("RELEASE <n>           Force-release servo n"));
   Serial.println(F("STATUS                Show all servos"));
@@ -27,7 +27,8 @@ void showHelp() {
   Serial.println(F("WAVE <s> <e> [spd] [off] [amp]  Start wave pattern"));
   Serial.println(F("PLAY <n> [LOOP]       Play sequence n"));
   Serial.println(F("SPLAY <n> [LOOP]      Speed sequence (continuous)"));
-  Serial.println(F("STOP                  Stop wave/sequence"));
+  Serial.println(F("RUN <n> [LOOP]        Run a chained sequence program"));
+  Serial.println(F("STOP [n]              Stop all motion or hold one servo"));
   Serial.println(F("TIMESCALE <n>         Scale sequence timing n times slower"));
   Serial.println(F("MODE <n> STD|CONT     Set servo mode"));
   Serial.println(F("ROTATE <spd>          Installation rotation speed"));
@@ -93,6 +94,76 @@ bool parseRigDirection(const char* cmd, bool& percentUp, uint8_t& percent, int8_
 
   percent = constrain(percent, 0, 100);
   speed = (int8_t)constrain(speedIn, -100, 100);
+  return true;
+}
+
+bool startPositionSequence(uint8_t seqNum, bool loop, bool announce) {
+  if (!selectPositionSequence(seqNum, currentSequence, currentSequenceLength)) {
+    Serial.println(F("Unknown sequence"));
+    return false;
+  }
+
+  waveActive = false;
+  sequenceLoop = loop;
+  sequenceStartTime = millis();
+  lastTriggeredKeyframe = 0;
+  sequenceActive = true;
+
+  if (announce) {
+    Serial.print(F("Playing sequence "));
+    Serial.print(seqNum);
+    if (loop) Serial.print(F(" (looping)"));
+    Serial.println();
+  }
+  return true;
+}
+
+bool startSpeedSequence(uint8_t seqNum, bool loop, bool announce) {
+  if (!selectSpeedSequence(seqNum, currentSpeedSeq, currentSpeedSeqLength)) {
+    Serial.println(F("Unknown speed sequence"));
+    return false;
+  }
+
+  speedSeqActive = true;
+  waveActive = false;
+  speedSeqLoop = loop;
+  speedSeqStartTime = millis();
+  lastTriggeredSpeedFrame = 0;
+
+  if (announce) {
+    Serial.print(F("Playing speed sequence "));
+    Serial.print(seqNum);
+    if (loop) Serial.print(F(" (looping)"));
+    Serial.println();
+  }
+  return true;
+}
+
+bool startSequenceProgram(uint8_t programNum, bool loop) {
+  if (!selectSequenceProgram(programNum, currentProgram)) {
+    Serial.println(F("Unknown program"));
+    return false;
+  }
+
+  waveActive = false;
+  sequenceActive = false;
+  speedSeqActive = false;
+  programActive = true;
+  programLoop = loop;
+  programPositionDone = (currentProgram->positionLength == 0);
+  programSpeedDone = (currentProgram->speedLength == 0);
+  currentProgramPositionStepIndex = 0;
+  currentProgramPositionIteration = 0;
+  currentProgramSpeedStepIndex = 0;
+  currentProgramSpeedIteration = 0;
+
+  Serial.print(F("Running program "));
+  Serial.print(programNum);
+  if (loop) Serial.print(F(" (looping)"));
+  Serial.println();
+
+  if (!programPositionDone) startNextProgramPositionStep();
+  if (!programSpeedDone) startNextProgramSpeedStep();
   return true;
 }
 
@@ -200,46 +271,36 @@ void processCommand(char* cmd) {
     int space = findChar(cmd, ' ', 0);
     if (space > 0) {
       uint8_t seqNum = atoi(cmd + space + 1);
-      sequenceLoop = containsStr(cmd, "LOOP");
-
-      if (!selectPositionSequence(seqNum, currentSequence, currentSequenceLength)) {
-        Serial.println(F("Unknown sequence"));
-        return;
-      }
-
-      sequenceStartTime = millis();
-      lastTriggeredKeyframe = 0;
-      sequenceActive = true;
-      waveActive = false;
-
-      Serial.print(F("Playing sequence ")); Serial.print(seqNum);
-      if (sequenceLoop) Serial.print(F(" (looping)"));
-      Serial.println();
+      programActive = false;
+      speedSeqActive = false;
+      startPositionSequence(seqNum, containsStr(cmd, "LOOP"), true);
     }
   }
   else if (startsWith(cmd, "SPLAY")) {
     int space = findChar(cmd, ' ', 0);
     if (space > 0) {
       uint8_t seqNum = atoi(cmd + space + 1);
-      bool loop = containsStr(cmd, "LOOP");
-
-      speedSeqActive = false;
+      programActive = false;
       sequenceActive = false;
-      waveActive = false;
-
-      if (!selectSpeedSequence(seqNum, currentSpeedSeq, currentSpeedSeqLength)) {
-        Serial.println(F("Unknown speed sequence"));
-        return;
-      }
-
-      speedSeqActive = true;
-      speedSeqLoop = loop;
-      speedSeqStartTime = millis();
-      lastTriggeredSpeedFrame = 0;
-
-      Serial.print(F("Playing speed sequence ")); Serial.print(seqNum);
-      if (loop) Serial.print(F(" (looping)"));
-      Serial.println();
+      startSpeedSequence(seqNum, containsStr(cmd, "LOOP"), true);
+    }
+  }
+  else if (startsWith(cmd, "RUN")) {
+    int space = findChar(cmd, ' ', 0);
+    if (space > 0) {
+      uint8_t programNum = atoi(cmd + space + 1);
+      startSequenceProgram(programNum, containsStr(cmd, "LOOP"));
+    }
+  }
+  else if (startsWith(cmd, "TPULSE")) {
+    int space = findChar(cmd, ' ', 0);
+    if (space > 0) {
+      uint16_t pulse = atoi(cmd + space + 1);
+      setTestPulse(pulse);
+      Serial.print(F("Test pulse -> "));
+      Serial.println(pulse);
+    } else {
+      Serial.println(F("Use: TPULSE <pulse>"));
     }
   }
   else if (cmd[0] == 'P' && cmd[1] >= '0' && cmd[1] <= '9') {
@@ -265,20 +326,6 @@ void processCommand(char* cmd) {
     if (space > 0) {
       uint8_t servo = atoi(cmd + space + 1);
       sweepServo(servo);
-    }
-  }
-  else if (startsWith(cmd, "CENTER")) {
-    int space = findChar(cmd, ' ', 0);
-    if (space > 0) {
-      uint8_t servo = atoi(cmd + space + 1);
-      if (servo < NUM_SERVOS && servoConfig[servo].continuous) {
-        pwm.setPWM(servo, 0, servoConfig[servo].stopPulse);
-        servoState[servo].posPulse = servoConfig[servo].stopPulse;
-        Serial.print(F("Servo ")); Serial.print(servo);
-        Serial.println(F(" stopped"));
-      } else {
-        setServoDegrees(servo, servoConfig[servo].totalDegrees / 2);
-      }
     }
   }
   else if (startsWith(cmd, "OFF")) {
@@ -372,13 +419,22 @@ void processCommand(char* cmd) {
       Serial.print(F(" amp=")); Serial.println(waveAmplitude);
     }
   }
+  else if (startsWith(cmd, "STOP ")) {
+    int space = findChar(cmd, ' ', 0);
+    if (space > 0) {
+      uint8_t servo = atoi(cmd + space + 1);
+      stopServoNow(servo);
+    }
+  }
   else if (strcmp(cmd, "STOP") == 0 || strcmp(cmd, "STOP ALL") == 0) {
     waveActive = false;
     sequenceActive = false;
     speedSeqActive = false;
+    programActive = false;
     for (uint8_t i = 0; i < NUM_SERVOS; i++) {
       servoState[i].moving = false;
       servoState[i].speedRamping = false;
+      servoState[i].stopped = false;
       if (servoConfig[i].continuous) {
         setServoSpeed(i, 0);
       }

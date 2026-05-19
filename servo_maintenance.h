@@ -52,6 +52,10 @@ void showStatus() {
     Serial.print(F(" max=")); Serial.print(servoConfig[i].maxPulse);
     Serial.print(F(" pos=")); Serial.print(servoState[i].posPulse);
     Serial.print(F(" range=0-")); Serial.print(servoConfig[i].totalDegrees);
+    if (servoConfig[i].downDegrees != 0) {
+      Serial.print(F(" travel=")); Serial.print(servoConfig[i].upDegrees);
+      Serial.print(F("-")); Serial.print(servoConfig[i].downDegrees);
+    }
     if (servoConfig[i].continuous) {
       Serial.print(F(" stop=")); Serial.print(servoConfig[i].stopPulse);
     }

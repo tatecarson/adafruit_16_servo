@@ -6,7 +6,7 @@ void updateAnimations() {
   unsigned long now = millis();
 
   for (uint8_t i = 0; i < NUM_SERVOS; i++) {
-    if (!servoState[i].moving) continue;
+    if (servoState[i].stopped || !servoState[i].moving) continue;
 
     unsigned long elapsed = now - servoState[i].moveStartMs;
 
@@ -29,7 +29,7 @@ void updateSpeedRamps() {
   unsigned long now = millis();
 
   for (uint8_t i = 0; i < NUM_SERVOS; i++) {
-    if (!servoState[i].speedRamping) continue;
+    if (servoState[i].stopped || !servoState[i].speedRamping) continue;
 
     unsigned long elapsed = now - servoState[i].speedRampStartMs;
 
@@ -56,15 +56,23 @@ void updateWave() {
   if (!waveActive) return;
 
   unsigned long elapsed = millis() - waveStartTime;
+  float cycleMs = (float)waveSpeed * 360.0f;
+  if (cycleMs < 1.0f) cycleMs = 1.0f;
 
   for (uint8_t i = waveStartServo; i <= waveEndServo; i++) {
+    if (servoState[i].stopped || servoConfig[i].continuous) continue;
     uint8_t servoIndex = i - waveStartServo;
-    float phase = (float)(elapsed) / (float)(waveSpeed * 360 / 1000);
+    uint16_t minDegrees = servoConfig[i].upDegrees;
+    uint16_t maxDegrees = servoConfig[i].downDegrees;
+    if (maxDegrees == 0) maxDegrees = servoConfig[i].totalDegrees;
+
+    float phase = (float)elapsed / cycleMs;
     phase += (float)(servoIndex * wavePhaseOffset) / 360.0f;
 
     float sineVal = sin(phase * 2.0f * PI);
-    float degrees = waveCenter + (sineVal * (float)waveAmplitude / 2.0f);
-    uint16_t pulse = degreesToPulse(i, (uint16_t)constrain(degrees, 0, servoConfig[i].totalDegrees));
+    float centerDegrees = ((float)minDegrees + (float)maxDegrees) / 2.0f;
+    float degrees = centerDegrees + (sineVal * (float)waveAmplitude / 2.0f);
+    uint16_t pulse = degreesToPulse(i, (uint16_t)constrain(degrees, minDegrees, maxDegrees));
 
     if (pulse != servoState[i].posPulse) {
       servoState[i].posPulse = pulse;
@@ -96,7 +104,18 @@ void updateSequence() {
       return;
     }
 
-    moveServoDegrees(kf.servo, kf.degrees, (uint32_t)kf.duration * timeMultiplier);
+    if (!servoState[kf.servo].stopped) {
+      moveSequenceDegrees(kf.servo, kf.degrees, (uint32_t)kf.duration * timeMultiplier);
+      Serial.print(F("t="));
+      Serial.print(elapsed / 1000.0f, 1);
+      Serial.print(F("s  Servo "));
+      Serial.print(kf.servo);
+      Serial.print(F(" -> "));
+      Serial.print(kf.degrees);
+      Serial.print(F("° over "));
+      Serial.print((uint32_t)kf.duration * timeMultiplier);
+      Serial.println(F("ms"));
+    }
     lastTriggeredKeyframe = i + 1;
   }
 }
@@ -129,7 +148,107 @@ void updateSpeedSequence() {
       return;
     }
 
-    rampServoSpeed(sf.servo, sf.speed, (uint32_t)sf.rampMs * timeMultiplier);
+    if (!servoState[sf.servo].stopped) {
+      rampServoSpeed(sf.servo, sf.speed, (uint32_t)sf.rampMs * timeMultiplier);
+      Serial.print(F("t="));
+      Serial.print(elapsed / 1000.0f, 1);
+      Serial.print(F("s  Servo "));
+      Serial.print(sf.servo);
+      Serial.print(F(" -> speed "));
+      Serial.print(sf.speed);
+      Serial.print(F("% ramp "));
+      Serial.print((uint32_t)sf.rampMs * timeMultiplier);
+      Serial.println(F("ms"));
+    }
     lastTriggeredSpeedFrame = i + 1;
+  }
+}
+
+bool startNextProgramPositionStep() {
+  if (currentProgram == nullptr || currentProgram->positionSteps == nullptr || currentProgram->positionLength == 0) {
+    programPositionDone = true;
+    return false;
+  }
+
+  while (true) {
+    if (currentProgramPositionStepIndex >= currentProgram->positionLength) {
+      if (!programLoop) {
+        programPositionDone = true;
+        return false;
+      }
+      currentProgramPositionStepIndex = 0;
+      currentProgramPositionIteration = 0;
+      Serial.println(F("Program position track looping"));
+    }
+
+    ProgramSequenceStep step;
+    memcpy_P(&step, &currentProgram->positionSteps[currentProgramPositionStepIndex], sizeof(ProgramSequenceStep));
+    uint16_t repeatCount = step.repeatCount < 1 ? 1 : step.repeatCount;
+    if (currentProgramPositionIteration >= repeatCount) {
+      currentProgramPositionStepIndex++;
+      currentProgramPositionIteration = 0;
+      continue;
+    }
+
+    if (!startPositionSequence(step.sequenceNumber, false, true)) {
+      programPositionDone = true;
+      return false;
+    }
+
+    currentProgramPositionIteration++;
+    programPositionDone = false;
+    return true;
+  }
+}
+
+bool startNextProgramSpeedStep() {
+  if (currentProgram == nullptr || currentProgram->speedSteps == nullptr || currentProgram->speedLength == 0) {
+    programSpeedDone = true;
+    return false;
+  }
+
+  while (true) {
+    if (currentProgramSpeedStepIndex >= currentProgram->speedLength) {
+      if (!programLoop) {
+        programSpeedDone = true;
+        return false;
+      }
+      currentProgramSpeedStepIndex = 0;
+      currentProgramSpeedIteration = 0;
+      Serial.println(F("Program speed track looping"));
+    }
+
+    ProgramSequenceStep step;
+    memcpy_P(&step, &currentProgram->speedSteps[currentProgramSpeedStepIndex], sizeof(ProgramSequenceStep));
+    uint16_t repeatCount = step.repeatCount < 1 ? 1 : step.repeatCount;
+    if (currentProgramSpeedIteration >= repeatCount) {
+      currentProgramSpeedStepIndex++;
+      currentProgramSpeedIteration = 0;
+      continue;
+    }
+
+    if (!startSpeedSequence(step.sequenceNumber, false, true)) {
+      programSpeedDone = true;
+      return false;
+    }
+
+    currentProgramSpeedIteration++;
+    programSpeedDone = false;
+    return true;
+  }
+}
+
+void updateSequenceProgram() {
+  if (!programActive) return;
+  if (!sequenceActive && !programPositionDone) {
+    startNextProgramPositionStep();
+  }
+  if (!speedSeqActive && !programSpeedDone) {
+    startNextProgramSpeedStep();
+  }
+
+  if (!sequenceActive && !speedSeqActive && programPositionDone && programSpeedDone) {
+    programActive = false;
+    Serial.println(F("Program complete"));
   }
 }

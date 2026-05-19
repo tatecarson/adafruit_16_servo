@@ -90,7 +90,6 @@ Per-servo setup and runtime state is tracked in two arrays of structs:
 - `P<n> <pulse>` - Move servo to raw pulse value
 - `CAL <n> <min> <max>` - Set pulse calibration
 - `SWEEP <n>` - Test sweep full range
-- `CENTER <n>` - Move to 90° (or stop continuous servo)
 - `OFF <n>` - Stop sending PWM
 
 ### Animation
@@ -98,6 +97,7 @@ Per-servo setup and runtime state is tracked in two arrays of structs:
 - `LMOVE <n> <pct> <ms>` - Smooth eased move to percent of travel
 - `WAVE <s> <e> [spd] [off] [amp]` - Sine wave pattern across servos
 - `PLAY <n> [LOOP]` - Play keyframe sequence
+- `RUN <n> [LOOP]` - Run a chained program of sequences
 - `STOP` - Stop all animations
 
 ### Continuous Servo Mode

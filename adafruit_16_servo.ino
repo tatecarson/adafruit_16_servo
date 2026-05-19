@@ -10,7 +10,6 @@
       P<n> <pulse>   - Move servo n to raw pulse (150-600)
       CAL <n> <min> <max> - Set servo n calibration (pulse values)
       SWEEP <n>      - Test sweep servo n
-      CENTER <n>     - Move servo n to center (90 degrees)
       OFF <n>        - Turn off servo n
       RELEASE <n>    - Force-release servo n
       STATUS         - Show all servo calibrations
@@ -26,7 +25,8 @@
       WAVE <start> <end> [speed] [offset] [amp] - Wave pattern
       PLAY <n> [LOOP]    - Play keyframe sequence
       SPLAY <n> [LOOP]   - Play speed sequence (continuous servos)
-      STOP               - Stop wave/sequence
+      RUN <n> [LOOP]     - Run a chained program of sequences
+      STOP [n]           - Stop all motion or hold one servo
       MODE <n> STD|CONT  - Set servo mode (standard/continuous)
       ROTATE <spd>       - Set installation rotation speed
       TIMESCALE <n>      - Scale sequence timing n times slower
@@ -200,6 +200,17 @@ uint8_t currentSpeedSeqLength = 0;
 unsigned long speedSeqStartTime = 0;
 uint8_t lastTriggeredSpeedFrame = 0;
 
+// Chained program playback state
+bool programActive = false;
+bool programLoop = false;
+const SequenceProgramDefinition* currentProgram = nullptr;
+bool programPositionDone = true;
+bool programSpeedDone = true;
+uint8_t currentProgramPositionStepIndex = 0;
+uint16_t currentProgramPositionIteration = 0;
+uint8_t currentProgramSpeedStepIndex = 0;
+uint16_t currentProgramSpeedIteration = 0;
+
 // Default calibration values
 #define DEFAULT_MIN 150
 #define DEFAULT_MAX 600
@@ -222,6 +233,9 @@ void initServoDefaults() {
     servoConfig[i].stopPulse = defaultCenter;
     servoConfig[i].totalDegrees = 180;
     servoConfig[i].allowRelease = true;
+    servoConfig[i].upDegrees = 0;
+    servoConfig[i].downDegrees = 0;
+    servoConfig[i].reverseDir = false;
 
     servoState[i].posPulse = defaultCenter;
     servoState[i].targetPulse = defaultCenter;
@@ -285,6 +299,7 @@ void loop() {
     updateWave();
     updateSequence();
     updateSpeedSequence();
+    updateSequenceProgram();
   }
 
   // Read serial input into fixed buffer

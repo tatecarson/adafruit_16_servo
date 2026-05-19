@@ -13,10 +13,14 @@ struct ServoConfig {
   uint16_t stopPulse;
   uint16_t totalDegrees;
   bool allowRelease;
+  uint16_t upDegrees;    // degree position for fully-up (default 0)
+  uint16_t downDegrees;  // degree position for fully-down (0 = use totalDegrees)
+  bool reverseDir;       // true = higher degrees is physically UP
 };
 
 struct ServoState {
   uint16_t posPulse;
+  bool stopped;
 
   uint16_t targetPulse;
   uint16_t startPulse;
@@ -43,6 +47,18 @@ struct SpeedFrame {
   int8_t speed;
   uint16_t time;
   uint16_t rampMs;
+};
+
+struct ProgramSequenceStep {
+  uint8_t sequenceNumber;
+  uint16_t repeatCount;
+};
+
+struct SequenceProgramDefinition {
+  const ProgramSequenceStep* positionSteps;
+  uint8_t positionLength;
+  const ProgramSequenceStep* speedSteps;
+  uint8_t speedLength;
 };
 
 extern Adafruit_PWMServoDriver pwm;
@@ -75,9 +91,20 @@ extern uint8_t currentSpeedSeqLength;
 extern unsigned long speedSeqStartTime;
 extern uint8_t lastTriggeredSpeedFrame;
 
+extern bool programActive;
+extern bool programLoop;
+extern const SequenceProgramDefinition* currentProgram;
+extern bool programPositionDone;
+extern bool programSpeedDone;
+extern uint8_t currentProgramPositionStepIndex;
+extern uint16_t currentProgramPositionIteration;
+extern uint8_t currentProgramSpeedStepIndex;
+extern uint16_t currentProgramSpeedIteration;
+
 void initServoDefaults();
 
 uint16_t degreesToPulse(uint8_t servo, uint16_t degrees);
+uint16_t sequenceDegreesToPulse(uint8_t servo, uint16_t degrees);
 uint16_t percentToDegrees(uint8_t servo, uint8_t percent);
 uint16_t upPercentToDegrees(uint8_t servo, uint8_t percentUp);
 uint16_t speedToPulse(uint8_t servo, int8_t speed);
@@ -90,13 +117,21 @@ void setServoSpeed(uint8_t servo, int8_t speed);
 void rampServoSpeed(uint8_t servo, int8_t targetSpeed, uint32_t rampMs);
 void moveServoAnimated(uint8_t servo, uint16_t targetPulse, uint32_t duration);
 void moveServoDegrees(uint8_t servo, uint16_t degrees, uint32_t duration);
+void moveSequenceDegrees(uint8_t servo, uint16_t degrees, uint32_t duration);
 void stopActivePatterns();
+void clearServoStop(uint8_t servo);
+void stopServoNow(uint8_t servo);
 void setServoPercent(uint8_t servo, uint8_t percent);
 void moveServoPercent(uint8_t servo, uint8_t percent, uint32_t duration);
 void setServoPercentUp(uint8_t servo, uint8_t percentUp);
 void moveServoPercentUp(uint8_t servo, uint8_t percentUp, uint32_t duration);
 void setAllProtectedWinchesPercent(bool percentUp, uint8_t percent);
 void moveAllProtectedWinchesPercent(bool percentUp, uint8_t percent, uint32_t duration);
+void setTestPulse(uint16_t pulse);
+bool startPositionSequence(uint8_t seqNum, bool loop, bool announce);
+bool startSpeedSequence(uint8_t seqNum, bool loop, bool announce);
+bool startSequenceProgram(uint8_t programNum, bool loop);
+void updateSequenceProgram();
 void servoOff(uint8_t servo);
 void releaseServo(uint8_t servo);
 
