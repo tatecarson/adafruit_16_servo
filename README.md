@@ -55,6 +55,7 @@ Interactive Serial interface for the Adafruit PCA9685 16-channel PWM/Servo drive
 | `PLAY <n> [LOOP]` | `PLAY 1 LOOP` | Play keyframe sequence |
 | `SPLAY <n> [LOOP]` | `SPLAY 1 LOOP` | Play speed sequence (continuous servos) |
 | `RUN <n> [LOOP]` | `RUN 1 LOOP` | Run a chained program made from existing `PLAY`/`SPLAY` sequences |
+| `TIMESCALE [n]` | `TIMESCALE 2` | Show or set the global sequence slowdown multiplier |
 | `STOP` | `STOP` | Stop all active motion and sequences |
 | `STOP <n>` | `STOP 0` | Stop and hold one servo at its current position |
 | `MODE <n> STD\|CONT` | `MODE 2 CONT` | Set servo to standard or continuous |
@@ -118,6 +119,12 @@ const SpeedFrame speedSeq1[] PROGMEM = {
 - `time_ms`: When to start this speed change (ms from sequence start)
 - `ramp_ms`: How long to ramp to the target speed (0 = instant)
 
+Current `SPLAY` sequences in this repo:
+
+- `SPLAY 1`: demo rotation
+- `SPLAY 2`: drift rotation with a faster peak and shorter ramp
+- `SPLAY 3`: slower drift rotation with a lower peak speed and longer ramp
+
 ### Chained Programs
 
 Programs let you stitch existing `PLAY` and `SPLAY` sequences into a longer-running show:
@@ -152,6 +159,32 @@ const SequenceProgramDefinition program1 = {
 - `speedSteps`: `SPLAY` sequence IDs for the continuous-rotation track
 - `repeatCount`: How many times to run that track step before advancing
 - `RUN 1 LOOP` makes both tracks loop independently, so rotation can continue while the positional track changes sequences
+
+Current `RUN` programs in this repo:
+
+- `RUN 1`: showcase program with mixed positional textures and `SPLAY 1`
+- `RUN 2`: drift program using sequence 8 with `SPLAY 2`
+- `RUN 3`: slow drift program using sequence 8 with `SPLAY 3`
+
+### Sequence Time Scaling
+
+Use `TIMESCALE` to slow down all sequence-driven timing without editing `sequence_setup.h`:
+
+```text
+TIMESCALE     # show the current multiplier
+TIMESCALE 2   # run sequences 2x slower
+TIMESCALE 10  # run sequences 10x slower
+TIMESCALE 1   # restore normal timing
+```
+
+- Higher values are slower
+- Default is `1`
+- Values below `1` are clamped to `1`
+- The multiplier applies globally to `PLAY`, `SPLAY`, and `RUN`
+- For positional sequences, both `time_ms` and `duration_ms` are multiplied
+- For speed sequences, both `time_ms` and `ramp_ms` are multiplied
+
+This is useful for rehearsing motion at a safer pace or stretching an existing show without changing the stored keyframes.
 
 ## Percent-of-Travel Commands
 

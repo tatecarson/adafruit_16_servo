@@ -254,13 +254,13 @@ const Keyframe sequence8[] PROGMEM = {
   {0, 1000, 15000, 15000},
   {1, 1000, 15000, 15000},
 
-  // --- Phase 3 (30-45s): All three drop to 1500 (deep) — peak ---
+  // --- Phase 3 (30-45s): All three drop to 1100 (deep) — peak ---
   {2, 150, 30000,     0},
-  {0, 1500, 30000, 15000},
-  {1, 1500, 30000, 15000},
-  {2, 1500, 30000, 15000},
+  {0, 1100, 30000, 15000},
+  {1, 1100, 30000, 15000},
+  {2, 1100, 30000, 15000},
 
-  // --- Phase 4 (45-60s): All three rise 1500→1000 ---
+  // --- Phase 4 (45-60s): All three rise 1300→1000 ---
   {0, 1000, 45000, 15000},
   {1, 1000, 45000, 15000},
   {2, 1000, 45000, 15000},
@@ -300,14 +300,27 @@ const SpeedFrame speedSeq1[] PROGMEM = {
 static const uint8_t speedSeq1Length = sizeof(speedSeq1) / sizeof(speedSeq1[0]);
 
 // Speed sequence 2: "Drift rotation accelerate/decelerate"
-// Ramps servo 3 from speed 30 up to 90 over 45s, then back down to 30 over 45s.
+// Ramps servo 3 from speed 80 up to 90 over 45s, then back down to 80 over 45s.
 const SpeedFrame speedSeq2[] PROGMEM = {
-  {3, 30,      0,     0},      // t=0s:   Start at speed 30 (instant)
+  {3, 80,      0,     0},      // t=0s:   Start at speed 80 (instant)
   {3, 90,      0, 45000},      // t=0s:   Ramp up to 90 over 45s
-  {3, 30,  90000, 45000},      // t=90s:  Ramp down to 30 over 45s (held 90 for 45s)
-  {SEQUENCE_END_MARKER_SERVO, 0, 165000, 0}  // t=165s: End (held 30 for 30s)
+  {3, 80,  90000, 45000},      // t=90s:  Ramp down to 80 over 45s (held 90 for 45s)
+  {SEQUENCE_END_MARKER_SERVO, 0, 165000, 0}  // t=165s: End (held 80 for 30s)
 };
 static const uint8_t speedSeq2Length = sizeof(speedSeq2) / sizeof(speedSeq2[0]);
+
+// Speed sequence 3: "Slow drift rotation"
+// Gentler version of sequence 2: tops out at 60 instead of 90 and takes 60s
+// to get there, then eases back down over 60s.
+const SpeedFrame speedSeq3[] PROGMEM = {
+  {3, 30,      0,     0},      // t=0s:   Start at speed 30 (instant)
+  {3, 60,      0, 60000},      // t=0s:   Ramp up to 60 over 60s
+  {3, 30, 120000, 60000},      // t=120s: Ramp down to 30 over 60s (held 60 for 60s)
+  {SEQUENCE_END_MARKER_SERVO, 0, 210000, 0}  // t=210s: End (held 30 for 30s)
+};
+static const uint8_t speedSeq3Length = sizeof(speedSeq3) / sizeof(speedSeq3[0]);
+
+
 
 // ============================================================================
 // RUN programs (chained PLAY + SPLAY sequences, run in parallel)
@@ -355,6 +368,21 @@ const SequenceProgramDefinition program2 = {
   sizeof(program2SpeedTrack) / sizeof(program2SpeedTrack[0]),
 };
 
+// Program 3: "Slow drift"
+// Same winch motion as program 2, but uses the gentler speed sequence 3.
+const ProgramSequenceStep program3PositionTrack[] PROGMEM = {
+  {8, 1},   // Progressive winch drop and reverse
+};
+const ProgramSequenceStep program3SpeedTrack[] PROGMEM = {
+  {3, 1},   // Slow drift rotation accelerate/decelerate
+};
+const SequenceProgramDefinition program3 = {
+  program3PositionTrack,
+  sizeof(program3PositionTrack) / sizeof(program3PositionTrack[0]),
+  program3SpeedTrack,
+  sizeof(program3SpeedTrack) / sizeof(program3SpeedTrack[0]),
+};
+
 // ============================================================================
 // Selector functions (map serial command numbers to PROGMEM data)
 // ============================================================================
@@ -374,11 +402,13 @@ inline bool selectPositionSequence(uint8_t seqNum, const Keyframe*& outSeq, uint
 inline bool selectSpeedSequence(uint8_t seqNum, const SpeedFrame*& outSeq, uint8_t& outLen) {
   if (seqNum == 1) { outSeq = speedSeq1; outLen = speedSeq1Length; return true; }
   if (seqNum == 2) { outSeq = speedSeq2; outLen = speedSeq2Length; return true; }
+  if (seqNum == 3) { outSeq = speedSeq3; outLen = speedSeq3Length; return true; }
   return false;
 }
 
 inline bool selectSequenceProgram(uint8_t programNum, const SequenceProgramDefinition*& outProgram) {
   if (programNum == 1) { outProgram = &program1; return true; }
   if (programNum == 2) { outProgram = &program2; return true; }
+  if (programNum == 3) { outProgram = &program3; return true; }
   return false;
 }
