@@ -4,3 +4,6 @@
 # Dolt database files (added by bd init)
 .dolt/
 *.db
+
+# Wi-Fi / OTA credentials — copy Secrets.h.example to Secrets.h locally.
+Secrets.h
