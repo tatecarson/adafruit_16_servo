@@ -1,0 +1,1044 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Servo Cluster · Telemetry</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600;700&family=IBM+Plex+Sans+Condensed:wght@500;600;700&family=Major+Mono+Display&display=swap" rel="stylesheet">
+<style>
+  /* ============================================================
+     TELEMETRY CONSOLE — servo cluster control surface
+     Type: IBM Plex Mono / Sans Condensed / Major Mono Display
+     Palette: warm off-black, paper white, sodium amber, phosphor
+     ============================================================ */
+
+  :root {
+    --bg:        #0e0e0c;
+    --bg-elev:   #15140f;
+    --bg-deep:   #07070a;
+    --ink:       #f5f1e8;
+    --ink-dim:   #a39d8e;
+    --ink-mute:  #59554b;
+    --rule:      #2a2825;
+    --rule-hi:   #3d3a33;
+    --amber:     #ffb627;
+    --amber-soft:#5a3a05;
+    --phosphor:  #4be3c1;
+    --phos-soft: #0d3a31;
+    --alert:     #f15a3a;
+    --alert-soft:#3a1208;
+
+    --mono:    "IBM Plex Mono", ui-monospace, monospace;
+    --label:   "IBM Plex Sans Condensed", "Helvetica Neue", sans-serif;
+    --display: "Major Mono Display", "IBM Plex Mono", monospace;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--mono);
+    font-size: 12px;
+    font-feature-settings: "ss02", "zero";
+    line-height: 1.4;
+    min-height: 100vh;
+    /* Engineering grid backdrop */
+    background-image:
+      linear-gradient(var(--rule) 1px, transparent 1px),
+      linear-gradient(90deg, var(--rule) 1px, transparent 1px);
+    background-size: 96px 96px, 96px 96px;
+    background-position: -1px -1px;
+  }
+  body::before {
+    content: "";
+    position: fixed; inset: 0;
+    background: radial-gradient(ellipse at 50% 0%, rgba(255,182,39,0.04), transparent 70%);
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  ::selection { background: var(--amber); color: var(--bg); }
+
+  /* ---------- shell ---------- */
+
+  .shell {
+    position: relative; z-index: 1;
+    max-width: 1480px;
+    margin: 0 auto;
+    padding: 24px 32px 64px;
+  }
+
+  /* ---------- masthead ---------- */
+
+  .masthead {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    align-items: end;
+    gap: 24px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid var(--ink);
+    margin-bottom: 24px;
+  }
+  .masthead .brand {
+    font-family: var(--display);
+    font-size: 30px;
+    letter-spacing: 0.04em;
+    line-height: 1;
+    text-transform: lowercase;
+  }
+  .masthead .brand .slash { color: var(--amber); margin: 0 8px; }
+  .masthead .sub {
+    font-family: var(--label);
+    text-transform: uppercase;
+    letter-spacing: 0.22em;
+    font-weight: 500;
+    color: var(--ink-dim);
+    font-size: 10px;
+    margin-top: 8px;
+  }
+  .masthead .meta {
+    text-align: right;
+    font-family: var(--label);
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.2em;
+    color: var(--ink-dim);
+  }
+  .masthead .meta .stat { color: var(--ink); font-family: var(--mono); font-size: 14px; letter-spacing: 0; text-transform: none; margin-left: 6px; font-weight: 500; }
+  .masthead .meta .row { display: flex; gap: 18px; justify-content: flex-end; }
+
+  /* ---------- section labels ---------- */
+
+  .sect {
+    display: flex; align-items: center; gap: 12px;
+    margin: 28px 0 10px;
+  }
+  .sect .num {
+    font-family: var(--display);
+    font-size: 11px;
+    color: var(--amber);
+    letter-spacing: 0.05em;
+  }
+  .sect .label {
+    font-family: var(--label);
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.28em;
+    font-weight: 600;
+    color: var(--ink);
+  }
+  .sect .rule { flex: 1; height: 1px; background: var(--rule-hi); }
+  .sect .hint { font-family: var(--mono); font-size: 10px; color: var(--ink-mute); }
+
+  /* ---------- console panels ---------- */
+
+  .panel {
+    border: 1px solid var(--rule-hi);
+    background: var(--bg-elev);
+    position: relative;
+  }
+  /* corner notches: tiny tick at each inner corner, instrument-panel feel */
+  .panel::before, .panel::after,
+  .panel > .panel-corner-bl, .panel > .panel-corner-br {
+    content: "";
+    position: absolute; width: 8px; height: 8px;
+    border-color: var(--amber);
+    border-style: solid;
+  }
+  .panel::before { top: -1px; left: -1px; border-width: 1px 0 0 1px; }
+  .panel::after { top: -1px; right: -1px; border-width: 1px 1px 0 0; }
+  .panel > .panel-corner-bl { bottom: -1px; left: -1px; border-width: 0 0 1px 1px; }
+  .panel > .panel-corner-br { bottom: -1px; right: -1px; border-width: 0 1px 1px 0; }
+
+  /* ---------- master command bar ---------- */
+
+  .cmdbar { padding: 16px 18px; }
+  .cmdbar .group {
+    display: grid;
+    grid-template-columns: 110px 1fr;
+    align-items: center;
+    gap: 18px;
+    padding: 6px 0;
+  }
+  .cmdbar .group + .group { border-top: 1px dashed var(--rule); }
+  .cmdbar .gname {
+    font-family: var(--label);
+    font-size: 9px;
+    text-transform: uppercase;
+    letter-spacing: 0.28em;
+    color: var(--ink-dim);
+    font-weight: 600;
+  }
+  .cmdbar .gname .key { color: var(--amber); }
+  .cmdbar .btns { display: flex; gap: 8px; flex-wrap: wrap; }
+
+  button.cmd {
+    appearance: none;
+    border: 1px solid var(--rule-hi);
+    background: transparent;
+    color: var(--ink);
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 500;
+    padding: 8px 14px;
+    cursor: pointer;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    transition: border-color .12s, color .12s, background .12s, transform .04s;
+    position: relative;
+    min-width: 78px;
+    text-align: center;
+  }
+  button.cmd:hover {
+    border-color: var(--ink);
+    color: var(--ink);
+  }
+  button.cmd:active { transform: translateY(1px); }
+  button.cmd.amber { border-color: var(--amber); color: var(--amber); }
+  button.cmd.amber:hover { background: var(--amber); color: var(--bg-deep); }
+  button.cmd.alert  { border-color: var(--alert); color: var(--alert); }
+  button.cmd.alert:hover { background: var(--alert); color: var(--bg-deep); }
+  button.cmd.compact { min-width: 0; padding: 6px 10px; font-size: 10px; }
+  button.cmd[disabled] { opacity: .35; pointer-events: none; }
+
+  button.cmd .tag {
+    font-family: var(--label);
+    font-size: 9px;
+    color: var(--ink-mute);
+    margin-left: 8px;
+    letter-spacing: 0.18em;
+    font-weight: 500;
+  }
+  button.cmd:hover .tag { color: inherit; }
+  button.cmd.amber .tag,
+  button.cmd.alert .tag { color: inherit; opacity: .6; }
+
+  /* ---------- terminal-style command line ---------- */
+
+  .terminal {
+    margin-top: 12px;
+    display: grid;
+    grid-template-columns: auto 1fr 200px auto;
+    align-items: stretch;
+    border: 1px solid var(--rule-hi);
+    background: var(--bg-deep);
+  }
+  .terminal .prompt {
+    padding: 10px 14px;
+    color: var(--amber);
+    font-family: var(--mono);
+    font-size: 13px;
+    border-right: 1px solid var(--rule);
+    user-select: none;
+  }
+  .terminal input[type=text],
+  .terminal select {
+    appearance: none;
+    -webkit-appearance: none;
+    border: none;
+    border-right: 1px solid var(--rule);
+    background: transparent;
+    color: var(--ink);
+    font: 500 13px/1 var(--mono);
+    padding: 10px 14px;
+    outline: none;
+    letter-spacing: 0.02em;
+  }
+  .terminal input[type=text]::placeholder { color: var(--ink-mute); }
+  .terminal input[type=text]:focus { background: rgba(255,182,39,0.04); }
+  .terminal select {
+    color: var(--ink-dim);
+    background-image: linear-gradient(45deg, transparent 50%, var(--ink-dim) 50%),
+                      linear-gradient(135deg, var(--ink-dim) 50%, transparent 50%);
+    background-position: calc(100% - 14px) 50%, calc(100% - 9px) 50%;
+    background-size: 5px 5px, 5px 5px;
+    background-repeat: no-repeat;
+    padding-right: 26px;
+  }
+  .terminal button {
+    border: none;
+    background: var(--amber);
+    color: var(--bg-deep);
+    font: 700 11px/1 var(--label);
+    text-transform: uppercase;
+    letter-spacing: 0.24em;
+    padding: 0 24px;
+    cursor: pointer;
+  }
+  .terminal button:hover { background: var(--ink); }
+
+  /* ---------- board strip ---------- */
+
+  .grid { display: grid; gap: 12px; }
+
+  .board {
+    display: grid;
+    grid-template-columns: 200px 1fr 600px;
+    gap: 0;
+    background: var(--bg-elev);
+    border: 1px solid var(--rule-hi);
+    position: relative;
+  }
+  .board::before {
+    content: "";
+    position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
+    background: var(--ink-mute);
+    transition: background .2s;
+  }
+  .board[data-state="online"]::before { background: var(--phosphor); }
+  .board[data-state="offline"]::before { background: var(--alert); }
+  .board[data-state="ota"]::before { background: var(--amber); }
+  .board[data-state="offline"] .ident, .board[data-state="offline"] .telemetry, .board[data-state="offline"] .channels { opacity: 0.45; }
+
+  /* — left identity column — */
+  .ident {
+    padding: 18px 22px;
+    border-right: 1px solid var(--rule);
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .ident .row1 { display: flex; align-items: baseline; gap: 12px; }
+  .ident .id {
+    font-family: var(--display);
+    font-size: 56px;
+    line-height: 0.85;
+    color: var(--ink);
+    letter-spacing: -0.02em;
+  }
+  .ident .id-label {
+    font-family: var(--label);
+    font-size: 8px;
+    text-transform: uppercase;
+    letter-spacing: 0.32em;
+    color: var(--ink-mute);
+    writing-mode: vertical-rl;
+    transform: rotate(180deg);
+  }
+  .ident .ip {
+    font-family: var(--mono);
+    font-size: 13px;
+    color: var(--ink);
+    letter-spacing: 0.02em;
+    font-weight: 500;
+    margin-top: 6px;
+  }
+  .ident .stamp {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--ink-dim);
+    display: flex;
+    justify-content: space-between;
+  }
+  .ident .stamp .k {
+    font-family: var(--label);
+    font-size: 8px;
+    text-transform: uppercase;
+    letter-spacing: 0.24em;
+    color: var(--ink-mute);
+    font-weight: 600;
+  }
+  .ident .dot {
+    display: inline-block; width: 8px; height: 8px;
+    background: var(--ink-mute);
+    border-radius: 50%;
+    margin-left: auto;
+    box-shadow: 0 0 0 0 currentColor;
+  }
+  .board[data-state="online"] .ident .dot {
+    background: var(--phosphor);
+    animation: heartbeat 1.6s ease-in-out infinite;
+    color: var(--phosphor);
+  }
+  .board[data-state="ota"] .ident .dot { background: var(--amber); animation: heartbeat 0.6s ease-in-out infinite; color: var(--amber); }
+  .board[data-state="offline"] .ident .dot { background: var(--alert); }
+  @keyframes heartbeat {
+    0%   { box-shadow: 0 0 0 0 currentColor; }
+    70%  { box-shadow: 0 0 0 6px transparent; }
+    100% { box-shadow: 0 0 0 0 transparent; }
+  }
+
+  /* — middle telemetry column — */
+  .telemetry {
+    padding: 16px 20px;
+    border-right: 1px solid var(--rule);
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .pills { display: flex; gap: 6px; flex-wrap: wrap; }
+  .pill {
+    font-family: var(--label);
+    font-size: 9px;
+    text-transform: uppercase;
+    letter-spacing: 0.22em;
+    font-weight: 700;
+    padding: 4px 8px;
+    border: 1px solid var(--rule-hi);
+    color: var(--ink-mute);
+    background: transparent;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .pill.on    { color: var(--phosphor); border-color: var(--phosphor); background: rgba(75,227,193,0.06); }
+  .pill.warn  { color: var(--amber);    border-color: var(--amber);    background: rgba(255,182,39,0.06); }
+  .pill.alert { color: var(--alert);    border-color: var(--alert);    background: rgba(241,90,58,0.08); }
+  .pill .v { font-family: var(--mono); letter-spacing: 0.02em; font-weight: 500; }
+
+  .progress {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .progress .head {
+    display: flex; justify-content: space-between;
+    font-family: var(--label);
+    font-size: 9px;
+    text-transform: uppercase;
+    letter-spacing: 0.22em;
+    color: var(--ink-mute);
+    font-weight: 600;
+  }
+  .progress .head .v { color: var(--ink); font-family: var(--mono); letter-spacing: 0; font-weight: 500; }
+  .progress .bar {
+    position: relative;
+    height: 6px;
+    background: var(--bg-deep);
+    border: 1px solid var(--rule);
+    overflow: hidden;
+  }
+  .progress .bar::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background-image: repeating-linear-gradient(90deg,
+      transparent 0, transparent 23px,
+      var(--rule) 23px, var(--rule) 24px);
+  }
+  .progress .bar .fill {
+    position: absolute;
+    inset: 0 auto 0 0;
+    background: var(--phosphor);
+    box-shadow: 0 0 8px var(--phosphor);
+  }
+  .progress.idle .head .v { color: var(--ink-mute); }
+  .progress.idle .bar .fill { display: none; }
+
+  .timescale {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    border-top: 1px dashed var(--rule);
+    padding-top: 12px;
+  }
+  .timescale .k {
+    font-family: var(--label);
+    font-size: 9px;
+    text-transform: uppercase;
+    letter-spacing: 0.24em;
+    color: var(--ink-mute);
+    font-weight: 600;
+  }
+  .timescale .v {
+    font-family: var(--display);
+    font-size: 24px;
+    line-height: 1;
+    color: var(--ink);
+    letter-spacing: 0.02em;
+  }
+  .timescale.warn .v { color: var(--amber); }
+
+  /* — right channels column — */
+  .channels {
+    padding: 16px 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .channels-head {
+    display: flex; justify-content: space-between; align-items: baseline;
+  }
+  .channels-head .label {
+    font-family: var(--label);
+    font-size: 9px;
+    text-transform: uppercase;
+    letter-spacing: 0.28em;
+    color: var(--ink-mute);
+    font-weight: 600;
+  }
+  .channels-head .scale {
+    font-family: var(--mono);
+    font-size: 9px;
+    color: var(--ink-mute);
+  }
+  .meters {
+    display: grid;
+    grid-template-columns: repeat(16, 1fr);
+    gap: 4px;
+    height: 96px;
+    align-items: end;
+    padding: 4px 0 4px;
+    border-top: 1px solid var(--rule);
+    border-bottom: 1px solid var(--rule);
+    background-image:
+      linear-gradient(to bottom,
+        transparent 0%, transparent 24%, var(--rule) 24%, var(--rule) calc(24% + 1px),
+        transparent calc(24% + 1px), transparent 49%, var(--rule) 49%, var(--rule) calc(49% + 1px),
+        transparent calc(49% + 1px), transparent 74%, var(--rule) 74%, var(--rule) calc(74% + 1px),
+        transparent calc(74% + 1px));
+  }
+  .meter {
+    position: relative;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    align-items: stretch;
+  }
+  .meter .bar {
+    width: 100%;
+    background: var(--ink-dim);
+    transition: height .25s cubic-bezier(.4,.6,.2,1), background .2s;
+    min-height: 1px;
+  }
+  .meter.moving .bar { background: var(--amber); box-shadow: 0 0 6px var(--amber); }
+  .meter.cont .bar { background: var(--phosphor); }
+  .meter.cont.moving .bar { background: var(--phosphor); box-shadow: 0 0 6px var(--phosphor); }
+  .meter .ghost {
+    position: absolute;
+    left: 0; right: 0;
+    height: 1px;
+    background: var(--amber);
+    opacity: 0.55;
+    transition: bottom .25s cubic-bezier(.4,.6,.2,1);
+  }
+  .meter .lbl {
+    position: absolute;
+    bottom: -16px; left: 0; right: 0;
+    text-align: center;
+    font-family: var(--mono);
+    font-size: 9px;
+    color: var(--ink-mute);
+    letter-spacing: 0;
+  }
+  .meter.moving .lbl { color: var(--amber); }
+  .meter.cont .lbl { color: var(--phosphor); }
+  .channel-numbers { height: 16px; }
+
+  .legend {
+    display: flex; gap: 14px;
+    font-family: var(--label);
+    font-size: 9px;
+    text-transform: uppercase;
+    letter-spacing: 0.2em;
+    color: var(--ink-mute);
+    font-weight: 600;
+    margin-top: 4px;
+  }
+  .legend .swatch { display: inline-block; width: 8px; height: 8px; margin-right: 6px; vertical-align: middle; }
+  .legend .swatch.std { background: var(--ink-dim); }
+  .legend .swatch.cont { background: var(--phosphor); }
+  .legend .swatch.move { background: var(--amber); }
+  .legend .swatch.target { background: transparent; border-bottom: 1px solid var(--amber); height: 0; vertical-align: 2px; }
+
+  /* — empty / loading states — */
+  .placeholder {
+    grid-column: 1 / -1;
+    padding: 28px;
+    color: var(--ink-mute);
+    font-family: var(--mono);
+    font-size: 13px;
+    text-align: center;
+    letter-spacing: 0.05em;
+  }
+  .placeholder em { color: var(--amber); font-style: normal; }
+
+  .board.skeleton .id::before { content: "—"; color: var(--ink-mute); }
+
+  /* ---------- footer ---------- */
+
+  .footer {
+    margin-top: 28px;
+    padding-top: 14px;
+    border-top: 1px dashed var(--rule);
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 18px;
+    align-items: center;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--ink-dim);
+  }
+  .footer .col { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .footer .k {
+    font-family: var(--label);
+    font-size: 9px;
+    text-transform: uppercase;
+    letter-spacing: 0.26em;
+    color: var(--ink-mute);
+    font-weight: 600;
+  }
+  .footer input[type=text], .footer input[type=number] {
+    appearance: none;
+    background: var(--bg-deep);
+    color: var(--ink);
+    border: 1px solid var(--rule-hi);
+    font: 500 11px/1 var(--mono);
+    padding: 7px 10px;
+    outline: none;
+    min-width: 280px;
+  }
+  .footer input[type=number] { min-width: 60px; text-align: right; }
+  .footer input:focus { border-color: var(--amber); }
+  .footer label { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
+  .footer input[type=checkbox] {
+    appearance: none;
+    width: 12px; height: 12px;
+    border: 1px solid var(--ink-dim);
+    background: var(--bg-deep);
+    cursor: pointer;
+    position: relative;
+  }
+  .footer input[type=checkbox]:checked { background: var(--amber); border-color: var(--amber); }
+  .footer input[type=checkbox]:checked::after {
+    content: "";
+    position: absolute; left: 2px; top: -1px;
+    width: 4px; height: 8px;
+    border: solid var(--bg-deep);
+    border-width: 0 2px 2px 0;
+    transform: rotate(45deg);
+  }
+
+  /* small screens */
+  @media (max-width: 1100px) {
+    .board { grid-template-columns: 160px 1fr; }
+    .channels { grid-column: 1 / -1; border-top: 1px solid var(--rule); }
+  }
+</style>
+</head>
+<body>
+<div class="shell">
+
+  <!-- ============================================================
+       MASTHEAD
+       ============================================================ -->
+  <header class="masthead">
+    <div>
+      <div class="brand">servo<span class="slash">·</span>cluster</div>
+      <div class="sub">telemetry &nbsp;·&nbsp; section 01 &nbsp;·&nbsp; uno r4 wifi</div>
+    </div>
+    <div class="meta">
+      <div class="row">
+        <span>online <span id="metaOnline" class="stat">—/—</span></span>
+        <span>poll <span id="metaPoll" class="stat">— ms</span></span>
+        <span>uplink <span id="metaUptime" class="stat">—</span></span>
+      </div>
+    </div>
+  </header>
+
+  <!-- ============================================================
+       MASTER COMMAND BAR
+       ============================================================ -->
+  <div class="sect">
+    <span class="num">// 01</span>
+    <span class="label">Master Command</span>
+    <span class="rule"></span>
+    <span class="hint">broadcast → first reachable board mirrors via udp</span>
+  </div>
+
+  <div class="panel cmdbar">
+    <span class="panel-corner-bl"></span><span class="panel-corner-br"></span>
+
+    <div class="group">
+      <div class="gname">Position <span class="key">PLAY</span></div>
+      <div class="btns">
+        <button class="cmd" data-cmd="PLAY 1">PLAY 1</button>
+        <button class="cmd" data-cmd="PLAY 2">PLAY 2</button>
+        <button class="cmd" data-cmd="PLAY 3">PLAY 3</button>
+        <button class="cmd" data-cmd="PLAY 4">PLAY 4</button>
+        <button class="cmd" data-cmd="PLAY 5">PLAY 5</button>
+        <button class="cmd compact" data-cmd="PLAY 1 LOOP">1 ↺</button>
+        <button class="cmd compact" data-cmd="PLAY 2 LOOP">2 ↺</button>
+        <button class="cmd compact" data-cmd="PLAY 3 LOOP">3 ↺</button>
+      </div>
+    </div>
+
+    <div class="group">
+      <div class="gname">Speed <span class="key">SPLAY</span></div>
+      <div class="btns">
+        <button class="cmd" data-cmd="SPLAY 1">SPLAY 1</button>
+        <button class="cmd compact" data-cmd="SPLAY 1 LOOP">1 ↺</button>
+      </div>
+    </div>
+
+    <div class="group">
+      <div class="gname">Master</div>
+      <div class="btns">
+        <button class="cmd alert" data-cmd="STOP">STOP</button>
+        <button class="cmd amber" data-cmd="STATUS">STATUS</button>
+        <button class="cmd" data-cmd="TIMESCALE 1">×1</button>
+        <button class="cmd" data-cmd="TIMESCALE 2">×2</button>
+        <button class="cmd" data-cmd="TIMESCALE 4">×4</button>
+        <button class="cmd" data-cmd="TIMESCALE 8">×8</button>
+      </div>
+    </div>
+
+    <!-- terminal -->
+    <div class="terminal">
+      <div class="prompt">›</div>
+      <input id="freeCmd" type="text" placeholder="enter command — e.g. MOVE 3 90 1500, S0 45, ROTATE 30" autocomplete="off" spellcheck="false">
+      <select id="freeTarget" title="Target board"></select>
+      <button id="freeSend">Send</button>
+    </div>
+  </div>
+
+  <!-- ============================================================
+       BOARD GRID
+       ============================================================ -->
+  <div class="sect">
+    <span class="num">// 02</span>
+    <span class="label">Board Telemetry</span>
+    <span class="rule"></span>
+    <span class="hint">live · pulse range 150–600</span>
+  </div>
+
+  <div id="boards" class="grid"></div>
+
+  <!-- ============================================================
+       FOOTER
+       ============================================================ -->
+  <footer class="footer">
+    <div class="col">
+      <span class="k">Boards</span>
+      <input id="boardList" type="text" placeholder="comma-separated IPs">
+      <button class="cmd compact" id="saveBoards">Save</button>
+    </div>
+    <div class="col">
+      <label><input id="autoPoll" type="checkbox" checked><span class="k">Auto-poll</span></label>
+      <span class="k">Interval</span>
+      <input id="pollMs" type="number" min="200" step="100" value="800">
+      <span class="k">ms</span>
+    </div>
+  </footer>
+
+</div>
+
+<script>
+"use strict";
+
+// ============================================================
+// CONFIG
+// ============================================================
+const DEFAULT_BOARDS = ["192.168.8.138", "192.168.8.213", "192.168.8.198"];
+const LS_KEY = "servoCluster.boards";
+
+const PULSE_MIN = 150, PULSE_MAX = 600;
+const ZERO_PULSE_HEIGHT_PCT = 4; // empty-state floor so meters aren't visually empty
+
+// ============================================================
+// STATE
+// ============================================================
+let boards = JSON.parse(localStorage.getItem(LS_KEY) || "null") || DEFAULT_BOARDS.slice();
+let pollHandle = null;
+const lastSeen = new Map();
+const lastStatus = new Map();
+const startedAt = Date.now();
+
+// ============================================================
+// DOM
+// ============================================================
+const $ = sel => document.querySelector(sel);
+const boardsEl     = $("#boards");
+const boardListEl  = $("#boardList");
+const freeTargetEl = $("#freeTarget");
+const autoPollEl   = $("#autoPoll");
+const pollMsEl     = $("#pollMs");
+const metaOnline   = $("#metaOnline");
+const metaPoll     = $("#metaPoll");
+const metaUptime   = $("#metaUptime");
+
+// ============================================================
+// HTTP
+// ============================================================
+async function fetchStatus(ip) {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), 2500);
+  try {
+    const r = await fetch(`http://${ip}/status.json`, { signal: ctrl.signal, cache: "no-store" });
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    const j = await r.json();
+    lastSeen.set(ip, Date.now());
+    lastStatus.set(ip, j);
+    return j;
+  } finally { clearTimeout(t); }
+}
+
+async function sendCommand(ip, cmd) {
+  const url = `http://${ip}/cmd?c=${encodeURIComponent(cmd)}`;
+  try {
+    await fetch(url, { method: "GET", mode: "no-cors", cache: "no-store" });
+    return true;
+  } catch (e) { console.warn("send failed", ip, e); return false; }
+}
+
+async function broadcastCommand(cmd) {
+  // Try boards in order until one accepts; that board mirrors via UDP.
+  // Prefer boards we've seen recently.
+  const sorted = boards.slice().sort((a, b) => (lastSeen.get(b) || 0) - (lastSeen.get(a) || 0));
+  for (const ip of sorted) {
+    if (await sendCommand(ip, cmd)) return ip;
+  }
+  return null;
+}
+
+// ============================================================
+// FORMATTERS
+// ============================================================
+function fmtUptime(ms) {
+  if (!ms) return "—";
+  const s = Math.floor(ms / 1000);
+  if (s < 60) return s + "s";
+  const m = Math.floor(s / 60);
+  if (m < 60) return m + "m " + (s % 60).toString().padStart(2, "0") + "s";
+  const h = Math.floor(m / 60);
+  return h + "h " + (m % 60).toString().padStart(2, "0") + "m";
+}
+function pulseToPct(p) {
+  if (p == null) return ZERO_PULSE_HEIGHT_PCT;
+  const v = (p - PULSE_MIN) / (PULSE_MAX - PULSE_MIN);
+  return Math.max(ZERO_PULSE_HEIGHT_PCT, Math.min(100, v * 100));
+}
+function pad2(n) { return String(n).padStart(2, "0"); }
+
+// ============================================================
+// RENDER
+// ============================================================
+function renderBoardList() {
+  boardListEl.value = boards.join(",");
+  freeTargetEl.innerHTML = boards.map(ip => `<option value="${ip}">${ip}</option>`).join("");
+}
+
+function renderMeters(servos) {
+  if (!servos) {
+    return '<div class="meters">' +
+      Array.from({ length: 16 }, (_, i) =>
+        `<div class="meter"><div class="bar" style="height:${ZERO_PULSE_HEIGHT_PCT}%"></div><div class="lbl">${pad2(i)}</div></div>`
+      ).join("") + "</div>";
+  }
+  return '<div class="meters">' +
+    servos.map(s => {
+      const h = pulseToPct(s.pulse);
+      const t = pulseToPct(s.target);
+      const cls = ["meter"];
+      if (s.cont) cls.push("cont");
+      if (s.moving) cls.push("moving");
+      // ghost line shown only if there's a meaningful target/pulse delta
+      const showGhost = Math.abs((s.target ?? s.pulse) - s.pulse) > 4;
+      const ghost = showGhost ? `<div class="ghost" style="bottom:${t}%"></div>` : "";
+      return `<div class="${cls.join(' ')}">
+        ${ghost}
+        <div class="bar" style="height:${h}%"></div>
+        <div class="lbl">${pad2(s.i)}</div>
+      </div>`;
+    }).join("") + "</div>";
+}
+
+function renderPills(s) {
+  const seq = s.sequence, ssq = s.speedSeq, wv = s.wave;
+  const out = [];
+  if (s.otaInProgress) out.push(`<span class="pill alert">OTA UPLOAD</span>`);
+  out.push(seq.active
+    ? `<span class="pill on">SEQ <span class="v">${seq.len}</span>${seq.loop ? ' ↺' : ''}</span>`
+    : `<span class="pill">SEQ <span class="v">idle</span></span>`);
+  out.push(ssq.active
+    ? `<span class="pill on">SPEED <span class="v">${ssq.len}</span>${ssq.loop ? ' ↺' : ''}</span>`
+    : `<span class="pill">SPEED <span class="v">idle</span></span>`);
+  out.push(wv.active
+    ? `<span class="pill warn">WAVE <span class="v">${wv.start}–${wv.end}</span></span>`
+    : `<span class="pill">WAVE <span class="v">idle</span></span>`);
+  return out.join("");
+}
+
+function renderProgress(label, body) {
+  const active = body && body.active;
+  const len = body?.len || 0;
+  const elapsed = body?.startedMs || 0;
+  // We don't know absolute sequence duration on the client, so render a
+  // running indeterminate "tape" — fill grows then resets when sequence
+  // looks like it cycled. Use elapsed % (len * 1000) as a heuristic floor.
+  const cycleMs = Math.max(1, len * 800);
+  const pct = active ? Math.min(100, ((elapsed % cycleMs) / cycleMs) * 100) : 0;
+  return `<div class="progress${active ? '' : ' idle'}">
+    <div class="head"><span>${label}</span><span class="v">${active ? fmtUptime(elapsed) : 'idle'}${active && len ? ' · ' + len + ' frames' : ''}</span></div>
+    <div class="bar"><div class="fill" style="width:${pct}%"></div></div>
+  </div>`;
+}
+
+function renderBoardCard(ip, idx, status, online) {
+  const id = status?.node ?? "—";
+  const idStr = (status?.node != null) ? pad2(status.node) : "—";
+  const ipShort = status?.ip ?? ip;
+  const uptime = status ? fmtUptime(status.uptimeMs) : "offline";
+  const ageS = lastSeen.has(ip) ? Math.round((Date.now() - lastSeen.get(ip)) / 1000) : null;
+  let dataState = "offline";
+  if (online) dataState = status?.otaInProgress ? "ota" : "online";
+
+  const ts = status?.timescale ?? 1;
+  const tsCls = ts > 1 ? "warn" : "";
+
+  const meters = renderMeters(status?.servos);
+
+  const offlineNote = !online
+    ? `<div style="color: var(--alert); font-family: var(--label); font-size: 10px; text-transform: uppercase; letter-spacing: 0.24em; font-weight:600;">Signal lost ${ageS != null ? '· ' + ageS + 's' : ''}</div>`
+    : "";
+
+  return `
+    <article class="board" data-state="${dataState}">
+      <span class="panel-corner-bl"></span><span class="panel-corner-br"></span>
+
+      <section class="ident">
+        <div class="row1">
+          <div class="id">${idStr}</div>
+          <div class="id-label">node</div>
+        </div>
+        <div class="ip">${ipShort}<span class="dot"></span></div>
+        <div class="stamp"><span class="k">uptime</span><span>${uptime}</span></div>
+        <div class="stamp"><span class="k">slot</span><span>0${idx + 1} / 03</span></div>
+        ${offlineNote}
+      </section>
+
+      <section class="telemetry">
+        ${ status ? `<div class="pills">${renderPills(status)}</div>` : `<div class="pills"><span class="pill alert">NO SIGNAL</span></div>` }
+        ${ status ? renderProgress("Position sequence", status.sequence) : '' }
+        ${ status ? renderProgress("Speed sequence", status.speedSeq) : '' }
+        <div class="timescale ${tsCls}">
+          <span class="k">timescale</span>
+          <span class="v">×${ts}</span>
+          <span class="k" style="margin-left:auto">period multiplier</span>
+        </div>
+      </section>
+
+      <section class="channels">
+        <div class="channels-head">
+          <span class="label">Servo Channels · 16ch</span>
+          <span class="scale">150 ┄ 375 ┄ 600 µs</span>
+        </div>
+        ${meters}
+        <div class="legend">
+          <span><span class="swatch std"></span>standard</span>
+          <span><span class="swatch cont"></span>continuous</span>
+          <span><span class="swatch move"></span>in motion</span>
+          <span><span class="swatch target"></span>target line</span>
+        </div>
+      </section>
+    </article>`;
+}
+
+function render() {
+  if (!boards.length) {
+    boardsEl.innerHTML = `<div class="placeholder">No boards configured. <em>Add IPs in the footer.</em></div>`;
+    metaOnline.textContent = "—/—";
+    return;
+  }
+  const cards = boards.map((ip, i) => {
+    const status = lastStatus.get(ip);
+    const lastTs = lastSeen.get(ip) || 0;
+    const online = status && (Date.now() - lastTs < 4000);
+    return renderBoardCard(ip, i, online ? status : status, !!online);
+  });
+  boardsEl.innerHTML = cards.join("");
+
+  const onlineCount = boards.filter(ip => {
+    const t = lastSeen.get(ip) || 0;
+    return Date.now() - t < 4000;
+  }).length;
+  metaOnline.textContent = `${pad2(onlineCount)}/${pad2(boards.length)}`;
+  metaPoll.textContent = `${pollMsEl.value} ms`;
+  metaUptime.textContent = fmtUptime(Date.now() - startedAt);
+}
+
+// ============================================================
+// POLLING
+// ============================================================
+async function pollOnce() {
+  await Promise.all(boards.map(async ip => {
+    try { await fetchStatus(ip); }
+    catch (e) { /* lastStatus untouched; render() detects staleness */ }
+  }));
+  render();
+}
+
+function startPolling() {
+  stopPolling();
+  if (!autoPollEl.checked) { render(); return; }
+  const interval = Math.max(200, parseInt(pollMsEl.value, 10) || 800);
+  pollOnce();
+  pollHandle = setInterval(pollOnce, interval);
+}
+function stopPolling() {
+  if (pollHandle) { clearInterval(pollHandle); pollHandle = null; }
+}
+
+// ============================================================
+// UI WIRING
+// ============================================================
+document.querySelectorAll("[data-cmd]").forEach(btn => {
+  btn.addEventListener("click", async () => {
+    const cmd = btn.dataset.cmd;
+    btn.disabled = true;
+    const ip = await broadcastCommand(cmd);
+    btn.disabled = false;
+    if (!ip) {
+      btn.classList.add("alert");
+      setTimeout(() => btn.classList.remove("alert"), 600);
+    } else {
+      // brief flash
+      btn.classList.add("amber");
+      setTimeout(() => btn.classList.remove("amber"), 250);
+      setTimeout(pollOnce, 200);
+    }
+  });
+});
+
+$("#freeSend").addEventListener("click", async () => {
+  const cmd = $("#freeCmd").value.trim();
+  if (!cmd) return;
+  const ip = freeTargetEl.value;
+  await sendCommand(ip, cmd);
+  setTimeout(pollOnce, 200);
+  $("#freeCmd").value = "";
+});
+$("#freeCmd").addEventListener("keydown", e => { if (e.key === "Enter") $("#freeSend").click(); });
+
+$("#saveBoards").addEventListener("click", () => {
+  const list = boardListEl.value.split(",").map(s => s.trim()).filter(Boolean);
+  if (!list.length) return;
+  boards = list;
+  localStorage.setItem(LS_KEY, JSON.stringify(boards));
+  renderBoardList();
+  startPolling();
+});
+autoPollEl.addEventListener("change", startPolling);
+pollMsEl.addEventListener("change", () => { metaPoll.textContent = `${pollMsEl.value} ms`; startPolling(); });
+
+// keyboard shortcut: ESC = STOP, 1-5 = PLAY n, S = SPLAY 1
+window.addEventListener("keydown", e => {
+  if (e.target.tagName === "INPUT" || e.target.tagName === "SELECT") return;
+  if (e.key === "Escape") { broadcastCommand("STOP"); }
+  else if (/^[1-5]$/.test(e.key)) { broadcastCommand("PLAY " + e.key); }
+  else if (e.key === "s" || e.key === "S") { broadcastCommand("SPLAY 1"); }
+});
+
+// ============================================================
+// INIT
+// ============================================================
+renderBoardList();
+render();
+startPolling();
+</script>
+</body>
+</html>

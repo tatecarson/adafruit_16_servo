@@ -1,34 +1,36 @@
 #pragma once
 
 #include "servo_runtime.h"
+#include "Sync.h"
 
 void showHelp() {
   Serial.println(F("\n--- Commands ---"));
-  Serial.println(F("S<n> <deg>       Move servo n to degrees"));
-  Serial.println(F("P<n> <pulse>     Move servo n to raw pulse"));
-  Serial.println(F("CAL <n> <min> <max>  Set calibration"));
-  Serial.println(F("SWEEP <n>        Test sweep servo n"));
-  Serial.println(F("CENTER <n>       Move to center (90 deg) / stop"));
-  Serial.println(F("OFF <n>          Turn off servo n (blocked on protected winches)"));
-  Serial.println(F("RELEASE <n>      Force-release servo n"));
-  Serial.println(F("MOVE <n> <deg> <ms>  Animated move (eased)"));
-  Serial.println(F("L<n> <pct>       Move servo n to percent of travel"));
-  Serial.println(F("LMOVE <n> <pct> <ms> Animated move to percent"));
-  Serial.println(F("UP <n> <pct>     Move servo n to absolute percent up"));
-  Serial.println(F("DOWN <n> <pct>   Move servo n to absolute percent down"));
-  Serial.println(F("UMOVE <n> <pct> <ms> Animated move to absolute percent up"));
-  Serial.println(F("DMOVE <n> <pct> <ms> Animated move to absolute percent down"));
-  Serial.println(F("ALLUP <pct> [ms] Move all protected winches up together"));
-  Serial.println(F("ALLDOWN <pct> [ms] Move all protected winches down together"));
+  Serial.println(F("Testing / Calibration:"));
+  Serial.println(F("S<n> <deg>            Move servo n to degrees"));
+  Serial.println(F("P<n> <pulse>          Move servo n to raw pulse"));
+  Serial.println(F("CAL <n> <min> <max>   Set calibration"));
+  Serial.println(F("SWEEP <n>             Test sweep servo n"));
+  Serial.println(F("CENTER <n>            Move to center (90 deg) / stop"));
+  Serial.println(F("OFF <n>               Turn off servo n (blocked on protected winches)"));
+  Serial.println(F("RELEASE <n>           Force-release servo n"));
+  Serial.println(F("STATUS                Show all servos"));
+  Serial.println();
+  Serial.println(F("Performance / Installation:"));
+  Serial.println(F("UP <n> <pct>          Move servo n to absolute percent up"));
+  Serial.println(F("DOWN <n> <pct>        Move servo n to absolute percent down"));
+  Serial.println(F("MOVE <n> <deg> <ms>   Animated move (eased)"));
+  Serial.println(F("UMOVE <n> <pct> <ms>  Animated move to absolute percent up"));
+  Serial.println(F("DMOVE <n> <pct> <ms>  Animated move to absolute percent down"));
+  Serial.println(F("ALLUP <pct> [ms]      Move all protected winches up together"));
+  Serial.println(F("ALLDOWN <pct> [ms]    Move all protected winches down together"));
   Serial.println(F("RIG <UP|DOWN> <pct> <spd> [ms]  Winches + rotation test"));
   Serial.println(F("WAVE <s> <e> [spd] [off] [amp]  Start wave pattern"));
-  Serial.println(F("PLAY <n> [LOOP]      Play sequence n"));
-  Serial.println(F("SPLAY <n> [LOOP]     Speed sequence (continuous)"));
-  Serial.println(F("STOP                 Stop wave/sequence"));
-  Serial.println(F("TIMESCALE <n>        Scale sequence timing n times slower"));
-  Serial.println(F("MODE <n> STD|CONT    Set servo mode"));
-  Serial.println(F("SPEED <n> <-100:100> Continuous servo speed"));
-  Serial.println(F("STATUS           Show all servos"));
+  Serial.println(F("PLAY <n> [LOOP]       Play sequence n"));
+  Serial.println(F("SPLAY <n> [LOOP]      Speed sequence (continuous)"));
+  Serial.println(F("STOP                  Stop wave/sequence"));
+  Serial.println(F("TIMESCALE <n>         Scale sequence timing n times slower"));
+  Serial.println(F("MODE <n> STD|CONT     Set servo mode"));
+  Serial.println(F("ROTATE <spd>          Installation rotation speed"));
   Serial.println();
 }
 
@@ -104,17 +106,6 @@ void processCommand(char* cmd) {
       uint8_t servo = atoi(cmd + 1);
       uint16_t degrees = atoi(cmd + space + 1);
       setServoDegrees(servo, degrees);
-    }
-  }
-  else if (cmd[0] == 'L' && cmd[1] >= '0' && cmd[1] <= '9') {
-    int space = findChar(cmd, ' ', 0);
-    if (space > 1) {
-      uint8_t servo = atoi(cmd + 1);
-      uint8_t percent = atoi(cmd + space + 1);
-      setServoPercent(servo, percent);
-      Serial.print(F("Servo ")); Serial.print(servo);
-      Serial.print(F(" -> ")); Serial.print(percent);
-      Serial.println(F("% of travel"));
     }
   }
   else if (startsWith(cmd, "UP")) {
@@ -319,20 +310,6 @@ void processCommand(char* cmd) {
       Serial.println(F("ms"));
     }
   }
-  else if (startsWith(cmd, "LMOVE")) {
-    int space1 = findChar(cmd, ' ', 6);
-    int space2 = (space1 > 0) ? findChar(cmd, ' ', space1 + 1) : -1;
-    if (space1 > 0 && space2 > 0) {
-      uint8_t servo = atoi(cmd + 6);
-      uint8_t percent = atoi(cmd + space1 + 1);
-      uint16_t duration = atoi(cmd + space2 + 1);
-      moveServoPercent(servo, percent, duration);
-      Serial.print(F("Moving servo ")); Serial.print(servo);
-      Serial.print(F(" to ")); Serial.print(percent);
-      Serial.print(F("% over ")); Serial.print(duration);
-      Serial.println(F("ms"));
-    }
-  }
   else if (startsWith(cmd, "UMOVE")) {
     int space1 = findChar(cmd, ' ', 6);
     int space2 = (space1 > 0) ? findChar(cmd, ' ', space1 + 1) : -1;
@@ -420,7 +397,7 @@ void processCommand(char* cmd) {
         Serial.print(F("Servo ")); Serial.print(servo);
         Serial.print(F(" set to CONTINUOUS (stop="));
         Serial.print(servoConfig[servo].stopPulse);
-        Serial.println(F(") - use SPEED to control"));
+        Serial.println(F(") - use ROTATE to control"));
       } else if (containsStr(cmd, "STD")) {
         servoConfig[servo].continuous = false;
         Serial.print(F("Servo ")); Serial.print(servo);
@@ -430,14 +407,19 @@ void processCommand(char* cmd) {
       }
     }
   }
-  else if (startsWith(cmd, "SPEED")) {
-    int space1 = findChar(cmd, ' ', 6);
-    if (space1 > 0) {
-      uint8_t servo = atoi(cmd + 6);
-      int16_t speed = atoi(cmd + space1 + 1);
-      setServoSpeed(servo, (int8_t)constrain(speed, -100, 100));
+  else if (startsWith(cmd, "ROTATE")) {
+    int space = findChar(cmd, ' ', 0);
+    if (space > 0) {
+      int8_t rotationServo = findPrimaryContinuousServo();
+      if (rotationServo < 0) {
+        Serial.println(F("No continuous rotation servo is configured"));
+        return;
+      }
+
+      int16_t speed = atoi(cmd + space + 1);
+      setServoSpeed((uint8_t)rotationServo, (int8_t)constrain(speed, -100, 100));
     } else {
-      Serial.println(F("Use: SPEED <n> <-100 to 100>"));
+      Serial.println(F("Use: ROTATE <-100 to 100>"));
     }
   }
   else if (startsWith(cmd, "TIMESCALE")) {
@@ -459,5 +441,41 @@ void processCommand(char* cmd) {
   }
   else if (strlen(cmd) > 0) {
     Serial.println(F("Unknown command. Type HELP"));
+  }
+}
+
+// Whitelist of commands that should be mirrored to all peers when issued
+// locally. Per-servo pokes (S0 90, P1 ...) stay local-only on purpose.
+// Compared after trim+uppercase.
+inline bool shouldMirrorCommand(const char* upperCmd) {
+  return startsWith(upperCmd, "PLAY ") || strcmp(upperCmd, "PLAY") == 0
+      || startsWith(upperCmd, "SPLAY ") || strcmp(upperCmd, "SPLAY") == 0
+      || strcmp(upperCmd, "STOP") == 0;
+}
+
+// Single entry point used by Serial input, the HTTP /cmd handler, and the
+// UDP sync receive path. fromNetwork=true means "this came from a peer";
+// in that case we run the command locally but never re-broadcast (avoiding
+// feedback loops). When fromNetwork=false we run locally AND, if the
+// command is in the mirror whitelist, broadcast its canonical form.
+void dispatchCommand(const char* cmd, bool fromNetwork) {
+  if (cmd == nullptr || cmd[0] == '\0') return;
+
+  // processCommand mutates its argument; keep an untouched canonical copy
+  // for the broadcast payload + mirror check.
+  char buf[64];
+  strncpy(buf, cmd, sizeof(buf) - 1);
+  buf[sizeof(buf) - 1] = '\0';
+
+  char upper[64];
+  strncpy(upper, buf, sizeof(upper) - 1);
+  upper[sizeof(upper) - 1] = '\0';
+  trimString(upper);
+  toUpperCase(upper);
+
+  processCommand(buf);
+
+  if (!fromNetwork && shouldMirrorCommand(upper)) {
+    broadcastEvent(upper);
   }
 }
