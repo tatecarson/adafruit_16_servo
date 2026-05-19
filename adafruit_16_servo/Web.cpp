@@ -78,11 +78,16 @@ void webPoll() {
   WiFiClient client = controlServer.available();
   if (!client) return;
 
+  // Cap blocking reads so a stalled client can't freeze the servo loop.
+  client.setTimeout(500);
+
   String requestLine = client.readStringUntil('\n');
   requestLine.trim();
+  if (requestLine.length() == 0) { client.stop(); return; }
 
   int contentLength = 0;
-  while (client.connected()) {
+  unsigned long headerDeadline = millis() + 1000;
+  while (client.connected() && millis() < headerDeadline) {
     String header = client.readStringUntil('\n');
     header.trim();
     if (header.length() == 0) break;

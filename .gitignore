@@ -7,3 +7,6 @@
 
 # Wi-Fi / OTA credentials — copy Secrets.h.example to Secrets.h locally.
 Secrets.h
+
+# Arduino IDE build output
+adafruit_16_servo/build/
