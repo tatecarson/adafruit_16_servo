@@ -165,6 +165,42 @@ void writeStatusJson(WiFiClient& client) {
   client.print(F("]}"));
 }
 
+bool otaReceive(WiFiClient& client, int contentLength) {
+  Serial.print(F("Browser OTA: receiving "));
+  Serial.print(contentLength);
+  Serial.println(F(" bytes..."));
+  otaInProgress = true;
+  InternalStorage.open(contentLength);
+
+  int received = 0;
+  unsigned long deadline = millis() + 60000;
+  uint8_t buf[256];
+  while (received < contentLength && millis() < deadline) {
+    int avail = client.available();
+    if (avail <= 0) { delay(1); continue; }
+    int toRead = min(avail, min((int)sizeof(buf), contentLength - received));
+    int n = client.read(buf, toRead);
+    for (int i = 0; i < n; i++) InternalStorage.write(buf[i]);
+    received += n;
+  }
+  InternalStorage.close();
+
+  if (received == contentLength) {
+    Serial.println(F("Browser OTA: upload complete."));
+    return true;
+  }
+  Serial.print(F("Browser OTA: incomplete ("));
+  Serial.print(received);
+  Serial.println(F(" bytes)"));
+  otaInProgress = false;
+  return false;
+}
+
+void otaApply() {
+  Serial.println(F("Browser OTA: applying update..."));
+  InternalStorage.apply();
+}
+
 Adafruit_PWMServoDriver pwm = Adafruit_PWMServoDriver();
 
 ServoConfig servoConfig[NUM_SERVOS];

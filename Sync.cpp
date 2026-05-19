@@ -35,9 +35,9 @@ unsigned long syncMillis() {
 static void initNodeId() {
   byte mac[6];
   WiFi.macAddress(mac);
-  nodeId = mac[0];
+  nodeId = mac[5];
   if (nodeId == 0) {
-    nodeId = mac[5] ? mac[5] : 1;
+    nodeId = mac[4] ? mac[4] : 1;
   }
 }
 
