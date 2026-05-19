@@ -320,8 +320,41 @@ void setup() {
   wifiAndOtaBegin();
 }
 
+static void maintainWifi() {
+  static unsigned long lastCheckMs = 0;
+  static unsigned long reconnectStartedMs = 0;
+  static bool reconnecting = false;
+  const unsigned long CHECK_INTERVAL_MS = 5000;
+  const unsigned long RECONNECT_TIMEOUT_MS = 15000;
+
+  unsigned long now = millis();
+  if (now - lastCheckMs < CHECK_INTERVAL_MS) return;
+  lastCheckMs = now;
+
+  if (WiFi.status() == WL_CONNECTED && !ipIsUnset(WiFi.localIP())) {
+    reconnecting = false;
+    return;
+  }
+
+  if (!reconnecting) {
+    Serial.println(F("WiFi link lost; attempting reconnect..."));
+    WiFi.disconnect();
+    delay(100);
+    WiFi.begin(wifiSsid, wifiPass);
+    reconnectStartedMs = now;
+    reconnecting = true;
+    return;
+  }
+
+  if (now - reconnectStartedMs > RECONNECT_TIMEOUT_MS) {
+    Serial.println(F("WiFi reconnect timed out; will retry."));
+    reconnecting = false;
+  }
+}
+
 void loop() {
   if (otaReady) {
+    maintainWifi();
     ArduinoOTA.poll();
     webPoll();
     syncPoll();
