@@ -709,6 +709,44 @@
   <div id="boards" class="grid"></div>
 
   <!-- ============================================================
+       OTA FIRMWARE UPLOAD
+       ============================================================ -->
+  <div class="sect">
+    <span class="num">// 03</span>
+    <span class="label">Firmware Upload</span>
+    <span class="rule"></span>
+    <span class="hint">browser OTA · select compiled .bin</span>
+  </div>
+
+  <div class="panel cmdbar">
+    <span class="panel-corner-bl"></span><span class="panel-corner-br"></span>
+
+    <div class="group">
+      <div class="gname">Binary <span class="key">.BIN</span></div>
+      <div class="btns" style="align-items:center">
+        <input id="otaFile" type="file" accept=".bin" style="font:500 11px/1 var(--mono); color:var(--ink-dim); max-width:280px">
+        <span id="otaFileInfo" style="font:500 10px/1 var(--mono); color:var(--ink-mute)"></span>
+      </div>
+    </div>
+
+    <div class="group">
+      <div class="gname">Password <span class="key">OTA</span></div>
+      <div class="btns" style="align-items:center">
+        <input id="otaPass" type="password" placeholder="OTA password" autocomplete="off" style="appearance:none; background:var(--bg-deep); color:var(--ink); border:1px solid var(--rule-hi); font:500 11px/1 var(--mono); padding:8px 12px; min-width:240px; outline:none">
+      </div>
+    </div>
+
+    <div class="group">
+      <div class="gname">Upload</div>
+      <div class="btns" id="otaBtns">
+        <button class="cmd amber" id="otaAll" disabled>Upload All</button>
+      </div>
+    </div>
+
+    <div id="otaLog" style="padding:8px 0 0; font:500 11px/1.6 var(--mono); color:var(--ink-dim); max-height:160px; overflow-y:auto"></div>
+  </div>
+
+  <!-- ============================================================
        FOOTER
        ============================================================ -->
   <footer class="footer">
@@ -1020,6 +1058,7 @@ $("#saveBoards").addEventListener("click", () => {
   boards = list;
   localStorage.setItem(LS_KEY, JSON.stringify(boards));
   renderBoardList();
+  renderOtaBoardButtons();
   startPolling();
 });
 autoPollEl.addEventListener("change", startPolling);
@@ -1034,9 +1073,104 @@ window.addEventListener("keydown", e => {
 });
 
 // ============================================================
+// OTA UPLOAD
+// ============================================================
+const otaFileEl  = $("#otaFile");
+const otaPassEl  = $("#otaPass");
+const otaAllEl   = $("#otaAll");
+const otaBtnsEl  = $("#otaBtns");
+const otaLogEl   = $("#otaLog");
+const otaFileInfo = $("#otaFileInfo");
+
+function otaLog(msg, color) {
+  const line = document.createElement("div");
+  if (color) line.style.color = `var(--${color})`;
+  line.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+  otaLogEl.prepend(line);
+}
+
+function updateOtaButtons() {
+  const ready = otaFileEl.files.length > 0 && otaPassEl.value.length > 0;
+  otaAllEl.disabled = !ready;
+  otaBtnsEl.querySelectorAll(".ota-board-btn").forEach(b => b.disabled = !ready);
+}
+
+otaFileEl.addEventListener("change", () => {
+  if (otaFileEl.files.length) {
+    const f = otaFileEl.files[0];
+    otaFileInfo.textContent = `${f.name} · ${(f.size / 1024).toFixed(1)} KB`;
+  } else {
+    otaFileInfo.textContent = "";
+  }
+  updateOtaButtons();
+});
+otaPassEl.addEventListener("input", updateOtaButtons);
+
+async function otaUpload(ip, file, password) {
+  otaLog(`${ip}: uploading ${file.size} bytes...`, "amber");
+  const url = `http://${ip}/ota?p=${encodeURIComponent(password)}`;
+  try {
+    const resp = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/octet-stream" },
+      body: file
+    });
+    const text = await resp.text();
+    if (resp.ok) {
+      otaLog(`${ip}: upload accepted, board rebooting...`, "phosphor");
+      return true;
+    } else {
+      otaLog(`${ip}: rejected — ${text}`, "alert");
+      return false;
+    }
+  } catch (e) {
+    otaLog(`${ip}: error — ${e.message}`, "alert");
+    return false;
+  }
+}
+
+async function otaUploadAll() {
+  const file = otaFileEl.files[0];
+  const pw = otaPassEl.value;
+  if (!file || !pw) return;
+  otaAllEl.disabled = true;
+  otaLog("Starting upload to all boards...");
+  let ok = 0, fail = 0;
+  for (const ip of boards) {
+    const success = await otaUpload(ip, file, pw);
+    if (success) ok++; else fail++;
+  }
+  otaLog(`Done: ${ok} succeeded, ${fail} failed`, fail ? "alert" : "phosphor");
+  updateOtaButtons();
+}
+
+async function otaUploadOne(ip) {
+  const file = otaFileEl.files[0];
+  const pw = otaPassEl.value;
+  if (!file || !pw) return;
+  await otaUpload(ip, file, pw);
+}
+
+otaAllEl.addEventListener("click", otaUploadAll);
+
+function renderOtaBoardButtons() {
+  otaBtnsEl.querySelectorAll(".ota-board-btn").forEach(b => b.remove());
+  boards.forEach(ip => {
+    const btn = document.createElement("button");
+    btn.className = "cmd compact ota-board-btn";
+    btn.textContent = ip;
+    btn.disabled = true;
+    btn.addEventListener("click", () => otaUploadOne(ip));
+    otaBtnsEl.appendChild(btn);
+  });
+  updateOtaButtons();
+}
+
+// ============================================================
 // INIT
 // ============================================================
 renderBoardList();
+renderOtaBoardButtons();
 render();
 startPolling();
 </script>

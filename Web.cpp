@@ -1,5 +1,6 @@
 #include "Web.h"
 #include <WiFiS3.h>
+#include "Secrets.h"
 #include "Sync.h"
 
 // Provided by command_interface.h in the servo sketch.
@@ -7,6 +8,12 @@ void dispatchCommand(const char* cmd, bool fromNetwork);
 
 // Provided by adafruit_16_servo.ino — needs access to the runtime globals.
 void writeStatusJson(WiFiClient& client);
+
+// Provided by adafruit_16_servo.ino — streams POST body to InternalStorage.
+bool otaReceive(WiFiClient& client, int contentLength);
+void otaApply();
+
+extern bool otaInProgress;
 
 static WiFiServer controlServer(80);
 
@@ -74,45 +81,110 @@ void webPoll() {
   String requestLine = client.readStringUntil('\n');
   requestLine.trim();
 
+  int contentLength = 0;
   while (client.connected()) {
     String header = client.readStringUntil('\n');
     header.trim();
     if (header.length() == 0) break;
+    if (header.startsWith("Content-Length:")) {
+      contentLength = header.substring(15).toInt();
+    }
   }
 
-  if (requestLine.startsWith("GET ")) {
-    int pathStart = 4;
-    int pathEnd = requestLine.indexOf(' ', pathStart);
-    String path = requestLine.substring(pathStart, pathEnd);
+  // Parse method and path from request line.
+  int sp1 = requestLine.indexOf(' ');
+  int sp2 = (sp1 > 0) ? requestLine.indexOf(' ', sp1 + 1) : -1;
+  if (sp1 < 0 || sp2 < 0) { client.stop(); return; }
+  String method = requestLine.substring(0, sp1);
+  String path   = requestLine.substring(sp1 + 1, sp2);
 
+  // --- CORS preflight for /ota ---
+  if (method == "OPTIONS" && path.startsWith("/ota")) {
+    client.println("HTTP/1.1 204 No Content");
+    client.println("Connection: close");
+    client.println("Access-Control-Allow-Origin: *");
+    client.println("Access-Control-Allow-Methods: POST, OPTIONS");
+    client.println("Access-Control-Allow-Headers: Content-Type");
+    client.println("Access-Control-Max-Age: 86400");
+    client.println();
+    delay(5);
+    client.stop();
+    return;
+  }
+
+  // --- Browser OTA upload: POST /ota?p=<password> ---
+  if (method == "POST" && path.startsWith("/ota")) {
+    String pw = getQueryValue(path, "p");
+    if (pw != OTA_PASSWORD) {
+      client.println("HTTP/1.1 403 Forbidden");
+      client.println("Connection: close");
+      client.println("Access-Control-Allow-Origin: *");
+      client.println("Content-Type: text/plain");
+      client.println();
+      client.println("bad password");
+      delay(5);
+      client.stop();
+      return;
+    }
+    if (contentLength <= 0 || contentLength > 256 * 1024) {
+      client.println("HTTP/1.1 400 Bad Request");
+      client.println("Connection: close");
+      client.println("Access-Control-Allow-Origin: *");
+      client.println("Content-Type: text/plain");
+      client.println();
+      client.println("bad content-length");
+      delay(5);
+      client.stop();
+      return;
+    }
+
+    if (otaReceive(client, contentLength)) {
+      client.println("HTTP/1.1 200 OK");
+      client.println("Connection: close");
+      client.println("Access-Control-Allow-Origin: *");
+      client.println("Content-Type: text/plain");
+      client.println();
+      client.println("OK");
+      delay(100);
+      client.stop();
+      otaApply();
+    } else {
+      client.println("HTTP/1.1 500 Internal Server Error");
+      client.println("Connection: close");
+      client.println("Access-Control-Allow-Origin: *");
+      client.println("Content-Type: text/plain");
+      client.println();
+      client.println("upload incomplete");
+      delay(5);
+      client.stop();
+    }
+    return;
+  }
+
+  // --- Existing GET handlers ---
+  if (method == "GET") {
     if (path.startsWith("/cmd?")) {
       String cmd = getQueryValue(path, "c");
       if (cmd.length() > 0) {
         Serial.print("HTTP command: ");
         Serial.println(cmd);
-        // fromNetwork=false so dispatchCommand will broadcast it to peers.
         dispatchCommand(cmd.c_str(), false);
       }
     } else if (path == "/status.json" || path.startsWith("/status.json?")) {
       client.println("HTTP/1.1 200 OK");
       client.println("Connection: close");
       client.println("Content-Type: application/json");
-      client.println("Access-Control-Allow-Origin: null");
+      client.println("Access-Control-Allow-Origin: *");
       client.println();
       writeStatusJson(client);
       delay(5);
       client.stop();
       return;
     } else if (path == "/peers.json" || path.startsWith("/peers.json?")) {
-      // CORS: only allow origins that browsers serialize as "null"
-      // (file:// pages, sandboxed iframes). Tightens the previous "*" wildcard
-      // so a random website on the LAN cannot fingerprint the cluster.
-      // The bundled servo_controller.html is opened from disk, so its
-      // Origin header is "null" and the page works under this policy.
       client.println("HTTP/1.1 200 OK");
       client.println("Connection: close");
       client.println("Content-Type: application/json");
-      client.println("Access-Control-Allow-Origin: null");
+      client.println("Access-Control-Allow-Origin: *");
       client.println();
       syncWritePeersJson(client);
       delay(5);
