@@ -1,6 +1,7 @@
 #pragma once
 
 #include "servo_runtime.h"
+#include "dc_motor.h"
 
 void sweepServo(uint8_t servo) {
   if (servo >= NUM_SERVOS) {
@@ -47,7 +48,6 @@ void showStatus() {
   Serial.print(F("Time multiplier: ")); Serial.println(timeMultiplier);
   for (uint8_t i = 0; i < NUM_SERVOS; i++) {
     Serial.print(F("Servo ")); Serial.print(i);
-    Serial.print(servoConfig[i].continuous ? F(" [CONT]") : F(" [STD] "));
     Serial.print(F(": min=")); Serial.print(servoConfig[i].minPulse);
     Serial.print(F(" max=")); Serial.print(servoConfig[i].maxPulse);
     Serial.print(F(" pos=")); Serial.print(servoState[i].posPulse);
@@ -56,10 +56,10 @@ void showStatus() {
       Serial.print(F(" travel=")); Serial.print(servoConfig[i].upDegrees);
       Serial.print(F("-")); Serial.print(servoConfig[i].downDegrees);
     }
-    if (servoConfig[i].continuous) {
-      Serial.print(F(" stop=")); Serial.print(servoConfig[i].stopPulse);
-    }
     Serial.println();
   }
+  Serial.println(F("--- DC Motor ---"));
+  Serial.print(F("Speed: ")); Serial.print(motorState.currentSpeed);
+  Serial.print(F("% Ramping: ")); Serial.println(motorState.ramping ? F("yes") : F("no"));
   Serial.println();
 }

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "servo_runtime.h"
+#include "dc_motor.h"
 
 void updateAnimations() {
   unsigned long now = millis();
@@ -26,30 +27,7 @@ void updateAnimations() {
 }
 
 void updateSpeedRamps() {
-  unsigned long now = millis();
-
-  for (uint8_t i = 0; i < NUM_SERVOS; i++) {
-    if (servoState[i].stopped || !servoState[i].speedRamping) continue;
-
-    unsigned long elapsed = now - servoState[i].speedRampStartMs;
-
-    if (elapsed >= servoState[i].speedRampDurationMs) {
-      setServoSpeed(i, servoState[i].targetSpeed);
-      servoState[i].speedRamping = false;
-    } else {
-      float t = (float)elapsed / servoState[i].speedRampDurationMs;
-      if (t < 0.5f) {
-        t = 4.0f * t * t * t;
-      } else {
-        t = 1.0f - pow(-2.0f * t + 2.0f, 3.0f) / 2.0f;
-      }
-
-      int8_t speed = servoState[i].startSpeed + (servoState[i].targetSpeed - servoState[i].startSpeed) * t;
-      uint16_t pulse = speedToPulse(i, speed);
-      servoState[i].posPulse = pulse;
-      pwm.setPWM(i, 0, pulse);
-    }
-  }
+  updateMotorRamp();
 }
 
 void updateWave() {
@@ -60,7 +38,7 @@ void updateWave() {
   if (cycleMs < 1.0f) cycleMs = 1.0f;
 
   for (uint8_t i = waveStartServo; i <= waveEndServo; i++) {
-    if (servoState[i].stopped || servoConfig[i].continuous) continue;
+    if (servoState[i].stopped) continue;
     uint8_t servoIndex = i - waveStartServo;
     uint16_t minDegrees = servoConfig[i].upDegrees;
     uint16_t maxDegrees = servoConfig[i].downDegrees;
@@ -138,11 +116,7 @@ void updateSpeedSequence() {
         Serial.println(F("Speed sequence looping"));
       } else {
         speedSeqActive = false;
-        for (uint8_t j = 0; j < NUM_SERVOS; j++) {
-          if (servoConfig[j].continuous) {
-            setServoSpeed(j, 0);
-          }
-        }
+        stopMotor();
         Serial.println(F("Speed sequence complete"));
       }
       return;

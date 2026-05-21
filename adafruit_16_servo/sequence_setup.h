@@ -3,7 +3,7 @@
 // Animation sequence setup (user-editable).
 //
 // Edit this file to define your own choreographed keyframe (positional) and
-// speed (continuous rotation) sequences. This is intentionally separated from
+// speed (DC motor) sequences. This is intentionally separated from
 // `adafruit_16_servo.ino` so the core logic can stay unchanged.
 //
 // Notes:
@@ -26,7 +26,7 @@
 // - timeMs:     when to start this move, relative to sequence start.
 // - durationMs: how long the move should take (0 = instant).
 //
-// Speed (continuous) sequence structure:
+// Speed (DC motor) sequence structure:
 //   { servo, speed, timeMs, rampMs }
 // - servo:  0-15 (servo channel). Use 255 to end the sequence.
 // - speed:  -100..100, where 0 = stop; negative/positive = opposite directions.
@@ -284,12 +284,11 @@ const Keyframe sequence8[] PROGMEM = {
 static const uint8_t sequence8Length = sizeof(sequence8) / sizeof(sequence8[0]);
 
 // ============================================================================
-// SPLAY sequences (speed / continuous rotation)
+// SPLAY sequences (DC motor speed)
 // ============================================================================
 
 // Speed sequence 1: "Demo rotation"
-// Intended for continuous-rotation servos (MODE <n> CONT).
-// Uses per-servo min/max/stop calibration to translate `speed` into pulses.
+// Drives the DC motor via the IBT-2 driver.
 const SpeedFrame speedSeq1[] PROGMEM = {
   {3, 50, 0, 500},         // Servo 3 ramp to 50% over 500ms at t=0
   {3, 0, 3000, 500},       // Ramp to stop at t=3s

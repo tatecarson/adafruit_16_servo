@@ -1,6 +1,7 @@
 #pragma once
 
 #include "servo_runtime.h"
+#include "dc_motor.h"
 
 /**
  * @brief Convert a servo angle to the calibrated PWM pulse for a specific servo.
@@ -34,21 +35,6 @@ uint16_t percentToDegrees(uint8_t servo, uint8_t percent) {
 uint16_t upPercentToDegrees(uint8_t servo, uint8_t percentUp) {
   percentUp = constrain(percentUp, 0, 100);
   return percentToDegrees(servo, 100 - percentUp);
-}
-
-/**
- * Convert a signed speed (-100..100) into the calibrated PWM pulse for a servo.
- */
-uint16_t speedToPulse(uint8_t servo, int8_t speed) {
-  speed = constrain(speed, -100, 100);
-  uint16_t stopPulse = servoConfig[servo].stopPulse;
-  if (speed == 0) {
-    return stopPulse;
-  } else if (speed > 0) {
-    return map(speed, 1, 100, stopPulse + 1, servoConfig[servo].maxPulse);
-  } else {
-    return map(speed, -100, -1, servoConfig[servo].minPulse, stopPulse - 1);
-  }
 }
 
 // Easing function: ease-in-out cubic for smooth organic motion
@@ -87,59 +73,13 @@ void setServoDegrees(uint8_t servo, uint16_t degrees) {
 }
 
 void setServoSpeed(uint8_t servo, int8_t speed) {
-  if (servo >= NUM_SERVOS) {
-    Serial.println(F("Invalid servo"));
-    return;
-  }
-  if (!servoConfig[servo].continuous) {
-    Serial.println(F("Not a continuous servo (use MODE command)"));
-    return;
-  }
-  servoState[servo].stopped = false;
-  uint16_t pulse = speedToPulse(servo, speed);
-  servoState[servo].posPulse = pulse;
-  pwm.setPWM(servo, 0, pulse);
-  Serial.print(F("Servo ")); Serial.print(servo);
-  Serial.print(F(" speed ")); Serial.print(speed);
-  Serial.print(F("% -> pulse ")); Serial.println(pulse);
+  (void)servo;
+  setMotorSpeed(speed);
 }
 
 void rampServoSpeed(uint8_t servo, int8_t targetSpeed, uint32_t rampMs) {
-  if (servo >= NUM_SERVOS) {
-    Serial.println(F("Invalid servo"));
-    return;
-  }
-  if (!servoConfig[servo].continuous) {
-    Serial.println(F("Not a continuous servo"));
-    return;
-  }
-  servoState[servo].stopped = false;
-
-  int8_t currentSpeed = 0;
-  if (servoState[servo].posPulse != servoConfig[servo].stopPulse) {
-    if (servoState[servo].posPulse > servoConfig[servo].stopPulse) {
-      currentSpeed = map(servoState[servo].posPulse, servoConfig[servo].stopPulse, servoConfig[servo].maxPulse, 0, 100);
-    } else {
-      currentSpeed = map(servoState[servo].posPulse, servoConfig[servo].minPulse, servoConfig[servo].stopPulse, -100, 0);
-    }
-  }
-
-  if (rampMs == 0) {
-    setServoSpeed(servo, targetSpeed);
-    servoState[servo].speedRamping = false;
-  } else {
-    servoState[servo].startSpeed = currentSpeed;
-    servoState[servo].targetSpeed = targetSpeed;
-    servoState[servo].speedRampStartMs = millis();
-    servoState[servo].speedRampDurationMs = rampMs;
-    servoState[servo].speedRamping = true;
-
-    Serial.print(F("Servo ")); Serial.print(servo);
-    Serial.print(F(" ramping ")); Serial.print(currentSpeed);
-    Serial.print(F("% -> ")); Serial.print(targetSpeed);
-    Serial.print(F("% over ")); Serial.print(rampMs);
-    Serial.println(F("ms"));
-  }
+  (void)servo;
+  rampMotorSpeed(targetSpeed, rampMs);
 }
 
 void moveServoAnimated(uint8_t servo, uint16_t targetPulse, uint32_t duration) {
@@ -183,20 +123,11 @@ void stopServoNow(uint8_t servo) {
   }
 
   servoState[servo].moving = false;
-  servoState[servo].speedRamping = false;
   servoState[servo].stopped = true;
 
-  if (servoConfig[servo].continuous) {
-    uint16_t pulse = servoConfig[servo].stopPulse;
-    servoState[servo].posPulse = pulse;
-    pwm.setPWM(servo, 0, pulse);
-    Serial.print(F("Servo ")); Serial.print(servo);
-    Serial.println(F(" stopped"));
-  } else {
-    pwm.setPWM(servo, 0, servoState[servo].posPulse);
-    Serial.print(F("Servo ")); Serial.print(servo);
-    Serial.println(F(" held"));
-  }
+  pwm.setPWM(servo, 0, servoState[servo].posPulse);
+  Serial.print(F("Servo ")); Serial.print(servo);
+  Serial.println(F(" held"));
 }
 
 void setServoPercent(uint8_t servo, uint8_t percent) {
@@ -244,7 +175,7 @@ void moveServoPercentUp(uint8_t servo, uint8_t percentUp, uint32_t duration) {
 void setAllProtectedWinchesPercent(bool percentUp, uint8_t percent) {
   stopActivePatterns();
   for (uint8_t i = 0; i < NUM_SERVOS; i++) {
-    if (servoConfig[i].continuous || servoConfig[i].allowRelease) continue;
+    if (servoConfig[i].allowRelease) continue;
     clearServoStop(i);
     servoState[i].moving = false;
     if (percentUp) {
@@ -258,7 +189,7 @@ void setAllProtectedWinchesPercent(bool percentUp, uint8_t percent) {
 void moveAllProtectedWinchesPercent(bool percentUp, uint8_t percent, uint32_t duration) {
   stopActivePatterns();
   for (uint8_t i = 0; i < NUM_SERVOS; i++) {
-    if (servoConfig[i].continuous || servoConfig[i].allowRelease) continue;
+    if (servoConfig[i].allowRelease) continue;
     clearServoStop(i);
     if (percentUp) {
       moveServoDegrees(i, upPercentToDegrees(i, percent), duration);
@@ -274,32 +205,15 @@ void setTestPulse(uint16_t pulse) {
   }
 }
 
-int8_t findPrimaryContinuousServo() {
-  for (uint8_t i = 0; i < NUM_SERVOS; i++) {
-    if (servoConfig[i].continuous) {
-      return i;
-    }
-  }
-  return -1;
-}
-
-bool setTestRigState(bool percentUp, uint8_t percent, int8_t speed, uint32_t duration, uint8_t& rotationServo) {
-  int8_t continuousServo = findPrimaryContinuousServo();
-  if (continuousServo < 0) {
-    Serial.println(F("No continuous rotation servo is configured"));
-    return false;
-  }
-
-  rotationServo = (uint8_t)continuousServo;
+bool setTestRigState(bool percentUp, uint8_t percent, int8_t speed, uint32_t duration) {
   stopActivePatterns();
-  clearServoStop(rotationServo);
 
   if (duration == 0) {
     setAllProtectedWinchesPercent(percentUp, percent);
-    setServoSpeed(rotationServo, speed);
+    setMotorSpeed(speed);
   } else {
     moveAllProtectedWinchesPercent(percentUp, percent, duration);
-    rampServoSpeed(rotationServo, speed, duration);
+    rampMotorSpeed(speed, duration);
   }
 
   return true;
