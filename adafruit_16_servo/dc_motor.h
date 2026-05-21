@@ -102,8 +102,9 @@ inline void updateMotorRamp() {
     t = 1.0f - pow(-2.0f * t + 2.0f, 3.0f) / 2.0f;
   }
 
-  int8_t speed = motorState.startSpeed +
-    (int8_t)((motorState.targetSpeed - motorState.startSpeed) * t);
+  float interp = (float)motorState.startSpeed +
+    ((float)motorState.targetSpeed - (float)motorState.startSpeed) * t;
+  int8_t speed = (int8_t)constrain((int)interp, -100, 100);
 
   if (speed != motorState.currentSpeed) {
     motorState.currentSpeed = speed;
