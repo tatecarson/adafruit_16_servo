@@ -1,6 +1,7 @@
 #pragma once
 
 #include "servo_runtime.h"
+#include "dc_motor.h"
 #include "Sync.h"
 
 void showHelp() {
@@ -23,15 +24,14 @@ void showHelp() {
   Serial.println(F("DMOVE <n> <pct> <ms>  Animated move to absolute percent down"));
   Serial.println(F("ALLUP <pct> [ms]      Move all protected winches up together"));
   Serial.println(F("ALLDOWN <pct> [ms]    Move all protected winches down together"));
-  Serial.println(F("RIG <UP|DOWN> <pct> <spd> [ms]  Winches + rotation test"));
+  Serial.println(F("RIG <UP|DOWN> <pct> <spd> [ms]  Winches + DC motor test"));
   Serial.println(F("WAVE <s> <e> [spd] [off] [amp]  Start wave pattern"));
   Serial.println(F("PLAY <n> [LOOP]       Play sequence n"));
-  Serial.println(F("SPLAY <n> [LOOP]      Speed sequence (continuous)"));
+  Serial.println(F("SPLAY <n> [LOOP]      Speed sequence (DC motor)"));
   Serial.println(F("RUN <n> [LOOP]        Run a chained sequence program"));
   Serial.println(F("STOP [n]              Stop all motion or hold one servo"));
   Serial.println(F("TIMESCALE <n>         Scale sequence timing n times slower"));
-  Serial.println(F("MODE <n> STD|CONT     Set servo mode"));
-  Serial.println(F("ROTATE <spd>          Installation rotation speed"));
+  Serial.println(F("ROTATE <spd>          DC motor rotation speed"));
   Serial.println();
 }
 
@@ -248,15 +248,12 @@ void processCommand(char* cmd) {
     uint8_t percent = 0;
     int8_t speed = 0;
     uint32_t duration = 0;
-    uint8_t rotationServo = 0;
     if (parseRigDirection(cmd, percentUp, percent, speed, duration) &&
-        setTestRigState(percentUp, percent, speed, duration, rotationServo)) {
+        setTestRigState(percentUp, percent, speed, duration)) {
       Serial.print(F("Rig test: winches -> "));
       Serial.print(percent);
       Serial.print(percentUp ? F("% up, ") : F("% down, "));
-      Serial.print(F("rotation servo "));
-      Serial.print(rotationServo);
-      Serial.print(F(" -> "));
+      Serial.print(F("motor -> "));
       Serial.print(speed);
       Serial.print(F("%"));
       if (duration > 0) {
@@ -431,49 +428,18 @@ void processCommand(char* cmd) {
     sequenceActive = false;
     speedSeqActive = false;
     programActive = false;
+    stopMotor();
     for (uint8_t i = 0; i < NUM_SERVOS; i++) {
       servoState[i].moving = false;
-      servoState[i].speedRamping = false;
       servoState[i].stopped = false;
-      if (servoConfig[i].continuous) {
-        setServoSpeed(i, 0);
-      }
     }
     Serial.println(F("Stopped"));
-  }
-  else if (startsWith(cmd, "MODE")) {
-    int space = findChar(cmd, ' ', 0);
-    if (space > 0) {
-      uint8_t servo = atoi(cmd + space + 1);
-      if (servo >= NUM_SERVOS) {
-        Serial.println(F("Invalid servo"));
-      } else if (containsStr(cmd, "CONT")) {
-        servoConfig[servo].continuous = true;
-        servoConfig[servo].stopPulse = (servoConfig[servo].minPulse + servoConfig[servo].maxPulse) / 2;
-        Serial.print(F("Servo ")); Serial.print(servo);
-        Serial.print(F(" set to CONTINUOUS (stop="));
-        Serial.print(servoConfig[servo].stopPulse);
-        Serial.println(F(") - use ROTATE to control"));
-      } else if (containsStr(cmd, "STD")) {
-        servoConfig[servo].continuous = false;
-        Serial.print(F("Servo ")); Serial.print(servo);
-        Serial.println(F(" set to STANDARD"));
-      } else {
-        Serial.println(F("Use: MODE <n> STD or MODE <n> CONT"));
-      }
-    }
   }
   else if (startsWith(cmd, "ROTATE")) {
     int space = findChar(cmd, ' ', 0);
     if (space > 0) {
-      int8_t rotationServo = findPrimaryContinuousServo();
-      if (rotationServo < 0) {
-        Serial.println(F("No continuous rotation servo is configured"));
-        return;
-      }
-
       int16_t speed = atoi(cmd + space + 1);
-      setServoSpeed((uint8_t)rotationServo, (int8_t)constrain(speed, -100, 100));
+      setMotorSpeed((int8_t)constrain(speed, -100, 100));
     } else {
       Serial.println(F("Use: ROTATE <-100 to 100>"));
     }

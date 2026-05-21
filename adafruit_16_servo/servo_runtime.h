@@ -9,13 +9,12 @@
 struct ServoConfig {
   uint16_t minPulse;
   uint16_t maxPulse;
-  bool continuous;
   uint16_t stopPulse;
   uint16_t totalDegrees;
   bool allowRelease;
-  uint16_t upDegrees;    // degree position for fully-up (default 0)
-  uint16_t downDegrees;  // degree position for fully-down (0 = use totalDegrees)
-  bool reverseDir;       // true = higher degrees is physically UP
+  uint16_t upDegrees;
+  uint16_t downDegrees;
+  bool reverseDir;
 };
 
 struct ServoState {
@@ -27,12 +26,6 @@ struct ServoState {
   unsigned long moveStartMs;
   uint32_t moveDurationMs;
   bool moving;
-
-  int8_t targetSpeed;
-  int8_t startSpeed;
-  unsigned long speedRampStartMs;
-  uint32_t speedRampDurationMs;
-  bool speedRamping;
 };
 
 struct Keyframe {
@@ -107,14 +100,11 @@ uint16_t degreesToPulse(uint8_t servo, uint16_t degrees);
 uint16_t sequenceDegreesToPulse(uint8_t servo, uint16_t degrees);
 uint16_t percentToDegrees(uint8_t servo, uint8_t percent);
 uint16_t upPercentToDegrees(uint8_t servo, uint8_t percentUp);
-uint16_t speedToPulse(uint8_t servo, int8_t speed);
 float easeInOutCubic(float t);
 uint16_t lerpEased(uint16_t start, uint16_t end, float progress);
 
 void setServoPulse(uint8_t servo, uint16_t pulse);
 void setServoDegrees(uint8_t servo, uint16_t degrees);
-void setServoSpeed(uint8_t servo, int8_t speed);
-void rampServoSpeed(uint8_t servo, int8_t targetSpeed, uint32_t rampMs);
 void moveServoAnimated(uint8_t servo, uint16_t targetPulse, uint32_t duration);
 void moveServoDegrees(uint8_t servo, uint16_t degrees, uint32_t duration);
 void moveSequenceDegrees(uint8_t servo, uint16_t degrees, uint32_t duration);

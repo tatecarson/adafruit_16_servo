@@ -20,8 +20,8 @@ BIN="$BUILD_DIR/adafruit_16_servo.ino.bin"
 cd "$(dirname "$0")"
 
 # Pull OTA_PASSWORD from Secrets.h if not already in the environment.
-if [[ -z "${OTA_PASSWORD:-}" && -f Secrets.h ]]; then
-  OTA_PASSWORD=$(awk -F'"' '/^[[:space:]]*#define[[:space:]]+OTA_PASSWORD[[:space:]]/ {print $2; exit}' Secrets.h)
+if [[ -z "${OTA_PASSWORD:-}" && -f adafruit_16_servo/Secrets.h ]]; then
+  OTA_PASSWORD=$(awk -F'"' '/^[[:space:]]*#define[[:space:]]+OTA_PASSWORD[[:space:]]/ {print $2; exit}' adafruit_16_servo/Secrets.h)
 fi
 : "${OTA_PASSWORD:?OTA_PASSWORD not set. Export it, or define it in Secrets.h.}"
 
@@ -40,9 +40,8 @@ if [[ "$(basename "$SKETCH_DIR")" != "$SKETCH_NAME" ]]; then
   mkdir -p "$STAGE"
   # *.cpp may not exist on every branch; nullglob so it doesn't fail.
   shopt -s nullglob
-  cp -R ./*.ino ./*.h ./*.cpp "$STAGE"/
+  cp -R adafruit_16_servo/*.ino adafruit_16_servo/*.h adafruit_16_servo/*.cpp "$STAGE"/
   shopt -u nullglob
-  if [[ -f Secrets.h ]]; then cp Secrets.h "$STAGE"/; fi
   SKETCH_DIR="$STAGE"
 fi
 

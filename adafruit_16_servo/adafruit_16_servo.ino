@@ -21,14 +21,13 @@
       DMOVE <n> <pct> <ms> - Animated move to absolute percent down
       ALLUP <pct> [ms]   - Move all protected winch servos up together
       ALLDOWN <pct> [ms] - Move all protected winch servos down together
-      RIG <UP|DOWN> <pct> <spd> [ms] - Manual winch + rotation test
+      RIG <UP|DOWN> <pct> <spd> [ms] - Manual winch + DC motor test
       WAVE <start> <end> [speed] [offset] [amp] - Wave pattern
       PLAY <n> [LOOP]    - Play keyframe sequence
-      SPLAY <n> [LOOP]   - Play speed sequence (continuous servos)
+      SPLAY <n> [LOOP]   - Play speed sequence (DC motor)
       RUN <n> [LOOP]     - Run a chained program of sequences
       STOP [n]           - Stop all motion or hold one servo
-      MODE <n> STD|CONT  - Set servo mode (standard/continuous)
-      ROTATE <spd>       - Set installation rotation speed
+      ROTATE <spd>       - Set DC motor rotation speed
       TIMESCALE <n>      - Scale sequence timing n times slower
       HELP               - Show commands
  ****************************************************/
@@ -43,6 +42,7 @@
 #include "Web.h"
 
 #include "servo_runtime.h"
+#include "dc_motor.h"
 #include "servo_setup.h"
 #include "sequence_setup.h"
 
@@ -159,10 +159,13 @@ void writeStatusJson(WiFiClient& client) {
     client.print(F(",\"pulse\":")); client.print(servoState[i].posPulse);
     client.print(F(",\"target\":")); client.print(servoState[i].targetPulse);
     client.print(F(",\"moving\":")); client.print(servoState[i].moving ? F("true") : F("false"));
-    client.print(F(",\"cont\":")); client.print(servoConfig[i].continuous ? F("true") : F("false"));
     client.print('}');
   }
-  client.print(F("]}"));
+  client.print(F("]"));
+  client.print(F(",\"motor\":{\"speed\":")); client.print(motorState.currentSpeed);
+  client.print(F(",\"ramping\":")); client.print(motorState.ramping ? F("true") : F("false"));
+  client.print(F("}"));
+  client.print(F("}"));
 }
 
 bool otaReceive(WiFiClient& client, int contentLength) {
@@ -205,6 +208,8 @@ Adafruit_PWMServoDriver pwm = Adafruit_PWMServoDriver();
 
 ServoConfig servoConfig[NUM_SERVOS];
 ServoState servoState[NUM_SERVOS];
+
+MotorState motorState;
 
 // Wave pattern state
 bool waveActive = false;
@@ -253,11 +258,6 @@ uint16_t currentProgramSpeedIteration = 0;
 
 /**
  * @brief Initialize per-servo calibration and runtime state to sane defaults.
- *
- * Sets each servo's min/max pulse to DEFAULT_MIN/DEFAULT_MAX, sets mode to standard
- * (not continuous), sets the stop/center pulse to the midpoint of the default range,
- * and resets all runtime state (current/target/start pulse, movement timers/flags,
- * and speed ramp fields).
  */
 void initServoDefaults() {
   uint16_t defaultCenter = (DEFAULT_MIN + DEFAULT_MAX) / 2;
@@ -265,7 +265,6 @@ void initServoDefaults() {
   for (uint8_t i = 0; i < NUM_SERVOS; i++) {
     servoConfig[i].minPulse = DEFAULT_MIN;
     servoConfig[i].maxPulse = DEFAULT_MAX;
-    servoConfig[i].continuous = false;
     servoConfig[i].stopPulse = defaultCenter;
     servoConfig[i].totalDegrees = 180;
     servoConfig[i].allowRelease = true;
@@ -279,12 +278,6 @@ void initServoDefaults() {
     servoState[i].moveStartMs = 0;
     servoState[i].moveDurationMs = 0;
     servoState[i].moving = false;
-
-    servoState[i].targetSpeed = 0;
-    servoState[i].startSpeed = 0;
-    servoState[i].speedRampStartMs = 0;
-    servoState[i].speedRampDurationMs = 0;
-    servoState[i].speedRamping = false;
   }
 }
 
@@ -309,6 +302,7 @@ void setup() {
 
   initServoDefaults();
   applyCustomServoSetup(servoConfig, servoState);
+  motorInit();
 
   pwm.begin();
   pwm.setOscillatorFrequency(27000000);
