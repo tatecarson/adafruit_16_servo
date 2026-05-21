@@ -472,6 +472,8 @@ void processCommand(char* cmd) {
 inline bool shouldMirrorCommand(const char* upperCmd) {
   return startsWith(upperCmd, "PLAY ") || strcmp(upperCmd, "PLAY") == 0
       || startsWith(upperCmd, "SPLAY ") || strcmp(upperCmd, "SPLAY") == 0
+      || startsWith(upperCmd, "ROTATE ") || strcmp(upperCmd, "ROTATE") == 0
+      || startsWith(upperCmd, "RIG ") || strcmp(upperCmd, "RIG") == 0
       || strcmp(upperCmd, "STOP") == 0;
 }
 
