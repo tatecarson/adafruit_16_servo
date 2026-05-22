@@ -133,39 +133,49 @@ static void wifiAndOtaBegin() {
 // Streamed JSON snapshot for /status.json. Keep keys short to keep the
 // payload under the TCP MTU on a single send.
 void writeStatusJson(WiFiClient& client) {
-  client.print(F("{\"node\":")); client.print(syncNodeId());
-  client.print(F(",\"ip\":\"")); client.print(WiFi.localIP()); client.print('"');
-  client.print(F(",\"uptimeMs\":")); client.print(millis());
-  client.print(F(",\"otaInProgress\":")); client.print(otaInProgress ? F("true") : F("false"));
-  client.print(F(",\"sequence\":{\"active\":")); client.print(sequenceActive ? F("true") : F("false"));
-  client.print(F(",\"loop\":")); client.print(sequenceLoop ? F("true") : F("false"));
-  client.print(F(",\"len\":")); client.print(currentSequenceLength);
-  client.print(F(",\"startedMs\":")); client.print(sequenceActive ? (millis() - sequenceStartTime) : 0UL);
-  client.print('}');
-  client.print(F(",\"speedSeq\":{\"active\":")); client.print(speedSeqActive ? F("true") : F("false"));
-  client.print(F(",\"loop\":")); client.print(speedSeqLoop ? F("true") : F("false"));
-  client.print(F(",\"len\":")); client.print(currentSpeedSeqLength);
-  client.print(F(",\"startedMs\":")); client.print(speedSeqActive ? (millis() - speedSeqStartTime) : 0UL);
-  client.print('}');
-  client.print(F(",\"wave\":{\"active\":")); client.print(waveActive ? F("true") : F("false"));
-  client.print(F(",\"start\":")); client.print(waveStartServo);
-  client.print(F(",\"end\":")); client.print(waveEndServo);
-  client.print('}');
-  client.print(F(",\"timescale\":")); client.print(timeMultiplier);
-  client.print(F(",\"servos\":["));
+  // Build the whole payload in RAM, then push it to the WiFi coprocessor in
+  // one shot. Each WiFiClient::print is an SPI round-trip; the previous
+  // ~100-call version took ~1s per status poll and starved /cmd handling.
+  String s;
+  s.reserve(1200);
+
+  IPAddress ip = WiFi.localIP();
+  char ipBuf[16];
+  snprintf(ipBuf, sizeof(ipBuf), "%u.%u.%u.%u", ip[0], ip[1], ip[2], ip[3]);
+
+  s += F("{\"node\":");          s += syncNodeId();
+  s += F(",\"ip\":\"");          s += ipBuf; s += '"';
+  s += F(",\"uptimeMs\":");      s += millis();
+  s += F(",\"otaInProgress\":"); s += (otaInProgress ? F("true") : F("false"));
+  s += F(",\"sequence\":{\"active\":"); s += (sequenceActive ? F("true") : F("false"));
+  s += F(",\"loop\":");          s += (sequenceLoop ? F("true") : F("false"));
+  s += F(",\"len\":");           s += currentSequenceLength;
+  s += F(",\"startedMs\":");     s += (sequenceActive ? (millis() - sequenceStartTime) : 0UL);
+  s += '}';
+  s += F(",\"speedSeq\":{\"active\":"); s += (speedSeqActive ? F("true") : F("false"));
+  s += F(",\"loop\":");          s += (speedSeqLoop ? F("true") : F("false"));
+  s += F(",\"len\":");           s += currentSpeedSeqLength;
+  s += F(",\"startedMs\":");     s += (speedSeqActive ? (millis() - speedSeqStartTime) : 0UL);
+  s += '}';
+  s += F(",\"wave\":{\"active\":"); s += (waveActive ? F("true") : F("false"));
+  s += F(",\"start\":");         s += waveStartServo;
+  s += F(",\"end\":");           s += waveEndServo;
+  s += '}';
+  s += F(",\"timescale\":");     s += timeMultiplier;
+  s += F(",\"servos\":[");
   for (uint8_t i = 0; i < NUM_SERVOS; i++) {
-    if (i) client.print(',');
-    client.print(F("{\"i\":")); client.print(i);
-    client.print(F(",\"pulse\":")); client.print(servoState[i].posPulse);
-    client.print(F(",\"target\":")); client.print(servoState[i].targetPulse);
-    client.print(F(",\"moving\":")); client.print(servoState[i].moving ? F("true") : F("false"));
-    client.print('}');
+    if (i) s += ',';
+    s += F("{\"i\":");           s += i;
+    s += F(",\"pulse\":");       s += servoState[i].posPulse;
+    s += F(",\"target\":");      s += servoState[i].targetPulse;
+    s += F(",\"moving\":");      s += (servoState[i].moving ? F("true") : F("false"));
+    s += '}';
   }
-  client.print(F("]"));
-  client.print(F(",\"motor\":{\"speed\":")); client.print(motorState.currentSpeed);
-  client.print(F(",\"ramping\":")); client.print(motorState.ramping ? F("true") : F("false"));
-  client.print(F("}"));
-  client.print(F("}"));
+  s += F("],\"motor\":{\"speed\":"); s += motorState.currentSpeed;
+  s += F(",\"ramping\":");       s += (motorState.ramping ? F("true") : F("false"));
+  s += F("}}");
+
+  client.write((const uint8_t*)s.c_str(), s.length());
 }
 
 bool otaReceive(WiFiClient& client, int contentLength) {
@@ -347,22 +357,45 @@ static void maintainWifi() {
 }
 
 void loop() {
+  // Per-section timing. Anything over LOOP_WARN_MS prints a one-line
+  // breakdown so we can see which call stalled the loop.
+  const unsigned long LOOP_WARN_MS = 250;
+  unsigned long t0 = millis();
+  unsigned long tMaint = 0, tOta = 0, tWeb = 0, tSync = 0, tAnim = 0;
+
   if (otaReady) {
-    maintainWifi();
-    ArduinoOTA.poll();
-    webPoll();
-    syncPoll();
+    unsigned long s = millis();
+    maintainWifi();             tMaint = millis() - s;
+    s = millis();
+    ArduinoOTA.poll();          tOta   = millis() - s;
+    s = millis();
+    webPoll();                  tWeb   = millis() - s;
+    s = millis();
+    syncPoll();                 tSync  = millis() - s;
   }
 
   // Pause animation work during an active OTA upload so the flash isn't
   // contended. Servo positions hold; sequences resume after reboot.
   if (!otaInProgress) {
+    unsigned long s = millis();
     updateAnimations();
     updateSpeedRamps();
     updateWave();
     updateSequence();
     updateSpeedSequence();
     updateSequenceProgram();
+    tAnim = millis() - s;
+  }
+
+  unsigned long total = millis() - t0;
+  if (total >= LOOP_WARN_MS) {
+    Serial.print(F("SLOW loop "));
+    Serial.print(total); Serial.print(F("ms"));
+    Serial.print(F(" maint=")); Serial.print(tMaint);
+    Serial.print(F(" ota="));   Serial.print(tOta);
+    Serial.print(F(" web="));   Serial.print(tWeb);
+    Serial.print(F(" sync="));  Serial.print(tSync);
+    Serial.print(F(" anim="));  Serial.println(tAnim);
   }
 
   // Read serial input into fixed buffer

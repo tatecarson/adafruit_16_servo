@@ -154,30 +154,35 @@ void syncPoll() {
 
 void syncWritePeersJson(WiFiClient& client) {
   unsigned long now = millis();
-  client.print("{\"self\":{\"id\":");
-  client.print(nodeId);
-  client.print(",\"ip\":\"");
-  client.print(WiFi.localIP());
-  client.print("\",\"uptimeMs\":");
-  client.print(now);
-  client.print("},\"peers\":[");
+  String s;
+  s.reserve(256);
+
+  IPAddress selfIp = WiFi.localIP();
+  char ipBuf[16];
+  snprintf(ipBuf, sizeof(ipBuf), "%u.%u.%u.%u",
+           selfIp[0], selfIp[1], selfIp[2], selfIp[3]);
+
+  s += F("{\"self\":{\"id\":"); s += nodeId;
+  s += F(",\"ip\":\"");        s += ipBuf; s += '"';
+  s += F(",\"uptimeMs\":");    s += now;
+  s += F("},\"peers\":[");
   bool first = true;
   for (int i = 0; i < peerCount; i++) {
     unsigned long age = now - peers[i].lastSeenMs;
     if (age >= PEER_ALIVE_MS) continue;
-    if (!first) client.print(",");
+    if (!first) s += ',';
     first = false;
-    client.print("{\"id\":");
-    client.print(peers[i].id);
-    client.print(",\"ip\":\"");
-    client.print(peers[i].ip);
-    client.print("\",\"lastSeenMs\":");
-    client.print(age);
-    client.print(",\"uptimeMs\":");
-    client.print(peers[i].lastUptimeMs);
-    client.print("}");
+    IPAddress pip = peers[i].ip;
+    snprintf(ipBuf, sizeof(ipBuf), "%u.%u.%u.%u", pip[0], pip[1], pip[2], pip[3]);
+    s += F("{\"id\":");        s += peers[i].id;
+    s += F(",\"ip\":\"");      s += ipBuf; s += '"';
+    s += F(",\"lastSeenMs\":");s += age;
+    s += F(",\"uptimeMs\":");  s += peers[i].lastUptimeMs;
+    s += '}';
   }
-  client.print("]}");
+  s += F("]}");
+
+  client.write((const uint8_t*)s.c_str(), s.length());
 }
 
 void syncWritePeersHtml(WiFiClient& client) {
