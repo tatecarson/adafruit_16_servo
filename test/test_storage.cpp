@@ -8,6 +8,7 @@ EEPROMClass EEPROM;
 
 #include "../adafruit_16_servo/storage_crc.h"
 #include "../adafruit_16_servo/storage.h"
+#include "../adafruit_16_servo/bake_validate.h"
 
 static int _tests_run = 0, _tests_passed = 0, _tests_failed = 0;
 #define ASSERT_EQ(a, b) do { if ((long long)(a) != (long long)(b)) { char _buf[256]; snprintf(_buf, sizeof(_buf), "FAIL at line %d: got %lld, expected %lld", __LINE__, (long long)(a), (long long)(b)); throw std::runtime_error(_buf);} } while(0)
@@ -187,6 +188,27 @@ static void test_rollback_then_rollback_returns_to_newest() {
     ASSERT_EQ(buf[1], '2');
 }
 
+static void test_validate_minimal_blob() {
+    const char* blob = "{\"schemaVersion\":1,\"motions\":[],\"sequences\":[],\"setlists\":[],\"activeSetlistId\":null,\"schedulerConfig\":{}}";
+    BakeValidateResult r = bakeValidate((const uint8_t*)blob, strlen(blob));
+    ASSERT_TRUE(r.ok);
+}
+static void test_validate_rejects_wrong_version() {
+    const char* blob = "{\"schemaVersion\":2,\"motions\":[],\"sequences\":[],\"setlists\":[]}";
+    BakeValidateResult r = bakeValidate((const uint8_t*)blob, strlen(blob));
+    ASSERT_FALSE(r.ok);
+}
+static void test_validate_rejects_no_version() {
+    const char* blob = "{\"motions\":[]}";
+    BakeValidateResult r = bakeValidate((const uint8_t*)blob, strlen(blob));
+    ASSERT_FALSE(r.ok);
+}
+static void test_validate_rejects_unbalanced_braces() {
+    const char* blob = "{\"schemaVersion\":1,\"motions\":[";
+    BakeValidateResult r = bakeValidate((const uint8_t*)blob, strlen(blob));
+    ASSERT_FALSE(r.ok);
+}
+
 int main() {
     printf("=== Storage Tests ===\n");
     RUN(mock_eeprom_read_write);
@@ -207,6 +229,10 @@ int main() {
     RUN(rollback_swaps_to_previous);
     RUN(rollback_fails_when_no_previous);
     RUN(rollback_then_rollback_returns_to_newest);
+    RUN(validate_minimal_blob);
+    RUN(validate_rejects_wrong_version);
+    RUN(validate_rejects_no_version);
+    RUN(validate_rejects_unbalanced_braces);
     printf("\n%d/%d passed, %d failed\n", _tests_passed, _tests_run, _tests_failed);
     return _tests_failed ? 1 : 0;
 }
