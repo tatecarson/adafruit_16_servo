@@ -41,7 +41,53 @@ inline bool storageSetBoardId(uint8_t id) {
     return true;
 }
 
-// Stubs to be replaced in Task 4. Returning false here means the Task 3
-// tests can compile and observe a fresh device as having no slots.
-inline bool storageHasActive() { return false; }
-inline bool storageHasPrevious() { return false; }
+// Internal: read raw slot, validate CRC + length. Returns payload length, or -1.
+inline int _storageReadSlot(int slotIdx, uint8_t* out, int maxLen) {
+    int off = (slotIdx == 0) ? STORAGE_SLOT_0_OFF : STORAGE_SLOT_1_OFF;
+    uint16_t len = ((uint16_t)EEPROM.read(off + 0) << 8) | EEPROM.read(off + 1);
+    if (len == 0 || len > STORAGE_PAYLOAD_MAX) return -1;
+    if ((int)len > maxLen) return -1;
+    uint16_t storedCrc = ((uint16_t)EEPROM.read(off + 2) << 8) | EEPROM.read(off + 3);
+    // Streaming CRC over (length-bytes || payload). Read payload into out
+    // simultaneously to avoid a second EEPROM pass.
+    uint16_t crc = 0xFFFF;
+    auto step = [&](uint8_t b){
+        crc ^= (uint16_t)b << 8;
+        for (int i = 0; i < 8; i++) crc = (crc & 0x8000) ? (uint16_t)((crc << 1) ^ 0x1021) : (uint16_t)(crc << 1);
+    };
+    step(EEPROM.read(off + 0)); step(EEPROM.read(off + 1));
+    for (uint16_t i = 0; i < len; i++) {
+        uint8_t b = EEPROM.read(off + 4 + i);
+        out[i] = b;
+        step(b);
+    }
+    if (crc != storedCrc) return -1;
+    return (int)len;
+}
+
+inline bool storageHasActive() {
+    uint8_t a = EEPROM.read(STORAGE_OFF_ACTIVE);
+    return (a == 0 || a == 1);
+}
+inline bool storageHasPrevious() {
+    uint8_t a = EEPROM.read(STORAGE_OFF_ACTIVE);
+    if (a != 0 && a != 1) return false;
+    int prev = (a == 0) ? 1 : 0;
+    // Validate previous slot by attempting a read. Use a static buffer so the
+    // 4 KB scratch area doesn't live on the stack — safer on the real device
+    // where this can be called from contexts with limited stack budget.
+    // (Intentional deviation from the plan, which used a stack buffer.)
+    static uint8_t tmp[STORAGE_PAYLOAD_MAX];
+    return _storageReadSlot(prev, tmp, STORAGE_PAYLOAD_MAX) >= 0;
+}
+
+inline int storageReadActive(uint8_t* out, int maxLen) {
+    uint8_t a = EEPROM.read(STORAGE_OFF_ACTIVE);
+    if (a != 0 && a != 1) return -1;
+    return _storageReadSlot((int)a, out, maxLen);
+}
+inline int storageReadPrevious(uint8_t* out, int maxLen) {
+    uint8_t a = EEPROM.read(STORAGE_OFF_ACTIVE);
+    if (a != 0 && a != 1) return -1;
+    return _storageReadSlot(a == 0 ? 1 : 0, out, maxLen);
+}

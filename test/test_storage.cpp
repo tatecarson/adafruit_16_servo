@@ -66,6 +66,55 @@ static void test_storage_rejects_invalid_board_id() {
     ASSERT_EQ(storageBoardId(), 0);
 }
 
+static void seedSlot(int slotIdx, const uint8_t* payload, uint16_t len) {
+    int off = (slotIdx == 0) ? STORAGE_SLOT_0_OFF : STORAGE_SLOT_1_OFF;
+    EEPROM.write(off + 0, (uint8_t)(len >> 8));
+    EEPROM.write(off + 1, (uint8_t)(len & 0xFF));
+    // CRC over the length bytes + payload
+    uint8_t tmp[4082]; tmp[0] = (uint8_t)(len >> 8); tmp[1] = (uint8_t)(len & 0xFF);
+    for (uint16_t i = 0; i < len; i++) tmp[2 + i] = payload[i];
+    uint16_t crc = crc16_ccitt(tmp, 2 + len);
+    EEPROM.write(off + 2, (uint8_t)(crc >> 8));
+    EEPROM.write(off + 3, (uint8_t)(crc & 0xFF));
+    for (uint16_t i = 0; i < len; i++) EEPROM.write(off + 4 + i, payload[i]);
+}
+
+static void test_read_empty_when_no_active() {
+    EEPROM_reset(); storageInit();
+    uint8_t buf[64];
+    int n = storageReadActive(buf, sizeof(buf));
+    ASSERT_EQ(n, -1);  // no active slot
+}
+static void test_read_active_when_valid() {
+    EEPROM_reset(); storageInit();
+    const char* p = "hello";
+    seedSlot(0, (const uint8_t*)p, 5);
+    EEPROM.update(STORAGE_OFF_ACTIVE, 0);
+    uint8_t buf[64];
+    int n = storageReadActive(buf, sizeof(buf));
+    ASSERT_EQ(n, 5);
+    ASSERT_EQ(buf[0], 'h'); ASSERT_EQ(buf[4], 'o');
+}
+static void test_read_rejects_corrupted_crc() {
+    EEPROM_reset(); storageInit();
+    const char* p = "hello";
+    seedSlot(0, (const uint8_t*)p, 5);
+    EEPROM.update(STORAGE_OFF_ACTIVE, 0);
+    // Flip a bit in the payload — CRC must fail.
+    EEPROM.write(STORAGE_SLOT_0_OFF + 4 + 2, 'X');
+    uint8_t buf[64];
+    int n = storageReadActive(buf, sizeof(buf));
+    ASSERT_EQ(n, -1);
+}
+static void test_read_rejects_too_large_length() {
+    EEPROM_reset(); storageInit();
+    EEPROM.write(STORAGE_SLOT_0_OFF + 0, 0xFF);  // length = 0xFFFF, way over max
+    EEPROM.write(STORAGE_SLOT_0_OFF + 1, 0xFF);
+    EEPROM.update(STORAGE_OFF_ACTIVE, 0);
+    uint8_t buf[64];
+    ASSERT_EQ(storageReadActive(buf, sizeof(buf)), -1);
+}
+
 int main() {
     printf("=== Storage Tests ===\n");
     RUN(mock_eeprom_read_write);
@@ -75,6 +124,10 @@ int main() {
     RUN(storage_init_on_fresh_device);
     RUN(storage_set_and_get_board_id);
     RUN(storage_rejects_invalid_board_id);
+    RUN(read_empty_when_no_active);
+    RUN(read_active_when_valid);
+    RUN(read_rejects_corrupted_crc);
+    RUN(read_rejects_too_large_length);
     printf("\n%d/%d passed, %d failed\n", _tests_passed, _tests_run, _tests_failed);
     return _tests_failed ? 1 : 0;
 }
