@@ -91,3 +91,36 @@ inline int storageReadPrevious(uint8_t* out, int maxLen) {
     if (a != 0 && a != 1) return -1;
     return _storageReadSlot(a == 0 ? 1 : 0, out, maxLen);
 }
+
+// Returns true on success. Writes to the inactive slot first, then atomically
+// flips the active-slot pointer. A power loss anywhere before the pointer flip
+// leaves the previous active slot intact.
+inline bool storageWriteSlot(const uint8_t* payload, uint16_t len) {
+    if (len == 0 || len > STORAGE_PAYLOAD_MAX) return false;
+    uint8_t cur = EEPROM.read(STORAGE_OFF_ACTIVE);
+    int target = (cur == 0) ? 1 : 0;  // 0xFF (fresh) -> target slot 0
+    int off = (target == 0) ? STORAGE_SLOT_0_OFF : STORAGE_SLOT_1_OFF;
+
+    // Compute CRC over length bytes + payload.
+    uint8_t lenHi = (uint8_t)(len >> 8);
+    uint8_t lenLo = (uint8_t)(len & 0xFF);
+    uint16_t crc = 0xFFFF;
+    auto step = [&](uint8_t b){
+        crc ^= (uint16_t)b << 8;
+        for (int i = 0; i < 8; i++) crc = (crc & 0x8000) ? (uint16_t)((crc << 1) ^ 0x1021) : (uint16_t)(crc << 1);
+    };
+    step(lenHi); step(lenLo);
+    for (uint16_t i = 0; i < len; i++) step(payload[i]);
+
+    // Write length, payload, then CRC. CRC last so an interrupted write fails
+    // verification on the next boot.
+    EEPROM.write(off + 0, lenHi);
+    EEPROM.write(off + 1, lenLo);
+    for (uint16_t i = 0; i < len; i++) EEPROM.write(off + 4 + i, payload[i]);
+    EEPROM.write(off + 2, (uint8_t)(crc >> 8));
+    EEPROM.write(off + 3, (uint8_t)(crc & 0xFF));
+
+    // Atomic pointer flip - single byte.
+    EEPROM.update(STORAGE_OFF_ACTIVE, (uint8_t)target);
+    return true;
+}

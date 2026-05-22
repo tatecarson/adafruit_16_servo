@@ -115,6 +115,49 @@ static void test_read_rejects_too_large_length() {
     ASSERT_EQ(storageReadActive(buf, sizeof(buf)), -1);
 }
 
+static void test_first_write_goes_to_slot_0() {
+    EEPROM_reset(); storageInit();
+    const char* p = "library-v1";
+    ASSERT_TRUE(storageWriteSlot((const uint8_t*)p, 10));
+    uint8_t buf[64];
+    ASSERT_EQ(storageReadActive(buf, sizeof(buf)), 10);
+    ASSERT_EQ(buf[0], 'l');
+    // Active pointer should be 0.
+    ASSERT_EQ(EEPROM.read(STORAGE_OFF_ACTIVE), 0);
+}
+static void test_second_write_goes_to_slot_1() {
+    EEPROM_reset(); storageInit();
+    storageWriteSlot((const uint8_t*)"v1", 2);
+    storageWriteSlot((const uint8_t*)"v2-bigger", 9);
+    ASSERT_EQ(EEPROM.read(STORAGE_OFF_ACTIVE), 1);
+    uint8_t buf[64];
+    ASSERT_EQ(storageReadActive(buf, sizeof(buf)), 9);
+    ASSERT_EQ(buf[0], 'v'); ASSERT_EQ(buf[1], '2');
+    // Previous should still be valid (v1).
+    ASSERT_TRUE(storageHasPrevious());
+    ASSERT_EQ(storageReadPrevious(buf, sizeof(buf)), 2);
+    ASSERT_EQ(buf[1], '1');
+}
+static void test_write_rejects_too_large() {
+    EEPROM_reset(); storageInit();
+    static uint8_t big[STORAGE_PAYLOAD_MAX + 1] = {0};
+    ASSERT_FALSE(storageWriteSlot(big, STORAGE_PAYLOAD_MAX + 1));
+    ASSERT_FALSE(storageHasActive());
+}
+static void test_write_then_crash_before_pointer_flip_leaves_previous_intact() {
+    EEPROM_reset(); storageInit();
+    storageWriteSlot((const uint8_t*)"first-good", 10);
+    uint8_t activeBefore = EEPROM.read(STORAGE_OFF_ACTIVE);
+    // Manually corrupt the *inactive* slot to simulate a partial write that
+    // never got the active-pointer flip.
+    int inactive = (activeBefore == 0) ? STORAGE_SLOT_1_OFF : STORAGE_SLOT_0_OFF;
+    for (int i = 0; i < 16; i++) EEPROM.write(inactive + i, 0xAA);
+    // Active still points at first slot.
+    uint8_t buf[64];
+    ASSERT_EQ(storageReadActive(buf, sizeof(buf)), 10);
+    ASSERT_EQ(buf[0], 'f');
+}
+
 int main() {
     printf("=== Storage Tests ===\n");
     RUN(mock_eeprom_read_write);
@@ -128,6 +171,10 @@ int main() {
     RUN(read_active_when_valid);
     RUN(read_rejects_corrupted_crc);
     RUN(read_rejects_too_large_length);
+    RUN(first_write_goes_to_slot_0);
+    RUN(second_write_goes_to_slot_1);
+    RUN(write_rejects_too_large);
+    RUN(write_then_crash_before_pointer_flip_leaves_previous_intact);
     printf("\n%d/%d passed, %d failed\n", _tests_passed, _tests_run, _tests_failed);
     return _tests_failed ? 1 : 0;
 }
