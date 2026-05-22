@@ -124,3 +124,13 @@ inline bool storageWriteSlot(const uint8_t* payload, uint16_t len) {
     EEPROM.update(STORAGE_OFF_ACTIVE, (uint8_t)target);
     return true;
 }
+
+// Atomically flip the active-slot pointer back to the previous slot - but only
+// if the previous slot's CRC validates. No data is moved; this is a one-byte
+// pointer flip.
+inline bool storageRollback() {
+    if (!storageHasPrevious()) return false;
+    uint8_t cur = EEPROM.read(STORAGE_OFF_ACTIVE);
+    EEPROM.update(STORAGE_OFF_ACTIVE, (uint8_t)(cur == 0 ? 1 : 0));
+    return true;
+}

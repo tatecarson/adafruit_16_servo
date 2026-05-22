@@ -158,6 +158,35 @@ static void test_write_then_crash_before_pointer_flip_leaves_previous_intact() {
     ASSERT_EQ(buf[0], 'f');
 }
 
+static void test_rollback_swaps_to_previous() {
+    EEPROM_reset(); storageInit();
+    storageWriteSlot((const uint8_t*)"good", 4);
+    storageWriteSlot((const uint8_t*)"bad-bake", 8);
+    uint8_t buf[64];
+    ASSERT_EQ(storageReadActive(buf, sizeof(buf)), 8);
+    ASSERT_TRUE(storageRollback());
+    ASSERT_EQ(storageReadActive(buf, sizeof(buf)), 4);
+    ASSERT_EQ(buf[0], 'g');
+}
+static void test_rollback_fails_when_no_previous() {
+    EEPROM_reset(); storageInit();
+    storageWriteSlot((const uint8_t*)"only-one", 8);
+    ASSERT_FALSE(storageHasPrevious());
+    ASSERT_FALSE(storageRollback());
+    uint8_t buf[64];
+    ASSERT_EQ(storageReadActive(buf, sizeof(buf)), 8);
+}
+static void test_rollback_then_rollback_returns_to_newest() {
+    EEPROM_reset(); storageInit();
+    storageWriteSlot((const uint8_t*)"v1", 2);
+    storageWriteSlot((const uint8_t*)"v2", 2);
+    ASSERT_TRUE(storageRollback());   // back to v1
+    ASSERT_TRUE(storageRollback());   // forward to v2 (other slot still has it)
+    uint8_t buf[8];
+    ASSERT_EQ(storageReadActive(buf, sizeof(buf)), 2);
+    ASSERT_EQ(buf[1], '2');
+}
+
 int main() {
     printf("=== Storage Tests ===\n");
     RUN(mock_eeprom_read_write);
@@ -175,6 +204,9 @@ int main() {
     RUN(second_write_goes_to_slot_1);
     RUN(write_rejects_too_large);
     RUN(write_then_crash_before_pointer_flip_leaves_previous_intact);
+    RUN(rollback_swaps_to_previous);
+    RUN(rollback_fails_when_no_previous);
+    RUN(rollback_then_rollback_returns_to_newest);
     printf("\n%d/%d passed, %d failed\n", _tests_passed, _tests_run, _tests_failed);
     return _tests_failed ? 1 : 0;
 }
