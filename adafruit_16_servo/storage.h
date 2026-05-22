@@ -51,10 +51,7 @@ inline int _storageReadSlot(int slotIdx, uint8_t* out, int maxLen) {
     // Streaming CRC over (length-bytes || payload). Read payload into out
     // simultaneously to avoid a second EEPROM pass.
     uint16_t crc = 0xFFFF;
-    auto step = [&](uint8_t b){
-        crc ^= (uint16_t)b << 8;
-        for (int i = 0; i < 8; i++) crc = (crc & 0x8000) ? (uint16_t)((crc << 1) ^ 0x1021) : (uint16_t)(crc << 1);
-    };
+    auto step = [&](uint8_t b){ crc = crc16_step(crc, b); };
     step(EEPROM.read(off + 0)); step(EEPROM.read(off + 1));
     for (uint16_t i = 0; i < len; i++) {
         uint8_t b = EEPROM.read(off + 4 + i);
@@ -77,6 +74,9 @@ inline bool storageHasPrevious() {
     // 4 KB scratch area doesn't live on the stack — safer on the real device
     // where this can be called from contexts with limited stack budget.
     // (Intentional deviation from the plan, which used a stack buffer.)
+    // Lives in BSS instead of on the stack — 4 KB is too big a stack frame for
+    // some callers. Not reentrancy-safe: do not call storageHasPrevious() from
+    // an ISR. Single-threaded loop() use is fine.
     static uint8_t tmp[STORAGE_PAYLOAD_MAX];
     return _storageReadSlot(prev, tmp, STORAGE_PAYLOAD_MAX) >= 0;
 }
@@ -105,10 +105,7 @@ inline bool storageWriteSlot(const uint8_t* payload, uint16_t len) {
     uint8_t lenHi = (uint8_t)(len >> 8);
     uint8_t lenLo = (uint8_t)(len & 0xFF);
     uint16_t crc = 0xFFFF;
-    auto step = [&](uint8_t b){
-        crc ^= (uint16_t)b << 8;
-        for (int i = 0; i < 8; i++) crc = (crc & 0x8000) ? (uint16_t)((crc << 1) ^ 0x1021) : (uint16_t)(crc << 1);
-    };
+    auto step = [&](uint8_t b){ crc = crc16_step(crc, b); };
     step(lenHi); step(lenLo);
     for (uint16_t i = 0; i < len; i++) step(payload[i]);
 
