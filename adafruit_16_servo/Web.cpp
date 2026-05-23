@@ -153,6 +153,42 @@ static void handleSequencesPost(WiFiClient& client, int contentLength) {
     client.println("}");
 }
 
+static void handleSequencesInfo(WiFiClient& client) {
+    client.println("HTTP/1.1 200 OK");
+    client.println("Connection: close");
+    client.println("Access-Control-Allow-Origin: *");
+    client.println("Content-Type: application/json");
+    client.println();
+    // Read just the active slot's length header to report bytesUsed without
+    // materializing the payload. Saves stack.
+    int activeSlot = -1;
+    uint8_t a = EEPROM.read(STORAGE_OFF_ACTIVE);
+    if (a == 0 || a == 1) activeSlot = a;
+    int bytesUsed = 0;
+    if (activeSlot >= 0) {
+        int off = (activeSlot == 0) ? STORAGE_SLOT_0_OFF : STORAGE_SLOT_1_OFF;
+        bytesUsed = ((int)EEPROM.read(off) << 8) | EEPROM.read(off + 1);
+        if (bytesUsed < 0 || bytesUsed > (int)STORAGE_PAYLOAD_MAX) bytesUsed = 0;
+    }
+    client.print("{\"ok\":true,\"boardId\":"); client.print(storageBoardId());
+    client.print(",\"hasActive\":"); client.print(storageHasActive() ? "true" : "false");
+    client.print(",\"hasPrevious\":"); client.print(storageHasPrevious() ? "true" : "false");
+    client.print(",\"bytesUsed\":"); client.print(bytesUsed);
+    client.print(",\"slotPayloadMax\":"); client.print((int)STORAGE_PAYLOAD_MAX);
+    client.println("}");
+}
+
+static void handleSequencesRestore(WiFiClient& client) {
+    bool ok = storageRollback();
+    client.println(ok ? "HTTP/1.1 200 OK" : "HTTP/1.1 409 Conflict");
+    client.println("Connection: close");
+    client.println("Access-Control-Allow-Origin: *");
+    client.println("Content-Type: application/json");
+    client.println();
+    if (ok) client.println("{\"ok\":true}");
+    else    client.println("{\"ok\":false,\"error\":\"no-previous\"}");
+}
+
 void webBegin() {
   controlServer.begin();
 }
@@ -267,6 +303,17 @@ void webPoll() {
 
   if (method == "POST" && path == "/sequences") {
     handleSequencesPost(client, contentLength);
+    delay(5); client.stop();
+    return;
+  }
+
+  if (method == "POST" && path == "/sequences/restore") {
+    handleSequencesRestore(client);
+    delay(5); client.stop();
+    return;
+  }
+  if (method == "GET" && (path == "/sequences/info" || path.startsWith("/sequences/info?"))) {
+    handleSequencesInfo(client);
     delay(5); client.stop();
     return;
   }
