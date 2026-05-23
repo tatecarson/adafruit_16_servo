@@ -66,6 +66,19 @@ inline bool storageHasActive() {
     uint8_t a = EEPROM.read(STORAGE_OFF_ACTIVE);
     return (a == 0 || a == 1);
 }
+
+// Returns the byte count stored in the active slot's length header, or 0 if
+// no active slot or the header reports an out-of-range length. Does not
+// validate the slot's CRC — call storageHasActive() if you also need that.
+inline int storageActiveBytesUsed() {
+    uint8_t a = EEPROM.read(STORAGE_OFF_ACTIVE);
+    if (a != 0 && a != 1) return 0;
+    int off = (a == 0) ? STORAGE_SLOT_0_OFF : STORAGE_SLOT_1_OFF;
+    int n = ((int)EEPROM.read(off) << 8) | EEPROM.read(off + 1);
+    if (n < 0 || n > (int)STORAGE_PAYLOAD_MAX) return 0;
+    return n;
+}
+
 inline bool storageHasPrevious() {
     uint8_t a = EEPROM.read(STORAGE_OFF_ACTIVE);
     if (a != 0 && a != 1) return false;

@@ -1,6 +1,5 @@
 #include "Web.h"
 #include <WiFiS3.h>
-#include <EEPROM.h>
 #include "Secrets.h"
 #include "Sync.h"
 #include "storage.h"
@@ -159,21 +158,10 @@ static void handleSequencesInfo(WiFiClient& client) {
     client.println("Access-Control-Allow-Origin: *");
     client.println("Content-Type: application/json");
     client.println();
-    // Read just the active slot's length header to report bytesUsed without
-    // materializing the payload. Saves stack.
-    int activeSlot = -1;
-    uint8_t a = EEPROM.read(STORAGE_OFF_ACTIVE);
-    if (a == 0 || a == 1) activeSlot = a;
-    int bytesUsed = 0;
-    if (activeSlot >= 0) {
-        int off = (activeSlot == 0) ? STORAGE_SLOT_0_OFF : STORAGE_SLOT_1_OFF;
-        bytesUsed = ((int)EEPROM.read(off) << 8) | EEPROM.read(off + 1);
-        if (bytesUsed < 0 || bytesUsed > (int)STORAGE_PAYLOAD_MAX) bytesUsed = 0;
-    }
     client.print("{\"ok\":true,\"boardId\":"); client.print(storageBoardId());
     client.print(",\"hasActive\":"); client.print(storageHasActive() ? "true" : "false");
     client.print(",\"hasPrevious\":"); client.print(storageHasPrevious() ? "true" : "false");
-    client.print(",\"bytesUsed\":"); client.print(bytesUsed);
+    client.print(",\"bytesUsed\":"); client.print(storageActiveBytesUsed());
     client.print(",\"slotPayloadMax\":"); client.print((int)STORAGE_PAYLOAD_MAX);
     client.println("}");
 }
