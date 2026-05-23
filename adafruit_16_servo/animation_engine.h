@@ -47,7 +47,7 @@ void updateWave() {
     float phase = (float)elapsed / cycleMs;
     phase += (float)(servoIndex * wavePhaseOffset) / 360.0f;
 
-    float sineVal = sin(phase * 2.0f * PI);
+    float sineVal = sinf(phase * 2.0f * PI);
     float centerDegrees = ((float)minDegrees + (float)maxDegrees) / 2.0f;
     float degrees = centerDegrees + (sineVal * (float)waveAmplitude / 2.0f);
     uint16_t pulse = degreesToPulse(i, (uint16_t)constrain(degrees, minDegrees, maxDegrees));
