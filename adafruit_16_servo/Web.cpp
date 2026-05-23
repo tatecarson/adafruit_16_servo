@@ -85,20 +85,10 @@ static void handleSequencesPost(WiFiClient& client, int contentLength) {
         client.print((int)STORAGE_PAYLOAD_MAX); client.println("}");
         return;
     }
-    // Heap-allocate the receive buffer so 4 KB only sits in RAM during the
-    // upload, not permanently in BSS. (storage.h already has a 4 KB BSS
-    // scratch; adding a second would overflow the linker's heap reservation
-    // on UNO R4.)
-    uint8_t* buf = (uint8_t*)malloc(STORAGE_PAYLOAD_MAX);
-    if (!buf) {
-        client.println("HTTP/1.1 500 Internal Server Error");
-        client.println("Connection: close");
-        client.println("Access-Control-Allow-Origin: *");
-        client.println("Content-Type: application/json");
-        client.println();
-        client.println("{\"ok\":false,\"error\":\"oom\"}");
-        return;
-    }
+    // Use the shared 4 KB BSS scratch. The only other consumer is
+    // storageHasPrevious(), and we don't call it until after storageWriteSlot
+    // has completed and we no longer reference `buf`.
+    uint8_t* buf = storageScratchBuffer();
     int received = 0;
     unsigned long deadline = millis() + 5000;
     while (received < contentLength && millis() < deadline && client.connected()) {
@@ -109,7 +99,6 @@ static void handleSequencesPost(WiFiClient& client, int contentLength) {
         if (n > 0) { received += n; deadline = millis() + 2000; }
     }
     if (received != contentLength) {
-        free(buf);
         client.println("HTTP/1.1 400 Bad Request");
         client.println("Connection: close");
         client.println("Access-Control-Allow-Origin: *");
@@ -120,7 +109,6 @@ static void handleSequencesPost(WiFiClient& client, int contentLength) {
     }
     BakeValidateResult v = bakeValidate(buf, received);
     if (!v.ok) {
-        free(buf);
         client.println("HTTP/1.1 400 Bad Request");
         client.println("Connection: close");
         client.println("Access-Control-Allow-Origin: *");
@@ -130,7 +118,6 @@ static void handleSequencesPost(WiFiClient& client, int contentLength) {
         return;
     }
     if (!storageWriteSlot(buf, (uint16_t)received)) {
-        free(buf);
         client.println("HTTP/1.1 500 Internal Server Error");
         client.println("Connection: close");
         client.println("Access-Control-Allow-Origin: *");
@@ -139,7 +126,8 @@ static void handleSequencesPost(WiFiClient& client, int contentLength) {
         client.println("{\"ok\":false,\"error\":\"write-failed\"}");
         return;
     }
-    free(buf);
+    // After this point we may call storageHasPrevious(); it will clobber
+    // the scratch buffer, which is fine because we no longer reference it.
     client.println("HTTP/1.1 200 OK");
     client.println("Connection: close");
     client.println("Access-Control-Allow-Origin: *");

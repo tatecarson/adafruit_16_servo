@@ -17,6 +17,20 @@
 #define STORAGE_OFF_ACTIVE 2
 #define STORAGE_OFF_BOARDID 3
 
+// Shared 4 KB scratch buffer in BSS. Used by storageHasPrevious() for its
+// CRC scan and by transport-layer receive paths that need a same-sized
+// staging area. Single-threaded contract: callers MUST NOT use this buffer
+// across calls that could themselves invoke storageHasPrevious() (or any
+// other consumer of this buffer). Holding a pointer into it across a yield
+// to other code is unsafe. Defined inline so multiple translation units
+// share the same instance via the linker's COMDAT semantics on supported
+// toolchains; on the Renesas R4 toolchain this is plain ODR (the header is
+// included into one .ino and one .cpp at most).
+inline uint8_t* storageScratchBuffer() {
+    static uint8_t scratch[STORAGE_PAYLOAD_MAX];
+    return scratch;
+}
+
 // Initialize storage. If header magic is missing, write it.
 // Does not touch slot data.
 inline void storageInit() {
@@ -83,11 +97,11 @@ inline bool storageHasPrevious() {
     uint8_t a = EEPROM.read(STORAGE_OFF_ACTIVE);
     if (a != 0 && a != 1) return false;
     int prev = (a == 0) ? 1 : 0;
-    // 4 KB scratch buffer in BSS, not on the stack: too big a frame for some
-    // callers, and EEPROM read cost is negligible compared to a stack-allocated
-    // alternative. Not reentrancy-safe — do not call storageHasPrevious() from
-    // an ISR. Single-threaded loop() use is fine.
-    static uint8_t tmp[STORAGE_PAYLOAD_MAX];
+    // Uses the shared 4 KB BSS scratch buffer (see storageScratchBuffer). Not
+    // reentrancy-safe — do not call storageHasPrevious() from an ISR or while
+    // another consumer of the shared scratch (e.g., handleSequencesPost's
+    // receive loop) is still using it. Single-threaded loop() use is fine.
+    uint8_t* tmp = storageScratchBuffer();
     return _storageReadSlot(prev, tmp, STORAGE_PAYLOAD_MAX) >= 0;
 }
 
