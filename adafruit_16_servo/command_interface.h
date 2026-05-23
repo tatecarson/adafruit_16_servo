@@ -456,6 +456,18 @@ void processCommand(char* cmd) {
       Serial.print(F("TIMESCALE: ")); Serial.println(timeMultiplier);
     }
   }
+  else if (startsWith(cmd, "BOARDID")) {
+    const char* rest = cmd + 7; while (*rest == ' ') rest++;
+    if (*rest == '\0') {
+        Serial.print(F("boardId=")); Serial.println(storageBoardId());
+    } else {
+        int v = atoi(rest);
+        if (storageSetBoardId((uint8_t)v)) Serial.print(F("set boardId="));
+        else Serial.print(F("bad boardId="));
+        Serial.println(v);
+    }
+    return;
+  }
   else if (startsWith(cmd, "STORAGEINFO")) {
     Serial.print(F("boardId=")); Serial.println(storageBoardId());
     Serial.print(F("hasActive=")); Serial.println(storageHasActive() ? F("yes") : F("no"));

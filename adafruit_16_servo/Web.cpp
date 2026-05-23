@@ -178,6 +178,28 @@ static void handleSequencesInfo(WiFiClient& client) {
     client.println("}");
 }
 
+static void handleBoardIdGet(WiFiClient& client) {
+    client.println("HTTP/1.1 200 OK");
+    client.println("Connection: close");
+    client.println("Access-Control-Allow-Origin: *");
+    client.println("Content-Type: application/json");
+    client.println();
+    client.print("{\"ok\":true,\"boardId\":"); client.print(storageBoardId()); client.println("}");
+}
+
+static void handleBoardIdPost(WiFiClient& client, String path) {
+    String v = getQueryValue(path, "id");
+    int id = v.toInt();
+    bool ok = storageSetBoardId((uint8_t)id);
+    client.println(ok ? "HTTP/1.1 200 OK" : "HTTP/1.1 400 Bad Request");
+    client.println("Connection: close");
+    client.println("Access-Control-Allow-Origin: *");
+    client.println("Content-Type: application/json");
+    client.println();
+    if (ok) { client.print("{\"ok\":true,\"boardId\":"); client.print(storageBoardId()); client.println("}"); }
+    else    { client.println("{\"ok\":false,\"error\":\"invalid-id\"}"); }
+}
+
 static void handleSequencesRestore(WiFiClient& client) {
     bool ok = storageRollback();
     client.println(ok ? "HTTP/1.1 200 OK" : "HTTP/1.1 409 Conflict");
@@ -288,6 +310,19 @@ void webPoll() {
     return;
   }
 
+  // --- CORS preflight for /boardId endpoints ---
+  if (method == "OPTIONS" && path.startsWith("/boardId")) {
+    client.println("HTTP/1.1 204 No Content");
+    client.println("Connection: close");
+    client.println("Access-Control-Allow-Origin: *");
+    client.println("Access-Control-Allow-Methods: POST, GET, OPTIONS");
+    client.println("Access-Control-Allow-Headers: Content-Type");
+    client.println("Access-Control-Max-Age: 86400");
+    client.println();
+    delay(5); client.stop();
+    return;
+  }
+
   // --- CORS preflight for /sequences endpoints ---
   if (method == "OPTIONS" && path.startsWith("/sequences")) {
     client.println("HTTP/1.1 204 No Content");
@@ -316,6 +351,12 @@ void webPoll() {
     handleSequencesInfo(client);
     delay(5); client.stop();
     return;
+  }
+  if (method == "GET" && (path == "/boardId" || path.startsWith("/boardId?"))) {
+    handleBoardIdGet(client); delay(5); client.stop(); return;
+  }
+  if (method == "POST" && path.startsWith("/boardId")) {
+    handleBoardIdPost(client, path); delay(5); client.stop(); return;
   }
 
   // --- Existing GET handlers ---
