@@ -25,7 +25,6 @@ void showHelp() {
   Serial.println(F("ALLUP <pct> [ms]      Move all protected winches up together"));
   Serial.println(F("ALLDOWN <pct> [ms]    Move all protected winches down together"));
   Serial.println(F("RIG <UP|DOWN> <pct> <spd> [ms]  Winches + DC motor test"));
-  Serial.println(F("WAVE <s> <e> [spd] [off] [amp]  Start wave pattern"));
   Serial.println(F("MOTION <id>           Play baked browser Motion"));
   Serial.println(F("PLAY <n> [LOOP]       Play sequence n"));
   Serial.println(F("SPLAY <n> [LOOP]      Speed sequence (DC motor)"));
@@ -108,7 +107,6 @@ bool startPositionSequence(uint8_t seqNum, bool loop, bool announce) {
     return false;
   }
 
-  waveActive = false;
   cancelMotionPlayback();
   sequenceLoop = loop;
   sequenceStartTime = millis();
@@ -131,7 +129,6 @@ bool startSpeedSequence(uint8_t seqNum, bool loop, bool announce) {
   }
 
   speedSeqActive = true;
-  waveActive = false;
   cancelMotionPlayback();
   speedSeqLoop = loop;
   speedSeqStartTime = millis();
@@ -152,7 +149,6 @@ bool startSequenceProgram(uint8_t programNum, bool loop) {
     return false;
   }
 
-  waveActive = false;
   sequenceActive = false;
   speedSeqActive = false;
   cancelMotionPlayback();
@@ -399,39 +395,10 @@ void processCommand(char* cmd) {
     }
   }
   else if (startsWith(cmd, "WAVE")) {
-    int s1 = findChar(cmd, ' ', 5);
-    int s2 = (s1 > 0) ? findChar(cmd, ' ', s1 + 1) : -1;
-    int s3 = (s2 > 0) ? findChar(cmd, ' ', s2 + 1) : -1;
-    int s4 = (s3 > 0) ? findChar(cmd, ' ', s3 + 1) : -1;
-
-    if (s1 > 0 && s2 > 0) {
-      waveStartServo = atoi(cmd + 5);
-      waveEndServo = atoi(cmd + s1 + 1);
-
-      if (waveStartServo > waveEndServo || waveEndServo >= NUM_SERVOS) {
-        Serial.println(F("Invalid servo range"));
-        return;
-      }
-
-      if (s3 > 0) waveSpeed = atoi(cmd + s2 + 1);
-      else waveSpeed = 50;
-
-      if (s4 > 0) wavePhaseOffset = atoi(cmd + s3 + 1);
-      else wavePhaseOffset = 30;
-
-      if (s4 > 0) waveAmplitude = atoi(cmd + s4 + 1);
-      else waveAmplitude = 90;
-
-      cancelMotionPlayback();
-      waveStartTime = millis();
-      waveActive = true;
-
-      Serial.print(F("Wave: servos ")); Serial.print(waveStartServo);
-      Serial.print(F("-")); Serial.print(waveEndServo);
-      Serial.print(F(" speed=")); Serial.print(waveSpeed);
-      Serial.print(F(" offset=")); Serial.print(wavePhaseOffset);
-      Serial.print(F(" amp=")); Serial.println(waveAmplitude);
-    }
+    // WAVE command removed for OTA partition headroom (servo-dz7). Kept as
+    // a recognized no-op so old gallery scripts don't error out — they just
+    // get an informational reply instead of executing.
+    Serial.println(F("WAVE not supported in this firmware"));
   }
   else if (startsWith(cmd, "STOP ")) {
     int space = findChar(cmd, ' ', 0);
@@ -441,7 +408,6 @@ void processCommand(char* cmd) {
     }
   }
   else if (strcmp(cmd, "STOP") == 0 || strcmp(cmd, "STOP ALL") == 0) {
-    waveActive = false;
     sequenceActive = false;
     speedSeqActive = false;
     programActive = false;

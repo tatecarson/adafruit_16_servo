@@ -45,14 +45,7 @@ ServoConfig servoConfig[NUM_SERVOS];
 ServoState servoState[NUM_SERVOS];
 MotorState motorState;
 
-bool waveActive = false;
-uint8_t waveStartServo = 0;
-uint8_t waveEndServo = 0;
-uint16_t waveSpeed = 0;
-uint8_t wavePhaseOffset = 0;
-uint16_t waveAmplitude = 0;
-uint16_t waveCenter = 0;
-unsigned long waveStartTime = 0;
+// wave globals removed (servo-dz7)
 uint16_t timeMultiplier = 1;
 bool sequenceActive = false;
 bool sequenceLoop = false;
@@ -115,7 +108,6 @@ static void reset_sequence() {
     initServoDefaults();
     sequenceActive = false;
     speedSeqActive = false;
-    waveActive = false;
     lastTriggeredKeyframe = 0;
     lastTriggeredSpeedFrame = 0;
     sequenceStartTime = 0;

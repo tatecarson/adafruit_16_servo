@@ -130,18 +130,15 @@ Current installation reference from `servo_setup.h`:
 
 ---
 
-## Test 10: Wave Pattern
+## Test 10: Wave Pattern (REMOVED)
 
-**Commands:**
-1. `WAVE 0 3 50 30 90` - Wave on servos 0-3
-2. Wait 5 seconds, observe
-3. `STOP`
+The `WAVE` command was removed in servo-dz7 to free flash space for the
+OTA partition (the `sinf()` call pulled in ~3 KB of trig library code).
+Sending `WAVE` now returns `WAVE not supported in this firmware` so old
+gallery scripts fail gracefully rather than executing.
 
-**Expected:** Servos 0-3 oscillate in sine wave pattern with phase offset
-
-**Result:**
-- [ ] Pass
-- [ ] Skipped - requires multiple connected winch channels
+To re-add a wave-style pattern, author it as a browser-baked Motion with
+keyframes — schema doc §2.
 
 ---
 

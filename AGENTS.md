@@ -2,7 +2,7 @@
 
 ## What This Project Is
 
-A servo calibration and control system for the **Adafruit PCA9685 16-channel PWM/Servo driver**, designed for art installations. It provides an interactive Serial command interface to control up to 16 servos with support for animations, wave patterns, and keyframe sequences.
+A servo calibration and control system for the **Adafruit PCA9685 16-channel PWM/Servo driver**, designed for art installations. It provides an interactive Serial command interface to control up to 16 servos with support for animations, keyframe sequences, and browser-baked MOTION playback.
 
 ## Hardware
 
@@ -30,7 +30,7 @@ A servo calibration and control system for the **Adafruit PCA9685 16-channel PWM
 │   (Commands)    │                 │                 │
 └─────────────────┘                 │  loop():        │
                                     │  - updateAnims  │
-                                    │  - updateWave   │
+                                    │  - updateMotion │
                                     │  - updateSeq    │
                                     │  - readSerial   │
                                     └────────┬────────┘
@@ -68,7 +68,7 @@ The sketch is split into small headers included by `adafruit_16_servo.ino`:
 1. **Sketch shell** (`adafruit_16_servo.ino`): Wi-Fi/OTA/web setup, global runtime state, `setup()`, and `loop()`
 2. **Runtime model** (`servo_runtime.h`): `ServoConfig`, `ServoState`, sequence structs, and browser-baked `MotionRuntime`
 3. **Servo/DC control** (`servo_control.h`, `dc_motor.h`): calibrated servo writes, eased moves, percent travel commands, and motor speed/ramp helpers
-4. **Animation engines** (`animation_engine.h`, `motion_engine.h`): `PLAY`, `SPLAY`, `RUN`, `WAVE`, and baked `MOTION <id>` playback
+4. **Animation engines** (`animation_engine.h`, `motion_engine.h`): `PLAY`, `SPLAY`, `RUN`, and baked `MOTION <id>` playback (WAVE removed in servo-dz7 for OTA partition headroom)
 5. **Command interface** (`command_interface.h`): `showHelp()`, `processCommand()`, and mirrored command dispatch
 6. **Persistence/web** (`storage.h`, `bake_validate.h`, `Web.cpp`): EEPROM bake slots, schema validation, boardId, and HTTP endpoints
 
@@ -95,7 +95,6 @@ Per-servo setup and runtime state is tracked in two arrays of structs:
 ### Animation
 - `MOVE <n> <deg> <ms>` - Smooth eased movement
 - `LMOVE <n> <pct> <ms>` - Smooth eased move to percent of travel
-- `WAVE <s> <e> [spd] [off] [amp]` - Sine wave pattern across servos
 - `MOTION <id>` - Play a browser-baked Motion from EEPROM
 - `PLAY <n> [LOOP]` - Play keyframe sequence
 - `RUN <n> [LOOP]` - Run a chained program of sequences
@@ -114,7 +113,7 @@ Per-servo setup and runtime state is tracked in two arrays of structs:
 1. **Non-blocking**: All animations run via `millis()` polling in `loop()`. Serial commands work during animations.
 2. **Per-servo calibration**: Each servo has its own min/max pulse range.
 3. **Eased motion**: Uses cubic ease-in-out for organic movement.
-4. **Art installation focus**: Wave patterns and sequences for kinetic sculptures.
+4. **Art installation focus**: Keyframe sequences and browser-baked Motions for kinetic sculptures.
 
 ## Known Issues
 

@@ -22,7 +22,6 @@
       ALLUP <pct> [ms]   - Move all protected winch servos up together
       ALLDOWN <pct> [ms] - Move all protected winch servos down together
       RIG <UP|DOWN> <pct> <spd> [ms] - Manual winch + DC motor test
-      WAVE <start> <end> [speed] [offset] [amp] - Wave pattern
       MOTION <id>       - Play baked browser Motion by id
       PLAY <n> [LOOP]    - Play keyframe sequence
       SPLAY <n> [LOOP]   - Play speed sequence (DC motor)
@@ -169,10 +168,8 @@ void writeStatusJson(WiFiClient& client) {
   s += F(",\"durationMs\":");    s += motionRuntime.durationMs;
   s += F(",\"startedMs\":");     s += (motionRuntime.active ? (millis() - motionRuntime.startMs) : 0UL);
   s += '}';
-  s += F(",\"wave\":{\"active\":"); s += (waveActive ? F("true") : F("false"));
-  s += F(",\"start\":");         s += waveStartServo;
-  s += F(",\"end\":");           s += waveEndServo;
-  s += '}';
+  // WAVE removed (servo-dz7); browser clients should treat absence of the
+  // "wave" key as wave-not-supported on this firmware build.
   s += F(",\"timescale\":");     s += timeMultiplier;
   s += F(",\"servos\":[");
   for (uint8_t i = 0; i < NUM_SERVOS; i++) {
@@ -254,15 +251,7 @@ ServoState servoState[NUM_SERVOS];
 
 MotorState motorState;
 
-// Wave pattern state
-bool waveActive = false;
-uint8_t waveStartServo = 0;
-uint8_t waveEndServo = 7;
-uint16_t waveSpeed = 50;        // Period in ms per degree
-uint8_t wavePhaseOffset = 30;   // Degrees offset between adjacent servos
-uint16_t waveAmplitude = 90;    // Degrees of motion (center +/- amplitude/2)
-uint16_t waveCenter = 90;       // Center position in degrees
-unsigned long waveStartTime = 0;
+// WAVE pattern state removed (servo-dz7). See animation_engine.h.
 
 // Time multiplier for scaling sequence durations (1 = no scaling, 60 = 60x slower)
 // Set via serial command: TIMESCALE <n>
@@ -421,7 +410,6 @@ void loop() {
     unsigned long s = millis();
     updateAnimations();
     updateSpeedRamps();
-    updateWave();
     updateMotion();
     updateSequence();
     updateSpeedSequence();

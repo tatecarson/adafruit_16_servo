@@ -30,34 +30,11 @@ void updateSpeedRamps() {
   updateMotorRamp();
 }
 
-void updateWave() {
-  if (!waveActive) return;
-
-  unsigned long elapsed = millis() - waveStartTime;
-  float cycleMs = (float)waveSpeed * 360.0f;
-  if (cycleMs < 1.0f) cycleMs = 1.0f;
-
-  for (uint8_t i = waveStartServo; i <= waveEndServo; i++) {
-    if (servoState[i].stopped) continue;
-    uint8_t servoIndex = i - waveStartServo;
-    uint16_t minDegrees = servoConfig[i].upDegrees;
-    uint16_t maxDegrees = servoConfig[i].downDegrees;
-    if (maxDegrees == 0) maxDegrees = servoConfig[i].totalDegrees;
-
-    float phase = (float)elapsed / cycleMs;
-    phase += (float)(servoIndex * wavePhaseOffset) / 360.0f;
-
-    float sineVal = sinf(phase * 2.0f * PI);
-    float centerDegrees = ((float)minDegrees + (float)maxDegrees) / 2.0f;
-    float degrees = centerDegrees + (sineVal * (float)waveAmplitude / 2.0f);
-    uint16_t pulse = degreesToPulse(i, (uint16_t)constrain(degrees, minDegrees, maxDegrees));
-
-    if (pulse != servoState[i].posPulse) {
-      servoState[i].posPulse = pulse;
-      pwm.setPWM(i, 0, pulse);
-    }
-  }
-}
+// WAVE command was removed for OTA-flash partition headroom (servo-dz7).
+// The sinf() call here pulled in __kernel_rem_pio2f / __ieee754_rem_pio2f
+// (~3 KB) which the firmware otherwise doesn't need. Re-add by reverting
+// this commit + restoring the WAVE branch in command_interface.h if you
+// want a sine-wave pattern back — note the size cost.
 
 void updateSequence() {
   if (!sequenceActive || currentSequence == nullptr) return;
