@@ -25,7 +25,9 @@ if [[ -z "${OTA_PASSWORD:-}" && -f adafruit_16_servo/Secrets.h ]]; then
 fi
 : "${OTA_PASSWORD:?OTA_PASSWORD not set. Export it, or define it in Secrets.h.}"
 
-USER_PASS="arduino:${OTA_PASSWORD}"
+# URL-encode the password for use in the query string. The custom /ota
+# handler in Web.cpp uses `?p=<password>` rather than HTTP Basic auth.
+PW_ENCODED=$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1], safe=''))" "$OTA_PASSWORD")
 
 # arduino-cli requires the sketch directory name to match the .ino base
 # name. When this checkout sits in a worktree (e.g. .claude/worktrees/foo)
@@ -57,11 +59,16 @@ echo "Uploading to ${#BOARDS[@]} boards in parallel..."
 pids=()
 for ip in "${BOARDS[@]}"; do
   (
+    # POST to port 80 /ota — the custom handler in Web.cpp. The
+    # ArduinoOTA library's port-65280 /sketch endpoint returns 500 on
+    # the UNO R4 WiFi (WiFiS3 stack interaction). Match what the
+    # servo_controller.html upload uses.
     if curl -sS --fail \
-        --connect-timeout 3 --max-time 30 \
-        --user "$USER_PASS" \
+        --connect-timeout 3 --max-time 60 \
+        -X POST \
+        -H "Content-Type: application/octet-stream" \
         --data-binary @"$BIN" \
-        "http://$ip:65280/sketch" > "/tmp/ota-$ip.log" 2>&1; then
+        "http://$ip/ota?p=${PW_ENCODED}" > "/tmp/ota-$ip.log" 2>&1; then
       echo "  OK   $ip"
       exit 0
     else
