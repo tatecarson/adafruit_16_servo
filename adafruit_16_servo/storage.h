@@ -70,12 +70,9 @@ inline bool storageHasPrevious() {
     uint8_t a = EEPROM.read(STORAGE_OFF_ACTIVE);
     if (a != 0 && a != 1) return false;
     int prev = (a == 0) ? 1 : 0;
-    // Validate previous slot by attempting a read. Use a static buffer so the
-    // 4 KB scratch area doesn't live on the stack — safer on the real device
-    // where this can be called from contexts with limited stack budget.
-    // (Intentional deviation from the plan, which used a stack buffer.)
-    // Lives in BSS instead of on the stack — 4 KB is too big a stack frame for
-    // some callers. Not reentrancy-safe: do not call storageHasPrevious() from
+    // 4 KB scratch buffer in BSS, not on the stack: too big a frame for some
+    // callers, and EEPROM read cost is negligible compared to a stack-allocated
+    // alternative. Not reentrancy-safe — do not call storageHasPrevious() from
     // an ISR. Single-threaded loop() use is fine.
     static uint8_t tmp[STORAGE_PAYLOAD_MAX];
     return _storageReadSlot(prev, tmp, STORAGE_PAYLOAD_MAX) >= 0;
