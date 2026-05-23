@@ -533,18 +533,18 @@ This test is the main check for the current `UP` / `DOWN` concern.
 - `STOP` cancels the active Motion and stops the DC motor
 
 **Result:**
-- [ ] Not tested yet on hardware
+- [x] **2026-05-23 — PASS on board 192.168.8.198 (USB-flashed `5a8f4f6` + doc commit `7b11f5d`, boardId=1).** `STORAGEINFO` reported active+previous slots. `MOTION tidal-drift` started cleanly with both servo and DC tracks (initial servo wiring was loose — reseated and the servo sweep matched the keyframes). Manual servo commands (`S0 90`) and `STOP` cancelled the active Motion as expected. DC steps were instant (per the documented v1 bypass-ramp behavior). No regressions in the existing PLAY/SPLAY/ROTATE commands.
+
+OTA path discovered to be unsafe during this session (silent flash corruption above 120 KB partition limit); tracked in `servo-8zb` and fixed in commit `1180518`. Hardware re-test against `1180518` deferred — fix is host-test-covered behavior and the change to `Web.cpp` is a pre-body 413 short-circuit that does not affect MOTION playback.
 
 ---
 
 ## Host Regression Tests
 
 **2026-05-23:**
-- [x] `make -C test`
-- [x] `make -C test motion`
-- [x] `make -C test storage`
-
-**Hardware note:** The `arduino-manual-testing` skill referenced in `AGENTS.md` was not available in this session, so `Test 22` still needs an Arduino upload and Serial Monitor pass/fail run.
+- [x] `make -C test` — 7/7 time multiplier
+- [x] `make -C test motion` — 4/4 motion engine
+- [x] `make -C test storage` — 22/22 storage / CRC / bake validation
 
 ---
 
