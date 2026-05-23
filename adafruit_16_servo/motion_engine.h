@@ -216,10 +216,16 @@ static bool motionParseTrack(
   if (kind == MOTION_TRACK_SERVO && channel >= NUM_SERVOS) return false;
   if (kind == MOTION_TRACK_DC && channel != 0) return false;
 
-  if (motionFindValue(data, objStart + 1, objEnd, "boardId", valuePos) &&
-      motionParseInteger(data, valuePos, objEnd, parsed)) {
+  if (motionFindValue(data, objStart + 1, objEnd, "boardId", valuePos)) {
+    // Present-but-unparseable boardId means the bake is malformed. Treat the
+    // track as not-for-us rather than silently including it on every board —
+    // which is what the prior `&&`-guarded path did when motionParseInteger
+    // failed.
+    if (!motionParseInteger(data, valuePos, objEnd, parsed) || parsed < 0 || parsed > 255) {
+      return true;
+    }
     uint8_t localBoard = storageBoardId();
-    if (localBoard != 0 && parsed != localBoard) return true;
+    if (localBoard != 0 && (uint8_t)parsed != localBoard) return true;
   }
 
   if (out.trackCount >= MOTION_MAX_TRACKS) return false;
@@ -425,6 +431,14 @@ inline bool startMotionFromStorage(const char* motionId, bool announce) {
     Serial.println(F("No baked library"));
     return false;
   }
+
+  // Cancel any in-flight Motion BEFORE we let motionLoadFromBuffer overwrite
+  // motionRuntime. The loader memsets the runtime to zero on entry, which
+  // would otherwise leave a DC track from the previous Motion physically
+  // running while motionRuntime.active reads false — meaning subsequent
+  // cancel attempts no-op and the motor stays at the last applied speed
+  // until a manual STOP/ROTATE.
+  cancelMotionPlayback();
 
   const char* error = nullptr;
   if (!motionLoadFromBuffer(buf, len, motionId, motionRuntime, &error)) {

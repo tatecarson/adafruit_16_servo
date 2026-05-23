@@ -156,12 +156,48 @@ static void test_cancel_stops_dc_track() {
   ASSERT_EQ(motorState.currentSpeed, 0);
 }
 
+// Regression for CodeRabbit finding: switching to a Motion with no DC track
+// must stop any DC motor speed inherited from the previous Motion. Prior
+// behavior let motionLoadFromBuffer zero motionRuntime.active before
+// startMotionFromStorage could cancel, leaving the motor spinning forever.
+static void test_switching_to_servo_only_motion_stops_dc() {
+  reset_state();
+  ASSERT_TRUE(storageWriteSlot((const uint8_t*)kBlob, strlen(kBlob)));
+  ASSERT_TRUE(startMotionFromStorage("tidal-drift", false));
+  _mock_millis = 500;
+  updateMotion();
+  ASSERT_EQ(motorState.currentSpeed, 50);
+
+  // "other" has only a servo track on channel 1 — no DC track.
+  ASSERT_TRUE(startMotionFromStorage("other", false));
+  ASSERT_EQ(motorState.currentSpeed, 0);
+}
+
+// Regression for CodeRabbit finding: present-but-malformed boardId used to
+// silently include the track on every board because the && short-circuit
+// treated a parse failure the same as a missing field.
+static void test_malformed_boardid_excludes_track() {
+  reset_state();
+  const char* bad =
+    "{\"schemaVersion\":1,\"motions\":["
+      "{\"id\":\"x\",\"name\":\"X\",\"scope\":\"board\",\"durationMs\":100,"
+       "\"tracks\":[{\"kind\":\"servo\",\"boardId\":\"oops\",\"channel\":0,"
+                   "\"keyframes\":[{\"atMs\":0,\"value\":0},{\"atMs\":100,\"value\":10}]}]}"
+    "],\"sequences\":[],\"setlists\":[],\"activeSetlistId\":null,\"schedulerConfig\":{}}";
+  MotionRuntime parsed;
+  const char* error = nullptr;
+  ASSERT_FALSE(motionLoadFromBuffer((const uint8_t*)bad, strlen(bad), "x", parsed, &error));
+  ASSERT_TRUE(strcmp(error, "no-local-tracks") == 0);
+}
+
 int main() {
   printf("=== Motion Engine Tests ===\n");
   RUN(loads_motion_case_insensitive);
   RUN(skips_tracks_for_other_board);
   RUN(playback_interpolates_servo_and_dc);
   RUN(cancel_stops_dc_track);
+  RUN(switching_to_servo_only_motion_stops_dc);
+  RUN(malformed_boardid_excludes_track);
   printf("\n%d/%d passed, %d failed\n", _tests_passed, _tests_run, _tests_failed);
   return _tests_failed ? 1 : 0;
 }
