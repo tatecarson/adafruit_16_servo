@@ -9,7 +9,7 @@ all: test
 test: $(TARGET)
 	./$(TARGET)
 
-$(TARGET): test_time_multiplier.cpp mock/Arduino.h mock/Wire.h mock/Adafruit_PWMServoDriver.h mock/avr/pgmspace.h
+$(TARGET): test_time_multiplier.cpp mock/Arduino.h mock/Wire.h mock/Adafruit_PWMServoDriver.h mock/WiFiS3.h mock/avr/pgmspace.h
 	$(CXX) $(CXXFLAGS) -o $@ $<
 
 run_storage_tests: test_storage.cpp mock/Arduino.h mock/EEPROM.h
@@ -18,5 +18,11 @@ run_storage_tests: test_storage.cpp mock/Arduino.h mock/EEPROM.h
 storage: run_storage_tests
 	./run_storage_tests
 
+run_motion_tests: test_motion_engine.cpp mock/Arduino.h mock/EEPROM.h mock/Adafruit_PWMServoDriver.h
+	$(CXX) $(CXXFLAGS) -o $@ $<
+
+motion: run_motion_tests
+	./run_motion_tests
+
 clean:
-	rm -f $(TARGET) run_storage_tests
+	rm -f $(TARGET) run_storage_tests run_motion_tests

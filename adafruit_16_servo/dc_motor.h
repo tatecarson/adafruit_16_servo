@@ -16,6 +16,21 @@ struct MotorState {
 
 extern MotorState motorState;
 
+inline uint8_t writeMotorOutputs(int8_t speed) {
+  uint8_t pwmVal = map(abs(speed), 0, 100, 0, 255);
+  if (speed > 0) {
+    analogWrite(MOTOR_RPWM_PIN, pwmVal);
+    analogWrite(MOTOR_LPWM_PIN, 0);
+  } else if (speed < 0) {
+    analogWrite(MOTOR_RPWM_PIN, 0);
+    analogWrite(MOTOR_LPWM_PIN, pwmVal);
+  } else {
+    analogWrite(MOTOR_RPWM_PIN, 0);
+    analogWrite(MOTOR_LPWM_PIN, 0);
+  }
+  return pwmVal;
+}
+
 inline void motorInit() {
   pinMode(MOTOR_RPWM_PIN, OUTPUT);
   pinMode(MOTOR_LPWM_PIN, OUTPUT);
@@ -35,22 +50,19 @@ inline void setMotorSpeed(int8_t speed) {
   motorState.currentSpeed = speed;
   motorState.ramping = false;
 
-  uint8_t pwmVal = map(abs(speed), 0, 100, 0, 255);
-  if (speed > 0) {
-    analogWrite(MOTOR_RPWM_PIN, pwmVal);
-    analogWrite(MOTOR_LPWM_PIN, 0);
-  } else if (speed < 0) {
-    analogWrite(MOTOR_RPWM_PIN, 0);
-    analogWrite(MOTOR_LPWM_PIN, pwmVal);
-  } else {
-    analogWrite(MOTOR_RPWM_PIN, 0);
-    analogWrite(MOTOR_LPWM_PIN, 0);
-  }
+  uint8_t pwmVal = writeMotorOutputs(speed);
 
   Serial.print(F("Motor speed "));
   Serial.print(speed);
   Serial.print(F("% -> PWM "));
   Serial.println(pwmVal);
+}
+
+inline void setMotorSpeedQuiet(int8_t speed) {
+  speed = constrain(speed, -100, 100);
+  motorState.currentSpeed = speed;
+  motorState.ramping = false;
+  writeMotorOutputs(speed);
 }
 
 inline void rampMotorSpeed(int8_t targetSpeed, uint32_t rampMs) {
@@ -108,16 +120,6 @@ inline void updateMotorRamp() {
 
   if (speed != motorState.currentSpeed) {
     motorState.currentSpeed = speed;
-    uint8_t pwmVal = map(abs(speed), 0, 100, 0, 255);
-    if (speed > 0) {
-      analogWrite(MOTOR_RPWM_PIN, pwmVal);
-      analogWrite(MOTOR_LPWM_PIN, 0);
-    } else if (speed < 0) {
-      analogWrite(MOTOR_RPWM_PIN, 0);
-      analogWrite(MOTOR_LPWM_PIN, pwmVal);
-    } else {
-      analogWrite(MOTOR_RPWM_PIN, 0);
-      analogWrite(MOTOR_LPWM_PIN, 0);
-    }
+    writeMotorOutputs(speed);
   }
 }

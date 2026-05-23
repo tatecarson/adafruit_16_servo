@@ -514,6 +514,40 @@ This test is the main check for the current `UP` / `DOWN` concern.
 
 ---
 
+## Test 22: Browser-Baked Motion Playback
+
+**Prerequisite:** Upload a schema v1 bake blob with a Motion id such as `tidal-drift` through `POST /sequences`.
+
+**Commands:**
+1. `STORAGEINFO`
+2. `MOTION tidal-drift`
+3. While it is still playing, send `S0 90`
+4. Run `MOTION tidal-drift` again
+5. While it is still playing, send `STOP`
+
+**Expected:**
+- `STORAGEINFO` reports an active EEPROM slot
+- `MOTION tidal-drift` starts the baked servo/DC tracks and prints the track count
+- Servo/DC values interpolate smoothly between keyframes
+- `S0 90` interrupts the active Motion, stops any Motion-owned DC track, and holds the manual servo command
+- `STOP` cancels the active Motion and stops the DC motor
+
+**Result:**
+- [ ] Not tested yet on hardware
+
+---
+
+## Host Regression Tests
+
+**2026-05-23:**
+- [x] `make -C test`
+- [x] `make -C test motion`
+- [x] `make -C test storage`
+
+**Hardware note:** The `arduino-manual-testing` skill referenced in `AGENTS.md` was not available in this session, so `Test 22` still needs an Arduino upload and Serial Monitor pass/fail run.
+
+---
+
 ## Servo Calibration Notes
 
 | Channel | Servo Model | Type | Stop Pulse | Calibration |

@@ -23,6 +23,7 @@
       ALLDOWN <pct> [ms] - Move all protected winch servos down together
       RIG <UP|DOWN> <pct> <spd> [ms] - Manual winch + DC motor test
       WAVE <start> <end> [speed] [offset] [amp] - Wave pattern
+      MOTION <id>       - Play baked browser Motion by id
       PLAY <n> [LOOP]    - Play keyframe sequence
       SPLAY <n> [LOOP]   - Play speed sequence (DC motor)
       RUN <n> [LOOP]     - Run a chained program of sequences
@@ -48,6 +49,7 @@
 #include "sequence_setup.h"
 
 #include "servo_control.h"
+#include "motion_engine.h"
 #include "animation_engine.h"
 #include "servo_maintenance.h"
 #include "command_interface.h"
@@ -158,6 +160,12 @@ void writeStatusJson(WiFiClient& client) {
   s += F(",\"len\":");           s += currentSpeedSeqLength;
   s += F(",\"startedMs\":");     s += (speedSeqActive ? (millis() - speedSeqStartTime) : 0UL);
   s += '}';
+  s += F(",\"motion\":{\"active\":"); s += (motionRuntime.active ? F("true") : F("false"));
+  s += F(",\"id\":\"");          s += motionRuntime.id;
+  s += F("\",\"tracks\":");      s += motionRuntime.trackCount;
+  s += F(",\"durationMs\":");    s += motionRuntime.durationMs;
+  s += F(",\"startedMs\":");     s += (motionRuntime.active ? (millis() - motionRuntime.startMs) : 0UL);
+  s += '}';
   s += F(",\"wave\":{\"active\":"); s += (waveActive ? F("true") : F("false"));
   s += F(",\"start\":");         s += waveStartServo;
   s += F(",\"end\":");           s += waveEndServo;
@@ -262,6 +270,9 @@ uint8_t currentProgramPositionStepIndex = 0;
 uint16_t currentProgramPositionIteration = 0;
 uint8_t currentProgramSpeedStepIndex = 0;
 uint16_t currentProgramSpeedIteration = 0;
+
+// Browser-baked Motion playback state
+MotionRuntime motionRuntime;
 
 // Default calibration values
 #define DEFAULT_MIN 150
@@ -387,6 +398,7 @@ void loop() {
     updateAnimations();
     updateSpeedRamps();
     updateWave();
+    updateMotion();
     updateSequence();
     updateSpeedSequence();
     updateSequenceProgram();

@@ -10,6 +10,7 @@ typedef unsigned char byte;
 typedef bool boolean;
 
 #define PI 3.14159265358979f
+#define OUTPUT 1
 
 #ifndef constrain
 #define constrain(x, lo, hi) ((x) < (lo) ? (lo) : ((x) > (hi) ? (hi) : (x)))
@@ -19,6 +20,8 @@ typedef bool boolean;
 inline unsigned long _mock_millis = 0;
 inline unsigned long millis() { return _mock_millis; }
 inline void delay(unsigned long) {}
+inline void pinMode(int, int) {}
+inline void analogWrite(int, int) {}
 
 inline long map(long x, long in_min, long in_max, long out_min, long out_max) {
     if (in_max == in_min) return out_min;
@@ -31,6 +34,7 @@ struct MockSerial {
     void print(const char* s) { (void)s; }
     void println(const char* s) { (void)s; }
     template<typename T> void print(T) {}
+    template<typename T> void print(T, int) {}
     template<typename T> void println(T) {}
     int available() { return 0; }
     int read() { return -1; }

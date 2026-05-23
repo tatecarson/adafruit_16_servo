@@ -62,6 +62,13 @@ Servo calibration and control system for the Adafruit PCA9685 16-channel PWM dri
 - Keeps one winch low enough to touch the base while the other two lift
 - Rotates the base contact point between servos 0, 1, and 2 for a stepping motion
 
+### 10. Browser-Baked Motion Playback (Complete)
+- Added `MOTION <id>` command for schema v1 browser-baked Motions stored in EEPROM
+- Parses the active bake blob without heap allocation and loads bounded servo/DC track data into runtime state
+- Interpolates servo degrees and DC motor speed linearly against `millis()`
+- Cancels active Motion on manual servo moves, `PLAY`, `SPLAY`, `RUN`, and `STOP`
+- Added host regression coverage for Motion parsing, boardId filtering, and playback interpolation
+
 ## In Progress
 
 (None)
@@ -134,6 +141,10 @@ adafruit_16_servo/
 ## Git Commits (Sequence Library)
 
 25. `feat: add tripod walk winch sequence`
+
+## Git Commits (Browser-Baked Motion Playback)
+
+26. `feat: add MOTION playback for baked browser motions`
 
 ## Future Features
 

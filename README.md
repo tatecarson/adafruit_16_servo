@@ -52,6 +52,7 @@ Interactive Serial interface for the Adafruit PCA9685 16-channel PWM/Servo drive
 | `UMOVE <n> <pct> <ms>` | `UMOVE 0 80 3000` | Smooth animated move to absolute percent up |
 | `DMOVE <n> <pct> <ms>` | `DMOVE 0 30 3000` | Smooth animated move to absolute percent down |
 | `WAVE <s> <e> [spd] [off] [amp]` | `WAVE 0 2 50 30 90` | Start sine wave pattern on positional servos in the range |
+| `MOTION <id>` | `MOTION tidal-drift` | Play a browser-baked Motion from EEPROM |
 | `PLAY <n> [LOOP]` | `PLAY 1 LOOP` | Play keyframe sequence |
 | `SPLAY <n> [LOOP]` | `SPLAY 1 LOOP` | Play speed sequence (continuous servos) |
 | `RUN <n> [LOOP]` | `RUN 1 LOOP` | Run a chained program made from existing `PLAY`/`SPLAY` sequences |
@@ -165,6 +166,21 @@ Current `RUN` programs in this repo:
 - `RUN 1`: showcase program with mixed positional textures and `SPLAY 1`
 - `RUN 2`: drift program using sequence 8 with `SPLAY 2`
 - `RUN 3`: slow drift program using sequence 8 with `SPLAY 3`
+
+### Browser-Baked Motions
+
+`MOTION <id>` plays a Motion from the active EEPROM bake uploaded through the browser `/sequences` endpoint.
+
+```text
+MOTION tidal-drift
+STOP
+```
+
+- Motion ids come from `docs/sequencer-schema.md` / `servo_controller.html`
+- Servo tracks interpolate linearly between keyframes and write calibrated PCA9685 pulses every loop tick
+- DC tracks interpolate signed speed values from `-100` to `100`
+- Each board executes only its local sliced tracks; if a baked track still has `boardId`, mismatched boards skip it
+- Manual servo/DC commands, `WAVE`, `PLAY`, `SPLAY`, `RUN`, or `STOP` cancel the active Motion cleanly
 
 ### Sequence Time Scaling
 
