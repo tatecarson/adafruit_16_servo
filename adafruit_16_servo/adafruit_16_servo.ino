@@ -161,6 +161,9 @@ void writeStatusJson(WiFiClient& client) {
   s += F(",\"startedMs\":");     s += (speedSeqActive ? (millis() - speedSeqStartTime) : 0UL);
   s += '}';
   s += F(",\"motion\":{\"active\":"); s += (motionRuntime.active ? F("true") : F("false"));
+  // motionRuntime.id is emitted unescaped: motionCopyString() (motion_engine.h)
+  // rejects '"' and '\\' at parse time, and the schema id regex
+  // ^[a-z][a-z0-9-]{0,31}$ permits no other JSON-significant characters.
   s += F(",\"id\":\"");          s += motionRuntime.id;
   s += F("\",\"tracks\":");      s += motionRuntime.trackCount;
   s += F(",\"durationMs\":");    s += motionRuntime.durationMs;
