@@ -59,6 +59,7 @@ void setServoPulse(uint8_t servo, uint16_t pulse) {
     Serial.println(F("Invalid servo"));
     return;
   }
+  cancelMotionPlayback();
   servoState[servo].stopped = false;
   pulse = constrain(pulse, servoConfig[servo].minPulse, servoConfig[servo].maxPulse);
   servoState[servo].posPulse = pulse;
@@ -84,6 +85,7 @@ void rampServoSpeed(uint8_t servo, int8_t targetSpeed, uint32_t rampMs) {
 
 void moveServoAnimated(uint8_t servo, uint16_t targetPulse, uint32_t duration) {
   if (servo >= NUM_SERVOS) return;
+  cancelMotionPlayback();
   servoState[servo].stopped = false;
   targetPulse = constrain(targetPulse, servoConfig[servo].minPulse, servoConfig[servo].maxPulse);
 
@@ -109,6 +111,7 @@ void stopActivePatterns() {
   sequenceActive = false;
   speedSeqActive = false;
   programActive = false;
+  cancelMotionPlayback();
 }
 
 void clearServoStop(uint8_t servo) {

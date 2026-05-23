@@ -26,6 +26,7 @@ void showHelp() {
   Serial.println(F("ALLDOWN <pct> [ms]    Move all protected winches down together"));
   Serial.println(F("RIG <UP|DOWN> <pct> <spd> [ms]  Winches + DC motor test"));
   Serial.println(F("WAVE <s> <e> [spd] [off] [amp]  Start wave pattern"));
+  Serial.println(F("MOTION <id>           Play baked browser Motion"));
   Serial.println(F("PLAY <n> [LOOP]       Play sequence n"));
   Serial.println(F("SPLAY <n> [LOOP]      Speed sequence (DC motor)"));
   Serial.println(F("RUN <n> [LOOP]        Run a chained sequence program"));
@@ -74,9 +75,10 @@ bool containsStr(const char* str, const char* substr) {
 bool parseRigDirection(const char* cmd, bool& percentUp, uint8_t& percent, int8_t& speed, uint32_t& duration) {
   char direction[6] = {0};
   int speedIn = 0;
-  int parsed = sscanf(cmd, "RIG %5s %hhu %d %lu", direction, &percent, &speedIn, &duration);
+  unsigned long durationIn = 0;
+  int parsed = sscanf(cmd, "RIG %5s %hhu %d %lu", direction, &percent, &speedIn, &durationIn);
   if (parsed < 4) {
-    duration = 0;
+    durationIn = 0;
     parsed = sscanf(cmd, "RIG %5s %hhu %d", direction, &percent, &speedIn);
   }
 
@@ -96,6 +98,7 @@ bool parseRigDirection(const char* cmd, bool& percentUp, uint8_t& percent, int8_
 
   percent = constrain(percent, 0, 100);
   speed = (int8_t)constrain(speedIn, -100, 100);
+  duration = (uint32_t)durationIn;
   return true;
 }
 
@@ -106,6 +109,7 @@ bool startPositionSequence(uint8_t seqNum, bool loop, bool announce) {
   }
 
   waveActive = false;
+  cancelMotionPlayback();
   sequenceLoop = loop;
   sequenceStartTime = millis();
   lastTriggeredKeyframe = 0;
@@ -128,6 +132,7 @@ bool startSpeedSequence(uint8_t seqNum, bool loop, bool announce) {
 
   speedSeqActive = true;
   waveActive = false;
+  cancelMotionPlayback();
   speedSeqLoop = loop;
   speedSeqStartTime = millis();
   lastTriggeredSpeedFrame = 0;
@@ -150,6 +155,7 @@ bool startSequenceProgram(uint8_t programNum, bool loop) {
   waveActive = false;
   sequenceActive = false;
   speedSeqActive = false;
+  cancelMotionPlayback();
   programActive = true;
   programLoop = loop;
   programPositionDone = (currentProgram->positionLength == 0);
@@ -284,6 +290,14 @@ void processCommand(char* cmd) {
       startSpeedSequence(seqNum, containsStr(cmd, "LOOP"), true);
     }
   }
+  else if (startsWith(cmd, "MOTION")) {
+    int space = findChar(cmd, ' ', 0);
+    if (space > 0 && cmd[space + 1] != '\0') {
+      startMotionFromStorage(cmd + space + 1, true);
+    } else {
+      Serial.println(F("Use: MOTION <id>"));
+    }
+  }
   else if (startsWith(cmd, "RUN")) {
     int space = findChar(cmd, ' ', 0);
     if (space > 0) {
@@ -408,6 +422,7 @@ void processCommand(char* cmd) {
       if (s4 > 0) waveAmplitude = atoi(cmd + s4 + 1);
       else waveAmplitude = 90;
 
+      cancelMotionPlayback();
       waveStartTime = millis();
       waveActive = true;
 
@@ -430,6 +445,7 @@ void processCommand(char* cmd) {
     sequenceActive = false;
     speedSeqActive = false;
     programActive = false;
+    cancelMotionPlayback();
     stopMotor();
     for (uint8_t i = 0; i < NUM_SERVOS; i++) {
       servoState[i].moving = false;
@@ -441,6 +457,7 @@ void processCommand(char* cmd) {
     int space = findChar(cmd, ' ', 0);
     if (space > 0) {
       int16_t speed = atoi(cmd + space + 1);
+      cancelMotionPlayback();
       setMotorSpeed((int8_t)constrain(speed, -100, 100));
     } else {
       Serial.println(F("Use: ROTATE <-100 to 100>"));
@@ -493,6 +510,7 @@ void processCommand(char* cmd) {
 inline bool shouldMirrorCommand(const char* upperCmd) {
   return startsWith(upperCmd, "PLAY ") || strcmp(upperCmd, "PLAY") == 0
       || startsWith(upperCmd, "SPLAY ") || strcmp(upperCmd, "SPLAY") == 0
+      || startsWith(upperCmd, "MOTION ") || strcmp(upperCmd, "MOTION") == 0
       || startsWith(upperCmd, "ROTATE ") || strcmp(upperCmd, "ROTATE") == 0
       || startsWith(upperCmd, "RIG ") || strcmp(upperCmd, "RIG") == 0
       || strcmp(upperCmd, "STOP") == 0;

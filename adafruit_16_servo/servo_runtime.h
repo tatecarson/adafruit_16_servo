@@ -54,6 +54,39 @@ struct SequenceProgramDefinition {
   uint8_t speedLength;
 };
 
+#define MOTION_ID_MAX_LEN 32
+#define MOTION_MAX_TRACKS 17
+#define MOTION_MAX_KEYFRAMES 64
+#define MOTION_TRACK_NONE 0
+#define MOTION_TRACK_SERVO 1
+#define MOTION_TRACK_DC 2
+#define MOTION_VALUE_UNSET 32767
+
+struct MotionKeyframe {
+  uint32_t atMs;
+  int16_t value;
+};
+
+struct MotionTrack {
+  uint8_t kind;
+  uint8_t channel;
+  uint8_t firstKeyframe;
+  uint8_t keyframeCount;
+  uint8_t segmentIndex;
+  int16_t lastAppliedValue;
+};
+
+struct MotionRuntime {
+  char id[MOTION_ID_MAX_LEN + 1];
+  uint32_t durationMs;
+  uint8_t trackCount;
+  uint8_t keyframeCount;
+  MotionTrack tracks[MOTION_MAX_TRACKS];
+  MotionKeyframe keyframes[MOTION_MAX_KEYFRAMES];
+  unsigned long startMs;
+  bool active;
+};
+
 extern Adafruit_PWMServoDriver pwm;
 
 extern ServoConfig servoConfig[NUM_SERVOS];
@@ -93,6 +126,7 @@ extern uint8_t currentProgramPositionStepIndex;
 extern uint16_t currentProgramPositionIteration;
 extern uint8_t currentProgramSpeedStepIndex;
 extern uint16_t currentProgramSpeedIteration;
+extern MotionRuntime motionRuntime;
 
 void initServoDefaults();
 
@@ -121,6 +155,9 @@ void setTestPulse(uint16_t pulse);
 bool startPositionSequence(uint8_t seqNum, bool loop, bool announce);
 bool startSpeedSequence(uint8_t seqNum, bool loop, bool announce);
 bool startSequenceProgram(uint8_t programNum, bool loop);
+bool startMotionFromStorage(const char* motionId, bool announce);
+void cancelMotionPlayback();
+void updateMotion();
 void updateSequenceProgram();
 void servoOff(uint8_t servo);
 void releaseServo(uint8_t servo);

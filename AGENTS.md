@@ -50,6 +50,7 @@ A servo calibration and control system for the **Adafruit PCA9685 16-channel PWM
 ```
 adafruit_16_servo/
 ├── adafruit_16_servo.ino    # Main Arduino sketch (core logic)
+├── motion_engine.h          # Browser-baked Motion parser/playback engine
 ├── servo_setup.h            # Installation-specific per-servo setup
 ├── sequence_setup.h         # Installation-specific animation sequence setup
 ├── README.md                 # User documentation
@@ -60,18 +61,16 @@ adafruit_16_servo/
         └── 2026-01-17-animation-system.md  # Completed implementation plan
 ```
 
-## Code Organization (adafruit_16_servo.ino)
+## Code Organization
 
-The sketch is organized in this order:
+The sketch is split into small headers included by `adafruit_16_servo.ino`:
 
-1. **Includes & Globals** (lines 1-169): Library includes, `ServoConfig`/`ServoState`, wave + sequence globals
-2. **Setup** (lines 171-186): Serial init, default init, `applyCustomServoSetup()`, PWM init
-3. **Utility Functions** (lines 188-240): `degreesToPulse()`, percent conversion, `speedToPulse()`, easing functions
-4. **Servo Control** (lines 243-392): `setServoPulse()`, `setServoDegrees()`, `setServoPercent()`, `setServoSpeed()`, `moveServoAnimated()`
-5. **Animation Engines** (lines 394-548): `updateAnimations()`, `updateWave()`, `updateSequence()`
-6. **Commands** (lines 550-636): `sweepServo()`, `servoOff()`, `setCalibration()`, `showStatus()`, `showHelp()`
-7. **Command Parser** (lines 722-921): `processCommand()` - parses all Serial commands
-8. **Main Loop** (lines 948-971): Calls update functions, reads Serial
+1. **Sketch shell** (`adafruit_16_servo.ino`): Wi-Fi/OTA/web setup, global runtime state, `setup()`, and `loop()`
+2. **Runtime model** (`servo_runtime.h`): `ServoConfig`, `ServoState`, sequence structs, and browser-baked `MotionRuntime`
+3. **Servo/DC control** (`servo_control.h`, `dc_motor.h`): calibrated servo writes, eased moves, percent travel commands, and motor speed/ramp helpers
+4. **Animation engines** (`animation_engine.h`, `motion_engine.h`): `PLAY`, `SPLAY`, `RUN`, `WAVE`, and baked `MOTION <id>` playback
+5. **Command interface** (`command_interface.h`): `showHelp()`, `processCommand()`, and mirrored command dispatch
+6. **Persistence/web** (`storage.h`, `bake_validate.h`, `Web.cpp`): EEPROM bake slots, schema validation, boardId, and HTTP endpoints
 
 ## State Model
 
@@ -81,6 +80,7 @@ Per-servo setup and runtime state is tracked in two arrays of structs:
 |-------|------|---------|
 | `servoConfig[]` | `ServoConfig` | Calibration + behavior (`minPulse`, `maxPulse`, `continuous`, `stopPulse`) |
 | `servoState[]` | `ServoState` | Runtime state (position + move animation + speed ramping) |
+| `motionRuntime` | `MotionRuntime` | Active browser-baked Motion tracks/keyframes loaded from EEPROM |
 
 ## Command Reference
 
@@ -96,6 +96,7 @@ Per-servo setup and runtime state is tracked in two arrays of structs:
 - `MOVE <n> <deg> <ms>` - Smooth eased movement
 - `LMOVE <n> <pct> <ms>` - Smooth eased move to percent of travel
 - `WAVE <s> <e> [spd] [off] [amp]` - Sine wave pattern across servos
+- `MOTION <id>` - Play a browser-baked Motion from EEPROM
 - `PLAY <n> [LOOP]` - Play keyframe sequence
 - `RUN <n> [LOOP]` - Run a chained program of sequences
 - `STOP` - Stop all animations

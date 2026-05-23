@@ -23,6 +23,7 @@
       ALLDOWN <pct> [ms] - Move all protected winch servos down together
       RIG <UP|DOWN> <pct> <spd> [ms] - Manual winch + DC motor test
       WAVE <start> <end> [speed] [offset] [amp] - Wave pattern
+      MOTION <id>       - Play baked browser Motion by id
       PLAY <n> [LOOP]    - Play keyframe sequence
       SPLAY <n> [LOOP]   - Play speed sequence (DC motor)
       RUN <n> [LOOP]     - Run a chained program of sequences
@@ -48,6 +49,7 @@
 #include "sequence_setup.h"
 
 #include "servo_control.h"
+#include "motion_engine.h"
 #include "animation_engine.h"
 #include "servo_maintenance.h"
 #include "command_interface.h"
@@ -158,6 +160,15 @@ void writeStatusJson(WiFiClient& client) {
   s += F(",\"len\":");           s += currentSpeedSeqLength;
   s += F(",\"startedMs\":");     s += (speedSeqActive ? (millis() - speedSeqStartTime) : 0UL);
   s += '}';
+  s += F(",\"motion\":{\"active\":"); s += (motionRuntime.active ? F("true") : F("false"));
+  // motionRuntime.id is emitted unescaped: motionCopyString() (motion_engine.h)
+  // rejects '"' and '\\' at parse time, and the schema id regex
+  // ^[a-z][a-z0-9-]{0,31}$ permits no other JSON-significant characters.
+  s += F(",\"id\":\"");          s += motionRuntime.id;
+  s += F("\",\"tracks\":");      s += motionRuntime.trackCount;
+  s += F(",\"durationMs\":");    s += motionRuntime.durationMs;
+  s += F(",\"startedMs\":");     s += (motionRuntime.active ? (millis() - motionRuntime.startMs) : 0UL);
+  s += '}';
   s += F(",\"wave\":{\"active\":"); s += (waveActive ? F("true") : F("false"));
   s += F(",\"start\":");         s += waveStartServo;
   s += F(",\"end\":");           s += waveEndServo;
@@ -179,12 +190,33 @@ void writeStatusJson(WiFiClient& client) {
   client.write((const uint8_t*)s.c_str(), s.length());
 }
 
+// Returns the largest sketch (in bytes) that InternalStorage can stage for
+// OTA on this board. The library's ceiling is (FLASH_LENGTH - SKETCH_START)/2
+// (page-aligned) — on UNO R4 WiFi that's 122880 bytes (120 KB), well under
+// the 262144-byte total flash that arduino-cli reports. Web.cpp uses this to
+// reject oversized uploads before any flash is touched.
+int otaMaxSize() {
+  return (int)InternalStorage.maxSize();
+}
+
 bool otaReceive(WiFiClient& client, int contentLength) {
   Serial.print(F("Browser OTA: receiving "));
   Serial.print(contentLength);
-  Serial.println(F(" bytes..."));
+  Serial.println(F(" bytes (limit "));
+  Serial.print(otaMaxSize());
+  Serial.println(F(")"));
+
+  // CRITICAL: InternalStorage.open() returns 0 if contentLength exceeds the
+  // OTA partition (or if the flash driver fails to init). If we ignore that
+  // failure and let apply() run anyway, the library erases the first page of
+  // the running sketch and reboots into garbage — bricking the board and
+  // requiring USB recovery. Refuse the upload here instead.
   otaInProgress = true;
-  InternalStorage.open(contentLength);
+  if (InternalStorage.open(contentLength) == 0) {
+    Serial.println(F("Browser OTA: InternalStorage.open() refused (too large or flash busy)"));
+    otaInProgress = false;
+    return false;
+  }
 
   int received = 0;
   unsigned long deadline = millis() + 60000;
@@ -262,6 +294,9 @@ uint8_t currentProgramPositionStepIndex = 0;
 uint16_t currentProgramPositionIteration = 0;
 uint8_t currentProgramSpeedStepIndex = 0;
 uint16_t currentProgramSpeedIteration = 0;
+
+// Browser-baked Motion playback state
+MotionRuntime motionRuntime;
 
 // Default calibration values
 #define DEFAULT_MIN 150
@@ -387,6 +422,7 @@ void loop() {
     updateAnimations();
     updateSpeedRamps();
     updateWave();
+    updateMotion();
     updateSequence();
     updateSpeedSequence();
     updateSequenceProgram();

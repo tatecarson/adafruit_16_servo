@@ -1,9 +1,13 @@
 // Arduino mocks must come first
 #include "mock/Arduino.h"
+#include "mock/EEPROM.h"
+#include "mock/Adafruit_PWMServoDriver.h"
 
 #include <stdio.h>
 #include <stdexcept>
 #include <string>
+
+EEPROMClass EEPROM;
 
 // --- Minimal test framework ---
 static int _tests_run = 0, _tests_passed = 0, _tests_failed = 0;
@@ -27,8 +31,84 @@ static int _tests_run = 0, _tests_passed = 0, _tests_failed = 0;
     catch (const std::exception& e) { _tests_failed++; printf("%s\n", e.what()); } \
 } while(0)
 
-// Pull in the real source (all globals and functions defined here)
-#include "../adafruit_16_servo.ino"
+// Pull in the split firmware headers with local globals, rather than relying
+// on the sketch file path.
+#include "../adafruit_16_servo/storage_crc.h"
+#include "../adafruit_16_servo/servo_runtime.h"
+#include "../adafruit_16_servo/dc_motor.h"
+#include "../adafruit_16_servo/storage.h"
+
+#define SEQUENCE_END_MARKER_SERVO 255
+
+Adafruit_PWMServoDriver pwm;
+ServoConfig servoConfig[NUM_SERVOS];
+ServoState servoState[NUM_SERVOS];
+MotorState motorState;
+
+bool waveActive = false;
+uint8_t waveStartServo = 0;
+uint8_t waveEndServo = 0;
+uint16_t waveSpeed = 0;
+uint8_t wavePhaseOffset = 0;
+uint16_t waveAmplitude = 0;
+uint16_t waveCenter = 0;
+unsigned long waveStartTime = 0;
+uint16_t timeMultiplier = 1;
+bool sequenceActive = false;
+bool sequenceLoop = false;
+const Keyframe* currentSequence = nullptr;
+uint8_t currentSequenceLength = 0;
+unsigned long sequenceStartTime = 0;
+uint8_t lastTriggeredKeyframe = 0;
+bool speedSeqActive = false;
+bool speedSeqLoop = false;
+const SpeedFrame* currentSpeedSeq = nullptr;
+uint8_t currentSpeedSeqLength = 0;
+unsigned long speedSeqStartTime = 0;
+uint8_t lastTriggeredSpeedFrame = 0;
+bool programActive = false;
+bool programLoop = false;
+const SequenceProgramDefinition* currentProgram = nullptr;
+bool programPositionDone = true;
+bool programSpeedDone = true;
+uint8_t currentProgramPositionStepIndex = 0;
+uint16_t currentProgramPositionIteration = 0;
+uint8_t currentProgramSpeedStepIndex = 0;
+uint16_t currentProgramSpeedIteration = 0;
+MotionRuntime motionRuntime;
+
+void initServoDefaults() {
+    uint16_t defaultCenter = 375;
+    for (uint8_t i = 0; i < NUM_SERVOS; i++) {
+        servoConfig[i].minPulse = 150;
+        servoConfig[i].maxPulse = 600;
+        servoConfig[i].stopPulse = defaultCenter;
+        servoConfig[i].totalDegrees = 180;
+        servoConfig[i].allowRelease = true;
+        servoConfig[i].upDegrees = 0;
+        servoConfig[i].downDegrees = 180;
+        servoConfig[i].reverseDir = false;
+        servoState[i].posPulse = defaultCenter;
+        servoState[i].targetPulse = defaultCenter;
+        servoState[i].startPulse = defaultCenter;
+        servoState[i].moveStartMs = 0;
+        servoState[i].moveDurationMs = 0;
+        servoState[i].moving = false;
+        servoState[i].stopped = false;
+    }
+}
+
+void broadcastEvent(const char*) {}
+uint8_t syncNodeId() { return 1; }
+bool selectPositionSequence(uint8_t, const Keyframe*&, uint8_t&) { return false; }
+bool selectSpeedSequence(uint8_t, const SpeedFrame*&, uint8_t&) { return false; }
+bool selectSequenceProgram(uint8_t, const SequenceProgramDefinition*&) { return false; }
+
+#include "../adafruit_16_servo/servo_control.h"
+#include "../adafruit_16_servo/motion_engine.h"
+#include "../adafruit_16_servo/animation_engine.h"
+#include "../adafruit_16_servo/servo_maintenance.h"
+#include "../adafruit_16_servo/command_interface.h"
 
 // --- Test helpers ---
 static void reset_sequence() {
