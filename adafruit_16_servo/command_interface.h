@@ -32,6 +32,8 @@ void showHelp() {
   Serial.println(F("STOP [n]              Stop all motion or hold one servo"));
   Serial.println(F("TIMESCALE <n>         Scale sequence timing n times slower"));
   Serial.println(F("ROTATE <spd>          DC motor rotation speed"));
+  Serial.println(F("STORAGEINFO           Show EEPROM slot + boardId state"));
+  Serial.println(F("BOARDID [n]           Get or set boardId (1..3)"));
   Serial.println();
 }
 
@@ -454,6 +456,25 @@ void processCommand(char* cmd) {
     } else {
       Serial.print(F("TIMESCALE: ")); Serial.println(timeMultiplier);
     }
+  }
+  else if (startsWith(cmd, "BOARDID")) {
+    const char* rest = cmd + 7; while (*rest == ' ') rest++;
+    if (*rest == '\0') {
+        Serial.print(F("boardId=")); Serial.println(storageBoardId());
+    } else {
+        int v = atoi(rest);
+        if (storageSetBoardId((uint8_t)v)) Serial.print(F("set boardId="));
+        else Serial.print(F("bad boardId="));
+        Serial.println(v);
+    }
+    return;
+  }
+  else if (startsWith(cmd, "STORAGEINFO")) {
+    Serial.print(F("boardId=")); Serial.println(storageBoardId());
+    Serial.print(F("hasActive=")); Serial.println(storageHasActive() ? F("yes") : F("no"));
+    Serial.print(F("hasPrevious=")); Serial.println(storageHasPrevious() ? F("yes") : F("no"));
+    Serial.print(F("slotPayloadMax=")); Serial.println((int)STORAGE_PAYLOAD_MAX);
+    return;
   }
   else if (startsWith(cmd, "STATUS")) {
     showStatus();

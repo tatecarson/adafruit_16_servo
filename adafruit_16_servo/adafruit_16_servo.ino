@@ -43,6 +43,7 @@
 
 #include "servo_runtime.h"
 #include "dc_motor.h"
+#include "storage.h"
 #include "servo_setup.h"
 #include "sequence_setup.h"
 
@@ -309,6 +310,11 @@ void setup() {
   Serial.println(F("Servo Calibration & Control"));
   Serial.println(F("Type HELP for commands"));
   Serial.println();
+
+  storageInit();
+  Serial.print(F("storage: boardId=")); Serial.print(storageBoardId());
+  Serial.print(F(" hasActive=")); Serial.print(storageHasActive() ? F("yes") : F("no"));
+  Serial.print(F(" hasPrevious=")); Serial.println(storageHasPrevious() ? F("yes") : F("no"));
 
   initServoDefaults();
   applyCustomServoSetup(servoConfig, servoState);

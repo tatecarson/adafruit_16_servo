@@ -15,7 +15,7 @@ This document is the single source of truth. Any change that breaks compatibilit
 
 ### `boardId`
 
-Each Arduino persists a stable integer in Preferences under `boardId`. Values: **1**, **2**, **3**. The browser writes this once during setup (one-board-at-a-time) so cluster Motions can address specific sculptures even when DHCP shuffles IPs.
+Each Arduino persists a stable integer in EEPROM under `boardId`. Values: **1**, **2**, **3**. The browser writes this once during setup (one-board-at-a-time) so cluster Motions can address specific sculptures even when DHCP shuffles IPs.
 
 - The schema **never** uses IP addresses. IPs live in the browser's runtime config, not in the baked blob.
 - A board only stores+executes tracks whose `boardId` matches its own. The bake pipeline slices the cluster Motion accordingly before POSTing per device.
@@ -221,7 +221,7 @@ A collection of Sequence references with optional shuffle rules. Runs forever on
 
 ## 5. Bake blob (the thing the browser POSTs)
 
-A single envelope sent to each board's `POST /sequences` endpoint. Each board persists it to ESP32 Preferences (or LittleFS if >4KB). Sliced per board: a board receives only the Motion tracks where `track.boardId` matches its own, but receives the full Sequence + Setlist library so any board can become leader.
+A single envelope sent to each board's `POST /sequences` endpoint. Each board persists it to the UNO R4's on-chip EEPROM (8 KB dataflash, two 4 KB slots; see Section 6). Sliced per board: a board receives only the Motion tracks where `track.boardId` matches its own, but receives the full Sequence + Setlist library so any board can become leader.
 
 ```json
 {
@@ -263,22 +263,22 @@ A single envelope sent to each board's `POST /sequences` endpoint. Each board pe
 
 ## 6. Persistence and versioning (firmware)
 
-Each board keeps two slots:
+Storage on the Arduino UNO R4 WiFi uses the standard `EEPROM` library, which on the Renesas RA4M1 maps to ~8 KB of dedicated dataflash. The 8 KB is partitioned as:
 
-- `slot:current` — the active bake blob.
-- `slot:previous` — the bake blob that was active before the last successful POST.
+- An 8-byte header with magic bytes, an active-slot pointer, and `boardId`.
+- Two slots of 4084 bytes each. Each slot is `[length:2][crc16:2][payload:≤4080]`. CRC is CRC16-CCITT (poly 0x1021, init 0xFFFF) over the length bytes concatenated with the payload.
 
-`POST /sequences` is atomic: parse, validate, swap. If parse or validate fails, neither slot changes and the endpoint returns HTTP 400 with a JSON error. The browser's restore-previous-bake button copies `slot:previous` → `slot:current`.
+`POST /sequences` writes the payload to the *inactive* slot, then atomically flips the one-byte active-slot pointer. A power loss anywhere before the pointer flip leaves the previous active slot intact. The "previous" slot is simply the non-active one — the browser's restore-previous-bake button calls `POST /sequences/restore`, which is a one-byte pointer flip back (refused if the previous slot's CRC doesn't validate).
 
-Validation checks (firmware):
+Validation checks (firmware, at `POST /sequences` time):
 
-1. `schemaVersion` is supported.
-2. Every `seqId` in setlists resolves to a Sequence in the same blob.
-3. Every `MOTION <id>` step references a Motion that exists in the blob (across all boards before slicing — checked at the browser; firmware re-checks against its own slice).
-4. Each track's keyframes are time-sorted, start at 0, end at `durationMs`.
-5. No two tracks share `(boardId, kind, channel)`.
+1. `Content-Length` is between 1 and 4080.
+2. Body is well-formed JSON shape — balanced braces, terminated strings.
+3. Top-level object contains `"schemaVersion": 1`.
 
-The browser does the same validation locally before POSTing; firmware does it again because we don't trust the network.
+Semantic validation (Motion `id` references, keyframe ordering, value-range bounds) is deferred to the playback engines (servo-2cw, servo-3a9), which fail the relevant `MOTION`/`RUN` command rather than the bake. This keeps the bake endpoint fast and the storage layer independent of the schema's domain semantics.
+
+The maximum bake-blob payload is therefore 4080 bytes. The browser must minify JSON (strip whitespace) before POSTing. A modest library (5 Motions × ~400 bytes, 5 Sequences × ~200 bytes, 3 Setlists × ~150 bytes) is roughly 3.5 KB minified — comfortable headroom, but the bake pipeline should surface bytes-used prominently so the user notices approaching the limit.
 
 ---
 
