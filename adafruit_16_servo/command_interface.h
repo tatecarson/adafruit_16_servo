@@ -33,6 +33,7 @@ void showHelp() {
   Serial.println(F("TIMESCALE <n>         Scale sequence timing n times slower"));
   Serial.println(F("ROTATE <spd>          DC motor rotation speed"));
   Serial.println(F("STORAGEINFO           Show EEPROM slot + boardId state"));
+  Serial.println(F("BOARDID [n]           Get or set boardId (1..3)"));
   Serial.println();
 }
 
