@@ -14,6 +14,9 @@ void writeStatusJson(WiFiClient& client);
 // Provided by adafruit_16_servo.ino — streams POST body to InternalStorage.
 bool otaReceive(WiFiClient& client, int contentLength);
 void otaApply();
+// Maximum sketch size the OTA partition can stage. Smaller than total flash —
+// see comment over otaMaxSize() in adafruit_16_servo.ino.
+int otaMaxSize();
 
 extern bool otaInProgress;
 
@@ -258,6 +261,28 @@ void webPoll() {
       client.println("Content-Type: text/plain");
       client.println();
       client.println("bad content-length");
+      delay(5);
+      client.stop();
+      return;
+    }
+
+    // Refuse oversized images BEFORE draining the request body. The OTA
+    // partition is smaller than total flash (~120 KB on UNO R4 WiFi). If we
+    // let an oversized image through, InternalStorage.open() refuses, our
+    // write loop no-ops, then apply() erases the running sketch's reset
+    // vector and reboots into garbage — bricking the board.
+    int maxOta = otaMaxSize();
+    if (maxOta > 0 && contentLength > maxOta) {
+      client.println("HTTP/1.1 413 Payload Too Large");
+      client.println("Connection: close");
+      client.println("Access-Control-Allow-Origin: *");
+      client.println("Content-Type: text/plain");
+      client.println();
+      client.print("sketch ");
+      client.print(contentLength);
+      client.print(" bytes exceeds OTA partition limit ");
+      client.print(maxOta);
+      client.println(" bytes; flash via USB or shrink the binary");
       delay(5);
       client.stop();
       return;

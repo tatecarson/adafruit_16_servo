@@ -190,12 +190,33 @@ void writeStatusJson(WiFiClient& client) {
   client.write((const uint8_t*)s.c_str(), s.length());
 }
 
+// Returns the largest sketch (in bytes) that InternalStorage can stage for
+// OTA on this board. The library's ceiling is (FLASH_LENGTH - SKETCH_START)/2
+// (page-aligned) — on UNO R4 WiFi that's 122880 bytes (120 KB), well under
+// the 262144-byte total flash that arduino-cli reports. Web.cpp uses this to
+// reject oversized uploads before any flash is touched.
+int otaMaxSize() {
+  return (int)InternalStorage.maxSize();
+}
+
 bool otaReceive(WiFiClient& client, int contentLength) {
   Serial.print(F("Browser OTA: receiving "));
   Serial.print(contentLength);
-  Serial.println(F(" bytes..."));
+  Serial.println(F(" bytes (limit "));
+  Serial.print(otaMaxSize());
+  Serial.println(F(")"));
+
+  // CRITICAL: InternalStorage.open() returns 0 if contentLength exceeds the
+  // OTA partition (or if the flash driver fails to init). If we ignore that
+  // failure and let apply() run anyway, the library erases the first page of
+  // the running sketch and reboots into garbage — bricking the board and
+  // requiring USB recovery. Refuse the upload here instead.
   otaInProgress = true;
-  InternalStorage.open(contentLength);
+  if (InternalStorage.open(contentLength) == 0) {
+    Serial.println(F("Browser OTA: InternalStorage.open() refused (too large or flash busy)"));
+    otaInProgress = false;
+    return false;
+  }
 
   int received = 0;
   unsigned long deadline = millis() + 60000;
