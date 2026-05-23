@@ -1,7 +1,10 @@
 #include "Web.h"
 #include <WiFiS3.h>
+#include <EEPROM.h>
 #include "Secrets.h"
 #include "Sync.h"
+#include "storage.h"
+#include "bake_validate.h"
 
 // Provided by command_interface.h in the servo sketch.
 void dispatchCommand(const char* cmd, bool fromNetwork);
@@ -68,6 +71,86 @@ static void sendControlResponse(WiFiClient& client) {
   client.println("<p>Examples: PLAY 1, SPLAY 0, STOP. The command is run locally and broadcast to peers.</p>");
   syncWritePeersHtml(client);
   client.println("</body></html>");
+}
+
+// Streams the POST body into a static buffer (up to STORAGE_PAYLOAD_MAX), then
+// validates and persists. Writes the response on `client`.
+static void handleSequencesPost(WiFiClient& client, int contentLength) {
+    if (contentLength <= 0 || contentLength > (int)STORAGE_PAYLOAD_MAX) {
+        client.println("HTTP/1.1 413 Payload Too Large");
+        client.println("Connection: close");
+        client.println("Access-Control-Allow-Origin: *");
+        client.println("Content-Type: application/json");
+        client.println();
+        client.print("{\"ok\":false,\"error\":\"too-large\",\"limit\":");
+        client.print((int)STORAGE_PAYLOAD_MAX); client.println("}");
+        return;
+    }
+    // Heap-allocate the receive buffer so 4 KB only sits in RAM during the
+    // upload, not permanently in BSS. (storage.h already has a 4 KB BSS
+    // scratch; adding a second would overflow the linker's heap reservation
+    // on UNO R4.)
+    uint8_t* buf = (uint8_t*)malloc(STORAGE_PAYLOAD_MAX);
+    if (!buf) {
+        client.println("HTTP/1.1 500 Internal Server Error");
+        client.println("Connection: close");
+        client.println("Access-Control-Allow-Origin: *");
+        client.println("Content-Type: application/json");
+        client.println();
+        client.println("{\"ok\":false,\"error\":\"oom\"}");
+        return;
+    }
+    int received = 0;
+    unsigned long deadline = millis() + 5000;
+    while (received < contentLength && millis() < deadline && client.connected()) {
+        int avail = client.available();
+        if (avail <= 0) { delay(2); continue; }
+        int toRead = avail; if (toRead > contentLength - received) toRead = contentLength - received;
+        int n = client.read(buf + received, toRead);
+        if (n > 0) { received += n; deadline = millis() + 2000; }
+    }
+    if (received != contentLength) {
+        free(buf);
+        client.println("HTTP/1.1 400 Bad Request");
+        client.println("Connection: close");
+        client.println("Access-Control-Allow-Origin: *");
+        client.println("Content-Type: application/json");
+        client.println();
+        client.println("{\"ok\":false,\"error\":\"incomplete\"}");
+        return;
+    }
+    BakeValidateResult v = bakeValidate(buf, received);
+    if (!v.ok) {
+        free(buf);
+        client.println("HTTP/1.1 400 Bad Request");
+        client.println("Connection: close");
+        client.println("Access-Control-Allow-Origin: *");
+        client.println("Content-Type: application/json");
+        client.println();
+        client.print("{\"ok\":false,\"error\":\""); client.print(v.error); client.println("\"}");
+        return;
+    }
+    if (!storageWriteSlot(buf, (uint16_t)received)) {
+        free(buf);
+        client.println("HTTP/1.1 500 Internal Server Error");
+        client.println("Connection: close");
+        client.println("Access-Control-Allow-Origin: *");
+        client.println("Content-Type: application/json");
+        client.println();
+        client.println("{\"ok\":false,\"error\":\"write-failed\"}");
+        return;
+    }
+    free(buf);
+    client.println("HTTP/1.1 200 OK");
+    client.println("Connection: close");
+    client.println("Access-Control-Allow-Origin: *");
+    client.println("Content-Type: application/json");
+    client.println();
+    client.print("{\"ok\":true,\"bytesUsed\":"); client.print(received);
+    client.print(",\"slotsFree\":"); client.print((int)STORAGE_PAYLOAD_MAX - received);
+    client.print(",\"boardId\":"); client.print(storageBoardId());
+    client.print(",\"hasPrevious\":"); client.print(storageHasPrevious() ? "true" : "false");
+    client.println("}");
 }
 
 void webBegin() {
@@ -166,6 +249,25 @@ void webPoll() {
       delay(5);
       client.stop();
     }
+    return;
+  }
+
+  // --- CORS preflight for /sequences endpoints ---
+  if (method == "OPTIONS" && path.startsWith("/sequences")) {
+    client.println("HTTP/1.1 204 No Content");
+    client.println("Connection: close");
+    client.println("Access-Control-Allow-Origin: *");
+    client.println("Access-Control-Allow-Methods: POST, GET, OPTIONS");
+    client.println("Access-Control-Allow-Headers: Content-Type");
+    client.println("Access-Control-Max-Age: 86400");
+    client.println();
+    delay(5); client.stop();
+    return;
+  }
+
+  if (method == "POST" && path == "/sequences") {
+    handleSequencesPost(client, contentLength);
+    delay(5); client.stop();
     return;
   }
 
