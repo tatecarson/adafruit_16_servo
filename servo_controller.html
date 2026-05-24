@@ -1675,9 +1675,16 @@ function renderOtaBoardButtons() {
 const LIB_KEY = "servoCluster.library";
 const LIB_SNAP_PREFIX = "servoCluster.lastBake.";
 const SCHEMA_VERSION = 1;
-// Firmware POST /sequences blocks on EEPROM writes; the existing client
-// timeout was too short and surfaced false failures on slow boards.
-const BAKE_TIMEOUT_MS = 15000;
+// Firmware POST /sequences blocks on EEPROM writes. UNO R4 dataflash byte
+// writes are ~5-10ms each plus per-block erase, so a multi-KB bake can
+// spend 60s+ in storageWriteSlot before the HTTP response goes out. 15s
+// produced false failures even though the write landed (confirmed via
+// GET /sequences/info bytesUsed match after the timeout).
+const BAKE_TIMEOUT_MS = 90000;
+// /sequences/info is cheap, but the firmware is single-threaded — if it's
+// mid-write when the recovery probe fires, the GET queues until the write
+// finishes.
+const INFO_TIMEOUT_MS = 15000;
 
 const bakeFileEl    = $("#bakeFile");
 const bakeExportEl  = $("#bakeExport");
@@ -1790,7 +1797,7 @@ async function fetchBoardId(ip) {
 
 async function fetchSequencesInfo(ip) {
   const ctrl = new AbortController();
-  const t = setTimeout(() => ctrl.abort(), 4000);
+  const t = setTimeout(() => ctrl.abort(), INFO_TIMEOUT_MS);
   try {
     const r = await fetch(`http://${ip}/sequences/info`, { signal: ctrl.signal, cache: "no-store" });
     if (!r.ok) throw new Error("HTTP " + r.status);
