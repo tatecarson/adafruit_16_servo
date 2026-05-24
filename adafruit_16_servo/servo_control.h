@@ -60,6 +60,7 @@ void setServoPulse(uint8_t servo, uint16_t pulse) {
     return;
   }
   cancelMotionPlayback();
+  cancelSequencePlayback();
   servoState[servo].stopped = false;
   pulse = constrain(pulse, servoConfig[servo].minPulse, servoConfig[servo].maxPulse);
   servoState[servo].posPulse = pulse;
@@ -86,6 +87,7 @@ void rampServoSpeed(uint8_t servo, int8_t targetSpeed, uint32_t rampMs) {
 void moveServoAnimated(uint8_t servo, uint16_t targetPulse, uint32_t duration) {
   if (servo >= NUM_SERVOS) return;
   cancelMotionPlayback();
+  cancelSequencePlayback();
   servoState[servo].stopped = false;
   targetPulse = constrain(targetPulse, servoConfig[servo].minPulse, servoConfig[servo].maxPulse);
 
@@ -94,11 +96,6 @@ void moveServoAnimated(uint8_t servo, uint16_t targetPulse, uint32_t duration) {
   servoState[servo].moveDurationMs = duration;
   servoState[servo].moveStartMs = millis();
   servoState[servo].moving = true;
-}
-
-void moveServoDegrees(uint8_t servo, uint16_t degrees, uint32_t duration) {
-  uint16_t pulse = degreesToPulse(servo, degrees);
-  moveServoAnimated(servo, pulse, duration);
 }
 
 void moveSequenceDegrees(uint8_t servo, uint16_t degrees, uint32_t duration) {
@@ -111,6 +108,7 @@ void stopActivePatterns() {
   speedSeqActive = false;
   programActive = false;
   cancelMotionPlayback();
+  cancelSequencePlayback();
 }
 
 void clearServoStop(uint8_t servo) {
@@ -143,16 +141,6 @@ void setServoPercent(uint8_t servo, uint8_t percent) {
   setServoDegrees(servo, percentToDegrees(servo, percent));
 }
 
-void moveServoPercent(uint8_t servo, uint8_t percent, uint32_t duration) {
-  if (servo >= NUM_SERVOS) {
-    Serial.println(F("Invalid servo"));
-    return;
-  }
-  stopActivePatterns();
-  clearServoStop(servo);
-  moveServoDegrees(servo, percentToDegrees(servo, percent), duration);
-}
-
 void setServoPercentUp(uint8_t servo, uint8_t percentUp) {
   if (servo >= NUM_SERVOS) {
     Serial.println(F("Invalid servo"));
@@ -164,76 +152,9 @@ void setServoPercentUp(uint8_t servo, uint8_t percentUp) {
   setServoDegrees(servo, upPercentToDegrees(servo, percentUp));
 }
 
-void moveServoPercentUp(uint8_t servo, uint8_t percentUp, uint32_t duration) {
-  if (servo >= NUM_SERVOS) {
-    Serial.println(F("Invalid servo"));
-    return;
-  }
-  stopActivePatterns();
-  clearServoStop(servo);
-  moveServoDegrees(servo, upPercentToDegrees(servo, percentUp), duration);
-}
-
-void setAllProtectedWinchesPercent(bool percentUp, uint8_t percent) {
-  stopActivePatterns();
-  for (uint8_t i = 0; i < NUM_SERVOS; i++) {
-    if (servoConfig[i].allowRelease) continue;
-    clearServoStop(i);
-    servoState[i].moving = false;
-    if (percentUp) {
-      setServoDegrees(i, upPercentToDegrees(i, percent));
-    } else {
-      setServoDegrees(i, percentToDegrees(i, percent));
-    }
-  }
-}
-
-void moveAllProtectedWinchesPercent(bool percentUp, uint8_t percent, uint32_t duration) {
-  stopActivePatterns();
-  for (uint8_t i = 0; i < NUM_SERVOS; i++) {
-    if (servoConfig[i].allowRelease) continue;
-    clearServoStop(i);
-    if (percentUp) {
-      moveServoDegrees(i, upPercentToDegrees(i, percent), duration);
-    } else {
-      moveServoDegrees(i, percentToDegrees(i, percent), duration);
-    }
-  }
-}
-
 void setTestPulse(uint16_t pulse) {
   for (uint8_t i = 0; i < 3; i++) {
     setServoPulse(i, pulse);
   }
 }
 
-bool setTestRigState(bool percentUp, uint8_t percent, int8_t speed, uint32_t duration) {
-  stopActivePatterns();
-
-  if (duration == 0) {
-    setAllProtectedWinchesPercent(percentUp, percent);
-    setMotorSpeed(speed);
-  } else {
-    moveAllProtectedWinchesPercent(percentUp, percent, duration);
-    rampMotorSpeed(speed, duration);
-  }
-
-  return true;
-}
-
-void servoOff(uint8_t servo) {
-  if (servo >= NUM_SERVOS) return;
-  if (!servoConfig[servo].allowRelease) {
-    Serial.print(F("Servo ")); Serial.print(servo);
-    Serial.println(F(" is release-protected; use RELEASE <n> to intentionally drop it"));
-    return;
-  }
-  pwm.setPWM(servo, 0, 0);
-  Serial.print(F("Servo ")); Serial.print(servo); Serial.println(F(" off"));
-}
-
-void releaseServo(uint8_t servo) {
-  if (servo >= NUM_SERVOS) return;
-  pwm.setPWM(servo, 0, 0);
-  Serial.print(F("Servo ")); Serial.print(servo); Serial.println(F(" released"));
-}

@@ -69,6 +69,7 @@ uint16_t currentProgramPositionIteration = 0;
 uint8_t currentProgramSpeedStepIndex = 0;
 uint16_t currentProgramSpeedIteration = 0;
 MotionRuntime motionRuntime;
+SequenceRuntime sequenceRunner;
 
 void initServoDefaults() {
     uint16_t defaultCenter = 375;
@@ -99,6 +100,7 @@ bool selectSequenceProgram(uint8_t, const SequenceProgramDefinition*&) { return 
 
 #include "../adafruit_16_servo/servo_control.h"
 #include "../adafruit_16_servo/motion_engine.h"
+#include "../adafruit_16_servo/sequence_engine.h"
 #include "../adafruit_16_servo/animation_engine.h"
 #include "../adafruit_16_servo/servo_maintenance.h"
 #include "../adafruit_16_servo/command_interface.h"

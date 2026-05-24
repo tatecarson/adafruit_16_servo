@@ -439,6 +439,10 @@ inline bool startMotionFromStorage(const char* motionId, bool announce) {
   // cancel attempts no-op and the motor stays at the last applied speed
   // until a manual STOP/ROTATE.
   cancelMotionPlayback();
+  // Same logic applies to any running Sequence. Gated by the
+  // sequenceFiringStep flag inside cancelSequencePlayback, so a step
+  // that dispatches MOTION doesn't abort its own runner.
+  cancelSequencePlayback();
 
   const char* error = nullptr;
   if (!motionLoadFromBuffer(buf, len, motionId, motionRuntime, &error)) {

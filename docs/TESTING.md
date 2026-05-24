@@ -536,12 +536,40 @@ OTA path discovered to be unsafe during this session (silent flash corruption ab
 
 ---
 
+## Test 23: Browser-Baked Sequence Runner
+
+**Prerequisite:** Upload a schema v1 bake blob with a `sequences[]` array — e.g. add an `evening-arc` sequence with steps that fire `MOTION <id>` + `ROTATE n` + `STOP`, mixed targets.
+
+**Commands:**
+1. `STORAGEINFO` — verify active slot
+2. `RUN evening-arc` — alphabetic id routes to schema-v1 path
+3. While running, send `RUN evening-arc LOOP` — verify mid-run cancel + restart with loop
+4. While looping, send `STOP` — verify clean halt
+5. `RUN 2` — verify legacy numeric path still works (was `RUN 1` before the showcase program was removed in the flash-cleanup commit)
+6. `RUN nope` — verify "RUN failed: sequence-not-found"
+
+**Expected:**
+- Each step's `cmd` fires through `processCommand` at its `durationMs` mark.
+- `target: 2` steps only execute on board 2 — boards 1/3 advance the clock past them silently.
+- LOOP restarts at step 0 indefinitely until STOP.
+- `STOP` halts the runner AND any in-flight inner cmd (MOTION/SPLAY/etc).
+- `/status.json` exposes `runseq.{active, id, step, steps, loop, stepMs}`.
+
+**Result:**
+- [x] **2026-05-24 — PASS on hardware (firmware `6a4c606`, post-cleanup).** Bake with `test-arc` + `board-filter` sequences uploaded via `POST /sequences`. `RUN test-arc` fired all six steps at their `durationMs` marks; mid-run `RUN test-arc LOOP` cancelled cleanly and restarted with the loop flag; `STOP` halted the runner immediately. Legacy `RUN 2` still works. `RUN nope` returned the expected `RUN failed: sequence-not-found`. `/status.json` exposed the `runseq` block with the expected fields. Closes servo-3a9.
+
+---
+
 ## Host Regression Tests
 
 **2026-05-23:**
 - [x] `make -C test` — 7/7 time multiplier
 - [x] `make -C test motion` — 4/4 motion engine
 - [x] `make -C test storage` — 22/22 storage / CRC / bake validation
+
+**2026-05-24 (servo-3a9):**
+- [x] `make -C test sequence` — 8/8 sequence engine
+- [x] `make -C test size` — 116664 / 120831 (+4167 headroom; post-cleanup)
 
 ---
 

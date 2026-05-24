@@ -87,6 +87,30 @@ struct MotionRuntime {
   bool active;
 };
 
+// Browser-baked Sequence (schema v1 §3): an ordered list of commands
+// with millis()-based timing. Each step dispatches its cmd through
+// the existing processCommand() parser, so any RUN <id> step composes
+// PLAY/SPLAY/ROTATE/MOTION/MOVE/Sn/STOP/TIMESCALE for free.
+#define SEQ_ID_MAX_LEN 32
+#define SEQ_CMD_MAX_LEN 96
+#define SEQ_MAX_STEPS 16
+
+struct SequenceStep {
+  char cmd[SEQ_CMD_MAX_LEN + 1];
+  uint32_t durationMs;
+  uint8_t target;  // 0 = all boards; 1..3 = specific boardId; 255 = malformed (skip)
+};
+
+struct SequenceRuntime {
+  char id[SEQ_ID_MAX_LEN + 1];
+  uint8_t stepCount;
+  uint8_t currentStep;
+  unsigned long stepStartMs;
+  bool active;
+  bool loop;
+  SequenceStep steps[SEQ_MAX_STEPS];
+};
+
 extern Adafruit_PWMServoDriver pwm;
 
 extern ServoConfig servoConfig[NUM_SERVOS];
@@ -120,6 +144,7 @@ extern uint16_t currentProgramPositionIteration;
 extern uint8_t currentProgramSpeedStepIndex;
 extern uint16_t currentProgramSpeedIteration;
 extern MotionRuntime motionRuntime;
+extern SequenceRuntime sequenceRunner;
 
 void initServoDefaults();
 
@@ -151,6 +176,9 @@ bool startSequenceProgram(uint8_t programNum, bool loop);
 bool startMotionFromStorage(const char* motionId, bool announce);
 void cancelMotionPlayback();
 void updateMotion();
+bool startSequenceFromStorage(const char* sequenceId, bool loop, bool announce);
+void cancelSequencePlayback();
+void updateSequenceRunner();
 void updateSequenceProgram();
 void servoOff(uint8_t servo);
 void releaseServo(uint8_t servo);

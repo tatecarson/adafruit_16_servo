@@ -5,36 +5,10 @@
 #include "Sync.h"
 
 void showHelp() {
-  Serial.println(F("\n--- Commands ---"));
-  Serial.println(F("Testing / Calibration:"));
-  Serial.println(F("S<n> <deg>            Move servo n to degrees"));
-  Serial.println(F("P<n> <pulse>          Move servo n to raw pulse"));
-  Serial.println(F("TPULSE <pulse>        Set servos 0-2 to one raw pulse"));
-  Serial.println(F("CAL <n> <min> <max>   Set calibration"));
-  Serial.println(F("SWEEP <n>             Test sweep servo n"));
-  Serial.println(F("OFF <n>               Turn off servo n (blocked on protected winches)"));
-  Serial.println(F("RELEASE <n>           Force-release servo n"));
-  Serial.println(F("STATUS                Show all servos"));
-  Serial.println();
-  Serial.println(F("Performance / Installation:"));
-  Serial.println(F("UP <n> <pct>          Move servo n to absolute percent up"));
-  Serial.println(F("DOWN <n> <pct>        Move servo n to absolute percent down"));
-  Serial.println(F("MOVE <n> <deg> <ms>   Animated move (eased)"));
-  Serial.println(F("UMOVE <n> <pct> <ms>  Animated move to absolute percent up"));
-  Serial.println(F("DMOVE <n> <pct> <ms>  Animated move to absolute percent down"));
-  Serial.println(F("ALLUP <pct> [ms]      Move all protected winches up together"));
-  Serial.println(F("ALLDOWN <pct> [ms]    Move all protected winches down together"));
-  Serial.println(F("RIG <UP|DOWN> <pct> <spd> [ms]  Winches + DC motor test"));
-  Serial.println(F("MOTION <id>           Play baked browser Motion"));
-  Serial.println(F("PLAY <n> [LOOP]       Play sequence n"));
-  Serial.println(F("SPLAY <n> [LOOP]      Speed sequence (DC motor)"));
-  Serial.println(F("RUN <n> [LOOP]        Run a chained sequence program"));
-  Serial.println(F("STOP [n]              Stop all motion or hold one servo"));
-  Serial.println(F("TIMESCALE <n>         Scale sequence timing n times slower"));
-  Serial.println(F("ROTATE <spd>          DC motor rotation speed"));
-  Serial.println(F("STORAGEINFO           Show EEPROM slot + boardId state"));
-  Serial.println(F("BOARDID [n]           Get or set boardId (1..3)"));
-  Serial.println();
+  Serial.println(F("Commands: S/P/CAL/SWEEP/TPULSE/STATUS"));
+  Serial.println(F("UP/DOWN/ROTATE"));
+  Serial.println(F("MOTION/PLAY/SPLAY/RUN/STOP/TIMESCALE"));
+  Serial.println(F("STORAGEINFO/BOARDID. See README for syntax."));
 }
 
 // Helper: trim leading/trailing whitespace in place
@@ -71,36 +45,6 @@ bool containsStr(const char* str, const char* substr) {
   return strstr(str, substr) != nullptr;
 }
 
-bool parseRigDirection(const char* cmd, bool& percentUp, uint8_t& percent, int8_t& speed, uint32_t& duration) {
-  char direction[6] = {0};
-  int speedIn = 0;
-  unsigned long durationIn = 0;
-  int parsed = sscanf(cmd, "RIG %5s %hhu %d %lu", direction, &percent, &speedIn, &durationIn);
-  if (parsed < 4) {
-    durationIn = 0;
-    parsed = sscanf(cmd, "RIG %5s %hhu %d", direction, &percent, &speedIn);
-  }
-
-  if (parsed < 3) {
-    Serial.println(F("Use: RIG <UP|DOWN> <pct> <spd> [ms]"));
-    return false;
-  }
-
-  if (strcmp(direction, "UP") == 0) {
-    percentUp = true;
-  } else if (strcmp(direction, "DOWN") == 0) {
-    percentUp = false;
-  } else {
-    Serial.println(F("RIG direction must be UP or DOWN"));
-    return false;
-  }
-
-  percent = constrain(percent, 0, 100);
-  speed = (int8_t)constrain(speedIn, -100, 100);
-  duration = (uint32_t)durationIn;
-  return true;
-}
-
 bool startPositionSequence(uint8_t seqNum, bool loop, bool announce) {
   if (!selectPositionSequence(seqNum, currentSequence, currentSequenceLength)) {
     Serial.println(F("Unknown sequence"));
@@ -108,6 +52,7 @@ bool startPositionSequence(uint8_t seqNum, bool loop, bool announce) {
   }
 
   cancelMotionPlayback();
+  cancelSequencePlayback();
   sequenceLoop = loop;
   sequenceStartTime = millis();
   lastTriggeredKeyframe = 0;
@@ -130,6 +75,7 @@ bool startSpeedSequence(uint8_t seqNum, bool loop, bool announce) {
 
   speedSeqActive = true;
   cancelMotionPlayback();
+  cancelSequencePlayback();
   speedSeqLoop = loop;
   speedSeqStartTime = millis();
   lastTriggeredSpeedFrame = 0;
@@ -152,6 +98,7 @@ bool startSequenceProgram(uint8_t programNum, bool loop) {
   sequenceActive = false;
   speedSeqActive = false;
   cancelMotionPlayback();
+  cancelSequencePlayback();
   programActive = true;
   programLoop = loop;
   programPositionDone = (currentProgram->positionLength == 0);
@@ -205,69 +152,6 @@ void processCommand(char* cmd) {
       Serial.println(F("% down"));
     }
   }
-  else if (startsWith(cmd, "ALLUP")) {
-    int space1 = findChar(cmd, ' ', 0);
-    int space2 = (space1 > 0) ? findChar(cmd, ' ', space1 + 1) : -1;
-    if (space1 > 0) {
-      uint8_t percent = atoi(cmd + space1 + 1);
-      if (space2 > 0) {
-        uint16_t duration = atoi(cmd + space2 + 1);
-        moveAllProtectedWinchesPercent(true, percent, duration);
-        Serial.print(F("Moving all protected winches to "));
-        Serial.print(percent);
-        Serial.print(F("% up over "));
-        Serial.print(duration);
-        Serial.println(F("ms"));
-      } else {
-        setAllProtectedWinchesPercent(true, percent);
-        Serial.print(F("All protected winches -> "));
-        Serial.print(percent);
-        Serial.println(F("% up"));
-      }
-    }
-  }
-  else if (startsWith(cmd, "ALLDOWN")) {
-    int space1 = findChar(cmd, ' ', 0);
-    int space2 = (space1 > 0) ? findChar(cmd, ' ', space1 + 1) : -1;
-    if (space1 > 0) {
-      uint8_t percent = atoi(cmd + space1 + 1);
-      if (space2 > 0) {
-        uint16_t duration = atoi(cmd + space2 + 1);
-        moveAllProtectedWinchesPercent(false, percent, duration);
-        Serial.print(F("Moving all protected winches to "));
-        Serial.print(percent);
-        Serial.print(F("% down over "));
-        Serial.print(duration);
-        Serial.println(F("ms"));
-      } else {
-        setAllProtectedWinchesPercent(false, percent);
-        Serial.print(F("All protected winches -> "));
-        Serial.print(percent);
-        Serial.println(F("% down"));
-      }
-    }
-  }
-  else if (startsWith(cmd, "RIG")) {
-    bool percentUp = false;
-    uint8_t percent = 0;
-    int8_t speed = 0;
-    uint32_t duration = 0;
-    if (parseRigDirection(cmd, percentUp, percent, speed, duration) &&
-        setTestRigState(percentUp, percent, speed, duration)) {
-      Serial.print(F("Rig test: winches -> "));
-      Serial.print(percent);
-      Serial.print(percentUp ? F("% up, ") : F("% down, "));
-      Serial.print(F("motor -> "));
-      Serial.print(speed);
-      Serial.print(F("%"));
-      if (duration > 0) {
-        Serial.print(F(" over "));
-        Serial.print(duration);
-        Serial.print(F("ms"));
-      }
-      Serial.println();
-    }
-  }
   else if (startsWith(cmd, "PLAY")) {
     int space = findChar(cmd, ' ', 0);
     if (space > 0) {
@@ -296,9 +180,42 @@ void processCommand(char* cmd) {
   }
   else if (startsWith(cmd, "RUN")) {
     int space = findChar(cmd, ' ', 0);
-    if (space > 0) {
-      uint8_t programNum = atoi(cmd + space + 1);
-      startSequenceProgram(programNum, containsStr(cmd, "LOOP"));
+    if (space > 0 && cmd[space + 1] != '\0') {
+      // Disambiguate by argument shape:
+      //   RUN 1          → legacy in-firmware program by number
+      //   RUN evening-arc → schema v1 Sequence from active EEPROM bake
+      // Schema id regex (^[a-z][a-z0-9-]{0,31}$) forbids leading
+      // digits, so a digit-prefixed token unambiguously routes to the
+      // legacy path. Trailing " LOOP" works for both.
+      char first = cmd[space + 1];
+      // Only treat " LOOP" as a trailing token, not anywhere in the
+      // command. An id like "my-loop-seq" must not flip loop mode.
+      size_t cmdLen = strlen(cmd);
+      bool loop = (cmdLen >= 5 && strcmp(cmd + cmdLen - 5, " LOOP") == 0);
+      if (first >= '0' && first <= '9') {
+        uint8_t programNum = atoi(cmd + space + 1);
+        startSequenceProgram(programNum, loop);
+      } else {
+        // Extract just the id token (stop at space or null) so the
+        // optional LOOP suffix doesn't get passed to the loader.
+        // processCommand uppercased the whole cmd, but schema ids are
+        // lowercase kebab-case, so re-lower as we copy. The matcher in
+        // sequence_engine.h is case-insensitive (so the lookup would
+        // still work), but the copied id is what gets stored in
+        // sequenceRunner.id and surfaced on /status.json — keep it in
+        // the documented shape.
+        char idBuf[SEQ_ID_MAX_LEN + 1] = {0};
+        int i = 0;
+        int src = space + 1;
+        while (cmd[src] && cmd[src] != ' ' && i < (int)sizeof(idBuf) - 1) {
+          char c = cmd[src++];
+          if (c >= 'A' && c <= 'Z') c = (char)(c + ('a' - 'A'));
+          idBuf[i++] = c;
+        }
+        startSequenceFromStorage(idBuf, loop, true);
+      }
+    } else {
+      Serial.println(F("Use: RUN <n> | RUN <id> [LOOP]"));
     }
   }
   else if (startsWith(cmd, "TPULSE")) {
@@ -337,63 +254,6 @@ void processCommand(char* cmd) {
       sweepServo(servo);
     }
   }
-  else if (startsWith(cmd, "OFF")) {
-    int space = findChar(cmd, ' ', 0);
-    if (space > 0) {
-      uint8_t servo = atoi(cmd + space + 1);
-      servoOff(servo);
-    }
-  }
-  else if (startsWith(cmd, "RELEASE")) {
-    int space = findChar(cmd, ' ', 0);
-    if (space > 0) {
-      uint8_t servo = atoi(cmd + space + 1);
-      releaseServo(servo);
-    }
-  }
-  else if (startsWith(cmd, "MOVE") || startsWith(cmd, "M ")) {
-    int idx = startsWith(cmd, "MOVE") ? 5 : 2;
-    int space1 = findChar(cmd, ' ', idx);
-    int space2 = (space1 > 0) ? findChar(cmd, ' ', space1 + 1) : -1;
-    if (space1 > 0 && space2 > 0) {
-      uint8_t servo = atoi(cmd + idx);
-      uint16_t degrees = atoi(cmd + space1 + 1);
-      uint16_t duration = atoi(cmd + space2 + 1);
-      moveServoDegrees(servo, degrees, duration);
-      Serial.print(F("Moving servo ")); Serial.print(servo);
-      Serial.print(F(" to ")); Serial.print(degrees);
-      Serial.print(F(" deg over ")); Serial.print(duration);
-      Serial.println(F("ms"));
-    }
-  }
-  else if (startsWith(cmd, "UMOVE")) {
-    int space1 = findChar(cmd, ' ', 6);
-    int space2 = (space1 > 0) ? findChar(cmd, ' ', space1 + 1) : -1;
-    if (space1 > 0 && space2 > 0) {
-      uint8_t servo = atoi(cmd + 6);
-      uint8_t percent = atoi(cmd + space1 + 1);
-      uint16_t duration = atoi(cmd + space2 + 1);
-      moveServoPercentUp(servo, percent, duration);
-      Serial.print(F("Moving servo ")); Serial.print(servo);
-      Serial.print(F(" to ")); Serial.print(percent);
-      Serial.print(F("% up over ")); Serial.print(duration);
-      Serial.println(F("ms"));
-    }
-  }
-  else if (startsWith(cmd, "DMOVE")) {
-    int space1 = findChar(cmd, ' ', 6);
-    int space2 = (space1 > 0) ? findChar(cmd, ' ', space1 + 1) : -1;
-    if (space1 > 0 && space2 > 0) {
-      uint8_t servo = atoi(cmd + 6);
-      uint8_t percent = atoi(cmd + space1 + 1);
-      uint16_t duration = atoi(cmd + space2 + 1);
-      moveServoPercent(servo, percent, duration);
-      Serial.print(F("Moving servo ")); Serial.print(servo);
-      Serial.print(F(" to ")); Serial.print(percent);
-      Serial.print(F("% down over ")); Serial.print(duration);
-      Serial.println(F("ms"));
-    }
-  }
   else if (startsWith(cmd, "WAVE")) {
     // WAVE command removed for OTA partition headroom (servo-dz7). Kept as
     // a recognized no-op so old gallery scripts don't error out — they just
@@ -412,6 +272,7 @@ void processCommand(char* cmd) {
     speedSeqActive = false;
     programActive = false;
     cancelMotionPlayback();
+    cancelSequencePlayback();
     stopMotor();
     for (uint8_t i = 0; i < NUM_SERVOS; i++) {
       servoState[i].moving = false;
@@ -424,6 +285,7 @@ void processCommand(char* cmd) {
     if (space > 0) {
       int16_t speed = atoi(cmd + space + 1);
       cancelMotionPlayback();
+      cancelSequencePlayback();
       setMotorSpeed((int8_t)constrain(speed, -100, 100));
     } else {
       Serial.println(F("Use: ROTATE <-100 to 100>"));
@@ -477,8 +339,11 @@ inline bool shouldMirrorCommand(const char* upperCmd) {
   return startsWith(upperCmd, "PLAY ") || strcmp(upperCmd, "PLAY") == 0
       || startsWith(upperCmd, "SPLAY ") || strcmp(upperCmd, "SPLAY") == 0
       || startsWith(upperCmd, "MOTION ") || strcmp(upperCmd, "MOTION") == 0
+      // RUN (both legacy numeric and schema-v1 id forms) is mirrored
+      // so all boards start the same sequence in lock-step. Per-step
+      // target filtering happens inside each board's runner.
+      || startsWith(upperCmd, "RUN ") || strcmp(upperCmd, "RUN") == 0
       || startsWith(upperCmd, "ROTATE ") || strcmp(upperCmd, "ROTATE") == 0
-      || startsWith(upperCmd, "RIG ") || strcmp(upperCmd, "RIG") == 0
       || strcmp(upperCmd, "STOP") == 0;
 }
 

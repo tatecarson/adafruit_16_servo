@@ -68,7 +68,7 @@ The sketch is split into small headers included by `adafruit_16_servo.ino`:
 1. **Sketch shell** (`adafruit_16_servo.ino`): Wi-Fi/OTA/web setup, global runtime state, `setup()`, and `loop()`
 2. **Runtime model** (`servo_runtime.h`): `ServoConfig`, `ServoState`, sequence structs, and browser-baked `MotionRuntime`
 3. **Servo/DC control** (`servo_control.h`, `dc_motor.h`): calibrated servo writes, eased moves, percent travel commands, and motor speed/ramp helpers
-4. **Animation engines** (`animation_engine.h`, `motion_engine.h`): `PLAY`, `SPLAY`, `RUN`, and baked `MOTION <id>` playback (WAVE removed in servo-dz7 for OTA partition headroom)
+4. **Animation engines** (`animation_engine.h`, `motion_engine.h`, `sequence_engine.h`): `PLAY`, `SPLAY`, legacy `RUN <n>`, baked `MOTION <id>`, and baked `RUN <id>` Sequence dispatch (WAVE removed in servo-dz7 for OTA partition headroom)
 5. **Command interface** (`command_interface.h`): `showHelp()`, `processCommand()`, and mirrored command dispatch
 6. **Persistence/web** (`storage.h`, `bake_validate.h`, `Web.cpp`): EEPROM bake slots, schema validation, boardId, and HTTP endpoints
 
@@ -134,9 +134,11 @@ When adding features:
 **Always do these before committing changes:**
 
 1. **Manual test** - Use the `arduino-manual-testing` skill to create and execute test cases. Upload to Arduino and verify via Serial Monitor. Update `docs/TESTING.md` with pass/fail results as you test.
-2. **Update README.md** - Update command tables if adding/changing commands
-3. **Update docs/PROGRESS.md** - Add new commits to the Git Commits section, update "Current Issue" if relevant
-4. **Update AGENTS.md** (this file) - Update line numbers in "Code Organization" section if code structure changes significantly
+2. **Run host tests** - `make -C test`, `make -C test motion`, `make -C test storage` should all pass.
+3. **OTA budget guard (firmware changes only)** - `make -C test size` compiles the sketch with `arduino-cli` and FAILS if the binary exceeds the UNO R4 WiFi OTA partition cap of 122880 bytes. **Run this before pushing any firmware change.** OTA-flashing a binary over the cap silently bricks the cluster (servo-8zb root cause). The Makefile target documents the size relative to the budget with a headroom number.
+4. **Update README.md** - Update command tables if adding/changing commands
+5. **Update docs/PROGRESS.md** - Add new commits to the Git Commits section, update "Current Issue" if relevant
+6. **Update AGENTS.md** (this file) - Update line numbers in "Code Organization" section if code structure changes significantly
 
 ## Landing the Plane (Session Completion)
 

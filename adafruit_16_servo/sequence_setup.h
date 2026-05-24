@@ -46,119 +46,6 @@ static const uint8_t SEQUENCE_END_MARKER_SERVO = 255;
 // PLAY sequences (positional keyframes)
 // ============================================================================
 
-// Sequence 1: "Staggered sweep"
-// All servos sweep down, up, then to center with a slight stagger.
-const Keyframe sequence1[] PROGMEM = {
-  {0, 0, 0, 500},          // All servos to bottom, staggered
-  {1, 0, 100, 500},
-  {2, 0, 200, 500},
-  {0, 1500, 1000, 500},    // All servos to top, staggered
-  {1, 1500, 1100, 500},
-  {2, 1500, 1200, 500},
-  {0, 750, 2000, 500},     // Return to center
-  {1, 750, 2100, 500},
-  {2, 750, 2200, 500},
-  {SEQUENCE_END_MARKER_SERVO, 0, 2700, 0}
-};
-static const uint8_t sequence1Length = sizeof(sequence1) / sizeof(sequence1[0]);
-
-// Sequence 2: "Slow raise and lower"
-// Raises entire ring level over 4s, holds 2s, lowers over 4s.
-const Keyframe sequence2[] PROGMEM = {
-  {0, 1500, 0, 4000},       // All three raise together over 4s
-  {1, 1500, 0, 4000},
-  {2, 1500, 0, 4000},
-  {0, 0, 6000, 4000},       // Hold 2s, then lower over 4s
-  {1, 0, 6000, 4000},
-  {2, 0, 6000, 4000},
-  {SEQUENCE_END_MARKER_SERVO, 0, 10000, 0}
-};
-static const uint8_t sequence2Length = sizeof(sequence2) / sizeof(sequence2[0]);
-
-// Sequence 3: "Tilt sweep"
-// Tilts ring toward each winch point in turn, sweeping around the ring.
-const Keyframe sequence3[] PROGMEM = {
-  // Start level at bottom
-  {0, 0, 0, 1000},
-  {1, 0, 0, 1000},
-  {2, 0, 0, 1000},
-  // Tilt toward servo 0
-  {0, 1000, 1500, 2000},
-  // Level out, transition tilt to servo 1
-  {0, 0, 4000, 2000},
-  {1, 1000, 4000, 2000},
-  // Transition tilt to servo 2
-  {1, 0, 6500, 2000},
-  {2, 1000, 6500, 2000},
-  // Return to level
-  {2, 0, 9000, 2000},
-  {SEQUENCE_END_MARKER_SERVO, 0, 11000, 0}
-};
-static const uint8_t sequence3Length = sizeof(sequence3) / sizeof(sequence3[0]);
-
-// Sequence 4: "Gentle bob"
-// All winches oscillate low-to-mid — breathing/bobbing motion. Good for looping.
-const Keyframe sequence4[] PROGMEM = {
-  {0, 250, 0, 1500},        // Rise to ~1/6 height
-  {1, 250, 0, 1500},
-  {2, 250, 0, 1500},
-  {0, 750, 1500, 1500},     // Rise to mid
-  {1, 750, 1500, 1500},
-  {2, 750, 1500, 1500},
-  {0, 250, 3000, 1500},     // Back down
-  {1, 250, 3000, 1500},
-  {2, 250, 3000, 1500},
-  {SEQUENCE_END_MARKER_SERVO, 0, 4500, 0}
-};
-static const uint8_t sequence4Length = sizeof(sequence4) / sizeof(sequence4[0]);
-
-// Sequence 5: "Wave tilt"
-// Rolling wave — each winch takes turns as the high point. Best with LOOP.
-const Keyframe sequence5[] PROGMEM = {
-  // Servo 0 leads up
-  {0, 1000, 0, 1500},
-  {1, 300, 0, 1500},
-  {2, 300, 0, 1500},
-  // Servo 1 takes over
-  {0, 300, 1500, 1500},
-  {1, 1000, 1500, 1500},
-  {2, 300, 1500, 1500},
-  // Servo 2 takes over
-  {0, 300, 3000, 1500},
-  {1, 300, 3000, 1500},
-  {2, 1000, 3000, 1500},
-  // Reset to start position for smooth loop
-  {0, 1000, 4500, 1500},
-  {1, 300, 4500, 1500},
-  {2, 300, 4500, 1500},
-  {SEQUENCE_END_MARKER_SERVO, 0, 6000, 0}
-};
-static const uint8_t sequence5Length = sizeof(sequence5) / sizeof(sequence5[0]);
-
-// Sequence 6: "Tripod walk"
-// Two winches raise while the third stays on the base, then the contact point
-// rotates around the triangle. Good for a stepping / pivoting motion.
-const Keyframe sequence6[] PROGMEM = {
-  // Start with all three touching the base
-  {0, 0, 0, 1200},
-  {1, 0, 0, 1200},
-  {2, 0, 0, 1200},
-  // Servo 0 stays down while 1 and 2 lift
-  {1, 1100, 1200, 1800},
-  {2, 1100, 1200, 1800},
-  // Servo 1 becomes the contact point
-  {0, 1100, 3600, 1800},
-  {1, 0, 3600, 1800},
-  // Servo 2 becomes the contact point
-  {1, 1100, 6000, 1800},
-  {2, 0, 6000, 1800},
-  // Return to the first tripod stance for a clean loop
-  {0, 0, 8400, 1800},
-  {2, 1100, 8400, 1800},
-  {SEQUENCE_END_MARKER_SERVO, 0, 10400, 0}
-};
-static const uint8_t sequence6Length = sizeof(sequence6) / sizeof(sequence6[0]);
-
 // Sequence 7: "Progressive winch drop and reverse"
 // One winch drops to shallow, then two to medium, then all three to deep (full
 // down). Mirrors in reverse. Uses many small keyframes for smooth motion on
@@ -333,23 +220,6 @@ static const uint8_t speedSeq3Length = sizeof(speedSeq3) / sizeof(speedSeq3[0]);
 // - sequenceNumber: the existing PLAY or SPLAY ID to trigger
 // - repeatCount: number of consecutive times to run that sequence (minimum 1)
 
-// Program 1: "Showcase"
-const ProgramSequenceStep program1PositionTrack[] PROGMEM = {
-  {2, 2},   // Slow raise/lower twice
-  {3, 1},   // Sweep the tilt around the ring
-  {4, 4},   // Gentle bob for a while
-  {5, 6},   // Rolling wave tilt for longer texture
-};
-const ProgramSequenceStep program1SpeedTrack[] PROGMEM = {
-  {1, 1},   // Rotation sequence loops independently while the position track runs
-};
-const SequenceProgramDefinition program1 = {
-  program1PositionTrack,
-  sizeof(program1PositionTrack) / sizeof(program1PositionTrack[0]),
-  program1SpeedTrack,
-  sizeof(program1SpeedTrack) / sizeof(program1SpeedTrack[0]),
-};
-
 // Program 2: "Drift"
 // Rotation accelerates/decelerates while winches progressively drop and reverse.
 // Position and speed tracks run in parallel; peak rotation aligns with all
@@ -387,12 +257,6 @@ const SequenceProgramDefinition program3 = {
 // ============================================================================
 
 inline bool selectPositionSequence(uint8_t seqNum, const Keyframe*& outSeq, uint8_t& outLen) {
-  if (seqNum == 1) { outSeq = sequence1; outLen = sequence1Length; return true; }
-  if (seqNum == 2) { outSeq = sequence2; outLen = sequence2Length; return true; }
-  if (seqNum == 3) { outSeq = sequence3; outLen = sequence3Length; return true; }
-  if (seqNum == 4) { outSeq = sequence4; outLen = sequence4Length; return true; }
-  if (seqNum == 5) { outSeq = sequence5; outLen = sequence5Length; return true; }
-  if (seqNum == 6) { outSeq = sequence6; outLen = sequence6Length; return true; }
   if (seqNum == 7) { outSeq = sequence7; outLen = sequence7Length; return true; }
   if (seqNum == 8) { outSeq = sequence8; outLen = sequence8Length; return true; }
   return false;
@@ -406,7 +270,6 @@ inline bool selectSpeedSequence(uint8_t seqNum, const SpeedFrame*& outSeq, uint8
 }
 
 inline bool selectSequenceProgram(uint8_t programNum, const SequenceProgramDefinition*& outProgram) {
-  if (programNum == 1) { outProgram = &program1; return true; }
   if (programNum == 2) { outProgram = &program2; return true; }
   if (programNum == 3) { outProgram = &program3; return true; }
   return false;

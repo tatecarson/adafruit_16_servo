@@ -55,6 +55,7 @@ Interactive Serial interface for the Adafruit PCA9685 16-channel PWM/Servo drive
 | `PLAY <n> [LOOP]` | `PLAY 1 LOOP` | Play keyframe sequence |
 | `SPLAY <n> [LOOP]` | `SPLAY 1 LOOP` | Play speed sequence (continuous servos) |
 | `RUN <n> [LOOP]` | `RUN 1 LOOP` | Run a chained program made from existing `PLAY`/`SPLAY` sequences |
+| `RUN <id> [LOOP]` | `RUN evening-arc` | Run a browser-baked Sequence by id (schema v1) |
 | `TIMESCALE [n]` | `TIMESCALE 2` | Show or set the global sequence slowdown multiplier |
 | `STOP` | `STOP` | Stop all active motion and sequences |
 | `STOP <n>` | `STOP 0` | Stop and hold one servo at its current position |
