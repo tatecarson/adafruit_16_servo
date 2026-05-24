@@ -863,15 +863,21 @@ function renderBoardList() {
   freeTargetEl.innerHTML = boards.map(ip => `<option value="${ip}">${ip}</option>`).join("");
 }
 
+// This installation uses servos on PCA9685 channels 0, 1, 2 plus a single
+// DC motor. Firmware NUM_SERVOS is still 16, so /status.json returns all
+// 16 entries — slice to the channels actually wired up so the UI doesn't
+// pretend there are 13 nonexistent servos sitting at center pulse.
+const VISIBLE_SERVO_CHANNELS = 3;
+
 function renderMeters(servos) {
   if (!servos) {
     return '<div class="meters">' +
-      Array.from({ length: 16 }, (_, i) =>
+      Array.from({ length: VISIBLE_SERVO_CHANNELS }, (_, i) =>
         `<div class="meter"><div class="bar" style="height:${ZERO_PULSE_HEIGHT_PCT}%"></div><div class="lbl">${pad2(i)}</div></div>`
       ).join("") + "</div>";
   }
   return '<div class="meters">' +
-    servos.map(s => {
+    servos.filter(s => s.i < VISIBLE_SERVO_CHANNELS).map(s => {
       const h = pulseToPct(s.pulse);
       const t = pulseToPct(s.target);
       const cls = ["meter"];
@@ -889,7 +895,7 @@ function renderMeters(servos) {
 }
 
 function renderPills(s) {
-  const seq = s.sequence, ssq = s.speedSeq, wv = s.wave;
+  const seq = s.sequence, ssq = s.speedSeq, motion = s.motion, motor = s.motor;
   const out = [];
   if (s.otaInProgress) out.push(`<span class="pill alert">OTA UPLOAD</span>`);
   out.push(seq.active
@@ -898,9 +904,20 @@ function renderPills(s) {
   out.push(ssq.active
     ? `<span class="pill on">SPEED <span class="v">${ssq.len}</span>${ssq.loop ? ' ↺' : ''}</span>`
     : `<span class="pill">SPEED <span class="v">idle</span></span>`);
-  out.push(wv.active
-    ? `<span class="pill warn">WAVE <span class="v">${wv.start}–${wv.end}</span></span>`
-    : `<span class="pill">WAVE <span class="v">idle</span></span>`);
+  // Motion replaces what used to be the WAVE pill — same shape, different
+  // engine (browser-baked MOTION instead of in-firmware sine sweep).
+  if (motion) {
+    out.push(motion.active
+      ? `<span class="pill on">MOTION <span class="v">${motion.id || '—'}</span></span>`
+      : `<span class="pill">MOTION <span class="v">idle</span></span>`);
+  }
+  // DC motor status — sign-aware speed (-100..+100) plus a ramping indicator
+  // when motorState.ramping is true. Quiet when at rest.
+  if (motor) {
+    const spd = motor.speed | 0;
+    const cls = spd === 0 ? "" : (spd > 0 ? " on" : " warn");
+    out.push(`<span class="pill${cls}">DC <span class="v">${spd > 0 ? '+' : ''}${spd}</span>${motor.ramping ? ' ⇢' : ''}</span>`);
+  }
   return out.join("");
 }
 
@@ -965,7 +982,7 @@ function renderBoardCard(ip, idx, status, online) {
 
       <section class="channels">
         <div class="channels-head">
-          <span class="label">Servo Channels · 16ch</span>
+          <span class="label">Servo Channels · 3ch</span>
           <span class="scale">150 ┄ 375 ┄ 600 µs</span>
         </div>
         ${meters}
@@ -988,7 +1005,11 @@ function render() {
   const cards = boards.map((ip, i) => {
     const status = lastStatus.get(ip);
     const lastTs = lastSeen.get(ip) || 0;
-    const online = status && (Date.now() - lastTs < 4000);
+    // Use the same threshold as the header counter (OFFLINE_AFTER_MS). The
+    // previous hardcoded 4000 ms matched STATUS_TIMEOUT_MS, so any response
+    // that took close to the timeout slipped past and the card flickered
+    // offline even while the header still counted the board as online.
+    const online = status && (Date.now() - lastTs < OFFLINE_AFTER_MS);
     return renderBoardCard(ip, i, online ? status : status, !!online);
   });
   boardsEl.innerHTML = cards.join("");
