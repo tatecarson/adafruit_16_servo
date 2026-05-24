@@ -988,6 +988,7 @@
       <div class="gname">Import / Export</div>
       <div class="btns" style="align-items:center">
         <input id="bakeFile" type="file" accept=".json,application/json" style="font:500 11px/1 var(--mono); color:var(--ink-dim); max-width:220px">
+        <span id="bakeFileInfo" style="font:500 10px/1 var(--mono); color:var(--ink-mute)"></span>
         <button class="cmd compact" id="bakeExport">Export</button>
         <button class="cmd compact" id="bakeClear">Clear</button>
       </div>
@@ -1687,6 +1688,7 @@ const BAKE_TIMEOUT_MS = 90000;
 const INFO_TIMEOUT_MS = 15000;
 
 const bakeFileEl    = $("#bakeFile");
+const bakeFileInfoEl = $("#bakeFileInfo");
 const bakeExportEl  = $("#bakeExport");
 const bakeClearEl   = $("#bakeClear");
 const bakeAllEl     = $("#bakeAll");
@@ -1974,10 +1976,15 @@ bakeFileEl.addEventListener("change", async () => {
     delete parsed.bakedAtMs;
     saveLibrary(parsed);
     bakeLog(`imported library from ${f.name} (${text.length} bytes)`, "phosphor");
+    bakeFileInfoEl.textContent = `${f.name} · ${text.length}B`;
     renderLibSummary();
   } catch (e) {
     bakeLog(`import failed — ${e.message}`, "alert");
+    bakeFileInfoEl.textContent = `rejected: ${f.name}`;
   } finally {
+    // Clear the input's value so re-picking the same file (after editing
+    // it on disk) still fires `change`. The sibling label preserves the
+    // visible filename — see bakeFileInfoEl.
     bakeFileEl.value = "";
   }
 });
@@ -1998,6 +2005,7 @@ bakeExportEl.addEventListener("click", () => {
 bakeClearEl.addEventListener("click", () => {
   if (!confirm("Clear browser library? This does not touch the boards.")) return;
   localStorage.removeItem(LIB_KEY);
+  bakeFileInfoEl.textContent = "";
   bakeLog("library cleared", "amber");
   renderLibSummary();
 });
