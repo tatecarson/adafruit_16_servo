@@ -50,8 +50,14 @@ SequenceRuntime sequenceRunner;
 // the whole sketch (servo writes etc. would otherwise need PCA9685 mocks).
 struct DispatchedCmd { unsigned long ts; std::string cmd; };
 static std::vector<DispatchedCmd> dispatched;
+// Set by tests that need to simulate the cancellation-on-cmd-dispatch
+// behavior real commands have (PLAY/SPLAY/MOTION/STOP/Sn all call
+// cancelSequencePlayback). When true, every processCommand invocation
+// reaches back into the engine to attempt a cancel.
+static bool triggerNestedCancel = false;
 void processCommand(char* cmd) {
   dispatched.push_back({ _mock_millis, std::string(cmd) });
+  if (triggerNestedCancel) cancelSequencePlayback();
 }
 
 // motion_engine.h calls cancelSequencePlayback (cross-engine cancel) but
@@ -228,26 +234,37 @@ static void test_cancel_stops_runner() {
 }
 
 static void test_re_entry_guard_lets_step_cmds_dispatch_safely() {
-  // If a step's cmd recursively calls cancelSequencePlayback (which is
-  // what PLAY/SPLAY/etc do in the real firmware), the guard should
-  // prevent the runner from cancelling itself mid-step.
+  // With triggerNestedCancel set, every processCommand call invokes
+  // cancelSequencePlayback from inside the engine's step dispatch.
+  // The sequenceFiringStep guard should suppress that mid-dispatch
+  // self-cancel so the runner keeps walking through its steps.
+  // Without the guard, the very first step's dispatch would abort
+  // the sequence and active would flip to false immediately.
   reset_state();
   ASSERT_TRUE(storageWriteSlot((const uint8_t*)kBlob, strlen(kBlob)));
+  triggerNestedCancel = true;
   ASSERT_TRUE(startSequenceFromStorage("chord-test", false, false));
 
-  // Override the stub for this one test: call cancelSequencePlayback
-  // while inside processCommand to simulate a nested cancel from a
-  // dispatched cmd. The guard should make it a no-op.
-  auto saved = dispatched;
-  // We can't easily swap processCommand mid-test in this minimal
-  // framework, but we can directly call cancelSequencePlayback after
-  // the start (the runner is mid-firing-step on step 0). Verify the
-  // guard worked.
-  // Note: the guard only suppresses cancels DURING sequenceFireCurrentStep,
-  // not after. So this test verifies the structural correctness via
-  // the active flag remaining true after the start sequence completed
-  // its first fire.
+  // The first step fired and invoked the nested cancel. Guard should
+  // have suppressed it — runner is still active.
   ASSERT_TRUE(sequenceRunner.active);
+
+  // Drain the chord-test (two zero-duration steps + a 500 ms step).
+  // The two zero-duration steps cascade in one updateSequenceRunner
+  // tick; each dispatch attempts a nested cancel that the guard
+  // suppresses. The runner survives all three step dispatches.
+  updateSequenceRunner();
+  ASSERT_TRUE(sequenceRunner.active);
+  ASSERT_EQ(sequenceRunner.currentStep, 2);
+  // All three steps got dispatched in spite of the nested cancels.
+  ASSERT_EQ(dispatched.size(), 3);
+
+  // Sanity check: with the trigger cleared, cancelSequencePlayback
+  // called from top-level (no firing-step flag set) cancels normally.
+  // This guards against accidentally making the guard sticky.
+  triggerNestedCancel = false;
+  cancelSequencePlayback();
+  ASSERT_FALSE(sequenceRunner.active);
 }
 
 int main() {
