@@ -447,7 +447,6 @@ inline bool startMotionFromStorage(const char* motionId, bool announce) {
     return false;
   }
 
-  waveActive = false;
   sequenceActive = false;
   speedSeqActive = false;
   programActive = false;

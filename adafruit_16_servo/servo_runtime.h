@@ -92,14 +92,7 @@ extern Adafruit_PWMServoDriver pwm;
 extern ServoConfig servoConfig[NUM_SERVOS];
 extern ServoState servoState[NUM_SERVOS];
 
-extern bool waveActive;
-extern uint8_t waveStartServo;
-extern uint8_t waveEndServo;
-extern uint16_t waveSpeed;
-extern uint8_t wavePhaseOffset;
-extern uint16_t waveAmplitude;
-extern uint16_t waveCenter;
-extern unsigned long waveStartTime;
+// WAVE globals removed (servo-dz7). See animation_engine.h.
 
 extern uint16_t timeMultiplier;
 
@@ -169,6 +162,5 @@ void showHelp();
 void processCommand(char* cmd);
 void updateAnimations();
 void updateSpeedRamps();
-void updateWave();
 void updateSequence();
 void updateSpeedSequence();

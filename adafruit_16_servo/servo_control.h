@@ -107,7 +107,6 @@ void moveSequenceDegrees(uint8_t servo, uint16_t degrees, uint32_t duration) {
 }
 
 void stopActivePatterns() {
-  waveActive = false;
   sequenceActive = false;
   speedSeqActive = false;
   programActive = false;

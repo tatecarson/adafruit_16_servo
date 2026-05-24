@@ -30,17 +30,23 @@ fi
 PW_ENCODED=$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1], safe=''))" "$OTA_PASSWORD")
 
 # arduino-cli requires the sketch directory name to match the .ino base
-# name. When this checkout sits in a worktree (e.g. .claude/worktrees/foo)
-# that won't hold, so stage into a temp dir whose name matches the sketch.
+# name. Look for the .ino in two likely places:
+#   1. ./<SKETCH_NAME>.ino — pwd is already the sketch dir (e.g. after staging).
+#   2. ./<SKETCH_NAME>/<SKETCH_NAME>.ino — pwd is the repo root, sketch is in a
+#      subdir of the same name (normal layout for this repo; the old basename
+#      check passed here but pointed arduino-cli at the wrong level — servo-v0f).
+# If neither, stage into a temp dir whose name matches the sketch.
 SKETCH_NAME="adafruit_16_servo"
-SKETCH_DIR="$(pwd)"
-if [[ "$(basename "$SKETCH_DIR")" != "$SKETCH_NAME" ]]; then
-  # Dir name MUST exactly equal $SKETCH_NAME — arduino-cli looks for
-  # <dirname>.ino as the entry point.
+SKETCH_DIR=""
+if [[ -f "./${SKETCH_NAME}.ino" ]]; then
+  SKETCH_DIR="$(pwd)"
+elif [[ -f "./${SKETCH_NAME}/${SKETCH_NAME}.ino" ]]; then
+  SKETCH_DIR="$(pwd)/${SKETCH_NAME}"
+else
+  # Worktree with a different basename, or pwd unrelated to the repo. Stage.
   STAGE="/tmp/ota-stage/${SKETCH_NAME}"
   rm -rf "$STAGE"
   mkdir -p "$STAGE"
-  # *.cpp may not exist on every branch; nullglob so it doesn't fail.
   shopt -s nullglob
   cp -R adafruit_16_servo/*.ino adafruit_16_servo/*.h adafruit_16_servo/*.cpp "$STAGE"/
   shopt -u nullglob

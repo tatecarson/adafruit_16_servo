@@ -111,7 +111,11 @@ inline void updateMotorRamp() {
   if (t < 0.5f) {
     t = 4.0f * t * t * t;
   } else {
-    t = 1.0f - pow(-2.0f * t + 2.0f, 3.0f) / 2.0f;
+    // Hand-expand pow(u, 3) as u*u*u — same result, avoids pulling in powf
+    // (~936 bytes) and the double-precision math library it transitively
+    // depends on. The "ease-in-out cubic" curve is unchanged.
+    float u = -2.0f * t + 2.0f;
+    t = 1.0f - (u * u * u) / 2.0f;
   }
 
   float interp = (float)motorState.startSpeed +

@@ -51,7 +51,6 @@ Interactive Serial interface for the Adafruit PCA9685 16-channel PWM/Servo drive
 | `MOVE <n> <deg> <ms>` | `MOVE 0 180 2000` | Smooth animated move with easing |
 | `UMOVE <n> <pct> <ms>` | `UMOVE 0 80 3000` | Smooth animated move to absolute percent up |
 | `DMOVE <n> <pct> <ms>` | `DMOVE 0 30 3000` | Smooth animated move to absolute percent down |
-| `WAVE <s> <e> [spd] [off] [amp]` | `WAVE 0 2 50 30 90` | Start sine wave pattern on positional servos in the range |
 | `MOTION <id>` | `MOTION tidal-drift` | Play a browser-baked Motion from EEPROM |
 | `PLAY <n> [LOOP]` | `PLAY 1 LOOP` | Play keyframe sequence |
 | `SPLAY <n> [LOOP]` | `SPLAY 1 LOOP` | Play speed sequence (continuous servos) |
@@ -61,13 +60,6 @@ Interactive Serial interface for the Adafruit PCA9685 16-channel PWM/Servo drive
 | `STOP <n>` | `STOP 0` | Stop and hold one servo at its current position |
 | `MODE <n> STD\|CONT` | `MODE 2 CONT` | Set servo to standard or continuous |
 | `ROTATE <spd>` | `ROTATE 50` | Set installation rotation speed (-100 to 100) |
-
-### Wave Parameters
-
-- `s`, `e`: Start and end servo numbers
-- `spd`: Speed (ms per cycle, default 50)
-- `off`: Phase offset between servos in degrees (default 30)
-- `amp`: Amplitude in degrees (default 90)
 
 ### Creating Custom Sequences
 
@@ -180,7 +172,7 @@ STOP
 - Servo tracks interpolate linearly between keyframes and write calibrated PCA9685 pulses every loop tick
 - DC tracks interpolate signed speed values from `-100` to `100`
 - Each board executes only its local sliced tracks; if a baked track still has `boardId`, mismatched boards skip it
-- Manual servo/DC commands, `WAVE`, `PLAY`, `SPLAY`, `RUN`, or `STOP` cancel the active Motion cleanly
+- Manual servo/DC commands, `PLAY`, `SPLAY`, `RUN`, or `STOP` cancel the active Motion cleanly
 
 ### Sequence Time Scaling
 
