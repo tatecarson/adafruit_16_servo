@@ -987,7 +987,11 @@
     <div class="group">
       <div class="gname">Import / Export</div>
       <div class="btns" style="align-items:center">
-        <input id="bakeFile" type="file" accept=".json,application/json" style="font:500 11px/1 var(--mono); color:var(--ink-dim); max-width:220px">
+        <!-- color:transparent hides the native "No file selected" / filename
+             text next to the Browse button — bakeFileInfoEl below shows our
+             own label, which survives the bakeFileEl.value = "" reset. The
+             ::file-selector-button keeps its own color so Browse stays visible. -->
+        <input id="bakeFile" type="file" accept=".json,application/json" style="font:500 11px/1 var(--mono); color:transparent; width:90px">
         <span id="bakeFileInfo" style="font:500 10px/1 var(--mono); color:var(--ink-mute)"></span>
         <button class="cmd compact" id="bakeExport">Export</button>
         <button class="cmd compact" id="bakeClear">Clear</button>
