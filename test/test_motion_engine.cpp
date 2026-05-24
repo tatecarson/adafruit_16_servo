@@ -42,6 +42,11 @@ uint16_t currentProgramPositionIteration = 0;
 uint8_t currentProgramSpeedStepIndex = 0;
 uint16_t currentProgramSpeedIteration = 0;
 MotionRuntime motionRuntime;
+SequenceRuntime sequenceRunner;
+
+// sequence_engine.h isn't included in this test — provide a stub for the
+// cross-engine cancel hook so motion_engine.h compiles standalone.
+void cancelSequencePlayback() {}
 
 uint16_t sequenceDegreesToPulse(uint8_t servo, uint16_t degrees) {
   degrees = constrain(degrees, 0, 180);

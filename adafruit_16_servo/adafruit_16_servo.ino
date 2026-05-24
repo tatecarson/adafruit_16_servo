@@ -49,6 +49,7 @@
 
 #include "servo_control.h"
 #include "motion_engine.h"
+#include "sequence_engine.h"
 #include "animation_engine.h"
 #include "servo_maintenance.h"
 #include "command_interface.h"
@@ -168,6 +169,15 @@ void writeStatusJson(WiFiClient& client) {
   s += F(",\"durationMs\":");    s += motionRuntime.durationMs;
   s += F(",\"startedMs\":");     s += (motionRuntime.active ? (millis() - motionRuntime.startMs) : 0UL);
   s += '}';
+  // Sequence runner (servo-3a9) — schema v1 RUN <id> [LOOP]. Same id-emit
+  // safety argument as motion: parser-rejected charset + schema regex.
+  s += F(",\"runseq\":{\"active\":"); s += (sequenceRunner.active ? F("true") : F("false"));
+  s += F(",\"id\":\"");          s += sequenceRunner.id;
+  s += F("\",\"step\":");        s += sequenceRunner.currentStep;
+  s += F(",\"steps\":");         s += sequenceRunner.stepCount;
+  s += F(",\"loop\":");          s += (sequenceRunner.loop ? F("true") : F("false"));
+  s += F(",\"stepMs\":");        s += (sequenceRunner.active ? (millis() - sequenceRunner.stepStartMs) : 0UL);
+  s += '}';
   // WAVE removed (servo-dz7); browser clients should treat absence of the
   // "wave" key as wave-not-supported on this firmware build.
   s += F(",\"timescale\":");     s += timeMultiplier;
@@ -286,6 +296,9 @@ uint16_t currentProgramSpeedIteration = 0;
 
 // Browser-baked Motion playback state
 MotionRuntime motionRuntime;
+
+// Browser-baked Sequence runner state (servo-3a9)
+SequenceRuntime sequenceRunner;
 
 // Default calibration values
 #define DEFAULT_MIN 150
@@ -411,6 +424,7 @@ void loop() {
     updateAnimations();
     updateSpeedRamps();
     updateMotion();
+    updateSequenceRunner();
     updateSequence();
     updateSpeedSequence();
     updateSequenceProgram();

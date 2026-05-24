@@ -28,7 +28,7 @@ void showHelp() {
   Serial.println(F("MOTION <id>           Play baked browser Motion"));
   Serial.println(F("PLAY <n> [LOOP]       Play sequence n"));
   Serial.println(F("SPLAY <n> [LOOP]      Speed sequence (DC motor)"));
-  Serial.println(F("RUN <n> [LOOP]        Run a chained sequence program"));
+  Serial.println(F("RUN <n|id> [LOOP]     Run program (numeric) or baked Sequence (id)"));
   Serial.println(F("STOP [n]              Stop all motion or hold one servo"));
   Serial.println(F("TIMESCALE <n>         Scale sequence timing n times slower"));
   Serial.println(F("ROTATE <spd>          DC motor rotation speed"));
@@ -108,6 +108,7 @@ bool startPositionSequence(uint8_t seqNum, bool loop, bool announce) {
   }
 
   cancelMotionPlayback();
+  cancelSequencePlayback();
   sequenceLoop = loop;
   sequenceStartTime = millis();
   lastTriggeredKeyframe = 0;
@@ -130,6 +131,7 @@ bool startSpeedSequence(uint8_t seqNum, bool loop, bool announce) {
 
   speedSeqActive = true;
   cancelMotionPlayback();
+  cancelSequencePlayback();
   speedSeqLoop = loop;
   speedSeqStartTime = millis();
   lastTriggeredSpeedFrame = 0;
@@ -152,6 +154,7 @@ bool startSequenceProgram(uint8_t programNum, bool loop) {
   sequenceActive = false;
   speedSeqActive = false;
   cancelMotionPlayback();
+  cancelSequencePlayback();
   programActive = true;
   programLoop = loop;
   programPositionDone = (currentProgram->positionLength == 0);
@@ -296,9 +299,31 @@ void processCommand(char* cmd) {
   }
   else if (startsWith(cmd, "RUN")) {
     int space = findChar(cmd, ' ', 0);
-    if (space > 0) {
-      uint8_t programNum = atoi(cmd + space + 1);
-      startSequenceProgram(programNum, containsStr(cmd, "LOOP"));
+    if (space > 0 && cmd[space + 1] != '\0') {
+      // Disambiguate by argument shape:
+      //   RUN 1          → legacy in-firmware program by number
+      //   RUN evening-arc → schema v1 Sequence from active EEPROM bake
+      // Schema id regex (^[a-z][a-z0-9-]{0,31}$) forbids leading
+      // digits, so a digit-prefixed token unambiguously routes to the
+      // legacy path. Trailing " LOOP" works for both.
+      char first = cmd[space + 1];
+      bool loop = containsStr(cmd, "LOOP");
+      if (first >= '0' && first <= '9') {
+        uint8_t programNum = atoi(cmd + space + 1);
+        startSequenceProgram(programNum, loop);
+      } else {
+        // Extract just the id token (stop at space or null) so the
+        // optional LOOP suffix doesn't get passed to the loader.
+        char idBuf[SEQ_ID_MAX_LEN + 1] = {0};
+        int i = 0;
+        int src = space + 1;
+        while (cmd[src] && cmd[src] != ' ' && i < (int)sizeof(idBuf) - 1) {
+          idBuf[i++] = cmd[src++];
+        }
+        startSequenceFromStorage(idBuf, loop, true);
+      }
+    } else {
+      Serial.println(F("Use: RUN <n> | RUN <id> [LOOP]"));
     }
   }
   else if (startsWith(cmd, "TPULSE")) {
@@ -412,6 +437,7 @@ void processCommand(char* cmd) {
     speedSeqActive = false;
     programActive = false;
     cancelMotionPlayback();
+    cancelSequencePlayback();
     stopMotor();
     for (uint8_t i = 0; i < NUM_SERVOS; i++) {
       servoState[i].moving = false;
@@ -424,6 +450,7 @@ void processCommand(char* cmd) {
     if (space > 0) {
       int16_t speed = atoi(cmd + space + 1);
       cancelMotionPlayback();
+      cancelSequencePlayback();
       setMotorSpeed((int8_t)constrain(speed, -100, 100));
     } else {
       Serial.println(F("Use: ROTATE <-100 to 100>"));
@@ -477,6 +504,10 @@ inline bool shouldMirrorCommand(const char* upperCmd) {
   return startsWith(upperCmd, "PLAY ") || strcmp(upperCmd, "PLAY") == 0
       || startsWith(upperCmd, "SPLAY ") || strcmp(upperCmd, "SPLAY") == 0
       || startsWith(upperCmd, "MOTION ") || strcmp(upperCmd, "MOTION") == 0
+      // RUN (both legacy numeric and schema-v1 id forms) is mirrored
+      // so all boards start the same sequence in lock-step. Per-step
+      // target filtering happens inside each board's runner.
+      || startsWith(upperCmd, "RUN ") || strcmp(upperCmd, "RUN") == 0
       || startsWith(upperCmd, "ROTATE ") || strcmp(upperCmd, "ROTATE") == 0
       || startsWith(upperCmd, "RIG ") || strcmp(upperCmd, "RIG") == 0
       || strcmp(upperCmd, "STOP") == 0;

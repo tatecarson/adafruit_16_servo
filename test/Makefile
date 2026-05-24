@@ -32,6 +32,12 @@ run_motion_tests: test_motion_engine.cpp mock/Arduino.h mock/EEPROM.h mock/Adafr
 motion: run_motion_tests
 	./run_motion_tests
 
+run_sequence_tests: test_sequence_engine.cpp mock/Arduino.h mock/EEPROM.h mock/Adafruit_PWMServoDriver.h
+	$(CXX) $(CXXFLAGS) -o $@ $<
+
+sequence: run_sequence_tests
+	./run_sequence_tests
+
 # OTA budget guard — compile the sketch and fail loud if the resulting
 # binary exceeds the OTA partition limit. Catches the kind of accidental
 # growth that bricked the cluster during servo-8zb.
@@ -67,4 +73,4 @@ ota-budget:
 	fi
 
 clean:
-	rm -f $(TARGET) run_storage_tests run_motion_tests
+	rm -f $(TARGET) run_storage_tests run_motion_tests run_sequence_tests
