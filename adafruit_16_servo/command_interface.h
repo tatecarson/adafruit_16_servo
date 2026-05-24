@@ -188,18 +188,29 @@ void processCommand(char* cmd) {
       // digits, so a digit-prefixed token unambiguously routes to the
       // legacy path. Trailing " LOOP" works for both.
       char first = cmd[space + 1];
-      bool loop = containsStr(cmd, "LOOP");
+      // Only treat " LOOP" as a trailing token, not anywhere in the
+      // command. An id like "my-loop-seq" must not flip loop mode.
+      size_t cmdLen = strlen(cmd);
+      bool loop = (cmdLen >= 5 && strcmp(cmd + cmdLen - 5, " LOOP") == 0);
       if (first >= '0' && first <= '9') {
         uint8_t programNum = atoi(cmd + space + 1);
         startSequenceProgram(programNum, loop);
       } else {
         // Extract just the id token (stop at space or null) so the
         // optional LOOP suffix doesn't get passed to the loader.
+        // processCommand uppercased the whole cmd, but schema ids are
+        // lowercase kebab-case, so re-lower as we copy. The matcher in
+        // sequence_engine.h is case-insensitive (so the lookup would
+        // still work), but the copied id is what gets stored in
+        // sequenceRunner.id and surfaced on /status.json — keep it in
+        // the documented shape.
         char idBuf[SEQ_ID_MAX_LEN + 1] = {0};
         int i = 0;
         int src = space + 1;
         while (cmd[src] && cmd[src] != ' ' && i < (int)sizeof(idBuf) - 1) {
-          idBuf[i++] = cmd[src++];
+          char c = cmd[src++];
+          if (c >= 'A' && c <= 'Z') c = (char)(c + ('a' - 'A'));
+          idBuf[i++] = c;
         }
         startSequenceFromStorage(idBuf, loop, true);
       }

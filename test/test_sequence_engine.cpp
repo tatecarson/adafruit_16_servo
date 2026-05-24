@@ -106,6 +106,9 @@ static void reset_state() {
   motionRuntime.active = false;
   memset(&sequenceRunner, 0, sizeof(sequenceRunner));
   dispatched.clear();
+  // Cleared here so nested-cancel mode can't leak between tests if an
+  // earlier assertion throws before the test's own cleanup runs.
+  triggerNestedCancel = false;
   _mock_millis = 0;
 }
 
