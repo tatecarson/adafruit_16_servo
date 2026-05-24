@@ -1815,6 +1815,11 @@ async function fetchSequencesInfo(ip) {
 // write actually landed, GET /sequences/info will report bytesUsed equal to
 // the payload we just tried to send — treat that as success so we don't
 // retry and stack two bakes (see servo-3k3 notes from servo-28t smoke).
+// payload must be a Uint8Array, not a string — firmware's bytesUsed counts
+// UTF-8 bytes on the wire, but a JS string's .length counts UTF-16 code
+// units. Any non-ASCII char in a motion id/name/label would desync the
+// recovery probe and report a false failure. Caller encodes once via
+// TextEncoder and uses the resulting .length for size displays too.
 async function postSequences(ip, payload) {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), BAKE_TIMEOUT_MS);
@@ -1869,14 +1874,18 @@ async function bakeToAllBoards() {
     return;
   }
 
-  // Step 2: slice + diff per board, present aggregate diff.
+  // Step 2: slice + diff per board, present aggregate diff. Encode once
+  // with TextEncoder so every size display and the firmware comparison use
+  // real UTF-8 byte counts; JSON.stringify().length would lie on non-ASCII.
+  const encoder = new TextEncoder();
   const plans = targets.map(({ ip, boardId }) => {
     const blob = sliceForBoard(lib, boardId);
     const json = JSON.stringify(blob);
+    const bytes = encoder.encode(json);
     let prev = null;
     try { prev = JSON.parse(localStorage.getItem(LIB_SNAP_PREFIX + ip) || "null"); } catch {}
     const diff = diffBlob(prev, blob);
-    return { ip, boardId, blob, json, diff };
+    return { ip, boardId, blob, json, bytes, diff };
   });
 
   const agg = plans.reduce((a, p) => ({
@@ -1884,7 +1893,7 @@ async function bakeToAllBoards() {
     changed: a.changed + p.diff.changed,
     deleted: a.deleted + p.diff.deleted,
   }), { added: 0, changed: 0, deleted: 0 });
-  const sizes = plans.map(p => `${p.ip}=${p.json.length}B`).join(", ");
+  const sizes = plans.map(p => `${p.ip}=${p.bytes.length}B`).join(", ");
   const summary = `${agg.changed} changed, ${agg.added} new, ${agg.deleted} deleted across ${plans.length} board(s). sizes: ${sizes}`;
   if (!confirm(`Bake to ${plans.length} board(s)?\n\n${summary}\n\nProceed?`)) {
     bakeLog("bake cancelled", "amber");
@@ -1896,9 +1905,9 @@ async function bakeToAllBoards() {
   // Step 3: POST sequentially. A failure on one board doesn't block the rest.
   let ok = 0, fail = 0;
   for (const p of plans) {
-    bakeLog(`${p.ip} (board ${p.boardId}): POST ${p.json.length} bytes...`, "amber");
+    bakeLog(`${p.ip} (board ${p.boardId}): POST ${p.bytes.length} bytes...`, "amber");
     try {
-      const res = await postSequences(p.ip, p.json);
+      const res = await postSequences(p.ip, p.bytes);
       localStorage.setItem(LIB_SNAP_PREFIX + p.ip, p.json);
       bakeLog(`${p.ip}: ${res.recovered ? "recovered" : "ok"} — ${res.body}`, "phosphor");
       ok++;
