@@ -1903,11 +1903,28 @@ async function bakeToAllBoards() {
   }
   bakeLog(`bake done: ${ok} ok, ${fail} failed`, fail ? "alert" : "phosphor");
   bakeAllEl.disabled = false;
+  if (ok > 0 && restoreLockedSinceLastBake) {
+    restoreLockedSinceLastBake = false;
+    bakeRestoreEl.disabled = false;
+    bakeLog("restore re-armed", "phosphor");
+  }
 }
+
+// Firmware exposes a two-slot toggle, not a stack: a second consecutive
+// restore happily flips back to the slot you just left (storageHasPrevious
+// only refuses when the other slot's CRC is bad). To prevent an operator
+// from mistaking the button for undo and ping-ponging A↔B forever, the
+// browser locks restore after one successful flip and re-enables it only
+// after the next successful bake.
+let restoreLockedSinceLastBake = false;
 
 async function restorePreviousBake() {
   if (boards.length === 0) { bakeLog("no boards configured", "alert"); return; }
-  if (!confirm(`Restore previous bake on all ${boards.length} board(s)?\nFirmware flips the EEPROM slot pointer to the prior bake.`)) return;
+  if (restoreLockedSinceLastBake) {
+    bakeLog("restore already used since last bake — bake again to re-arm", "amber");
+    return;
+  }
+  if (!confirm(`Restore previous bake on all ${boards.length} board(s)?\nFirmware flips the EEPROM slot pointer to the prior bake.\n\nThis button locks after use; you must Bake again before another restore.`)) return;
   bakeRestoreEl.disabled = true;
   let ok = 0, fail = 0;
   for (const ip of boards) {
@@ -1933,7 +1950,13 @@ async function restorePreviousBake() {
     }
   }
   bakeLog(`restore done: ${ok} ok, ${fail} failed`, fail ? "alert" : "phosphor");
-  bakeRestoreEl.disabled = false;
+  if (ok > 0) {
+    restoreLockedSinceLastBake = true;
+    bakeRestoreEl.disabled = true;
+    bakeLog("restore locked — bake again to re-arm", "amber");
+  } else {
+    bakeRestoreEl.disabled = false;
+  }
 }
 
 bakeFileEl.addEventListener("change", async () => {
