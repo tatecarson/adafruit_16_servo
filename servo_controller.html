@@ -276,7 +276,8 @@
 
   .board {
     display: grid;
-    grid-template-columns: 200px 1fr 600px;
+    /* identity / telemetry / instrument panel — sized for 3 servos + 1 DC. */
+    grid-template-columns: 200px 1fr 560px;
     gap: 0;
     background: var(--bg-elev);
     border: 1px solid var(--rule-hi);
@@ -452,21 +453,29 @@
   }
   .timescale.warn .v { color: var(--amber); }
 
-  /* — right channels column — */
+  /* ============================================================
+     RIGHT COLUMN — actuator instrument panel
+     Four tiles (3 servos + 1 DC), each a self-contained gauge.
+     Replaces the old 16-channel meter strip — only three servos
+     and one DC motor are wired on this installation.
+     ============================================================ */
   .channels {
-    padding: 16px 18px;
+    padding: 14px 18px 16px;
     display: flex;
     flex-direction: column;
-    gap: 10px;
+    gap: 14px;
+    background:
+      radial-gradient(ellipse at top right, rgba(255,182,39,0.025), transparent 60%);
   }
   .channels-head {
     display: flex; justify-content: space-between; align-items: baseline;
+    gap: 12px;
   }
   .channels-head .label {
     font-family: var(--label);
     font-size: 9px;
     text-transform: uppercase;
-    letter-spacing: 0.28em;
+    letter-spacing: 0.32em;
     color: var(--ink-mute);
     font-weight: 600;
   }
@@ -474,16 +483,186 @@
     font-family: var(--mono);
     font-size: 9px;
     color: var(--ink-mute);
+    letter-spacing: 0.06em;
   }
-  .meters {
+
+  /* "Now playing" MOTION strip — prominent when active, ghost when idle. */
+  .nowplaying {
     display: grid;
-    grid-template-columns: repeat(16, 1fr);
+    grid-template-columns: auto 1fr auto;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 12px;
+    border: 1px solid var(--rule);
+    background: var(--bg-deep);
+    position: relative;
+    transition: border-color .25s, background .25s;
+  }
+  .nowplaying.on {
+    border-color: var(--phosphor);
+    background: linear-gradient(90deg, rgba(75,227,193,0.08), rgba(75,227,193,0.01));
+  }
+  .nowplaying .k {
+    font-family: var(--label);
+    font-size: 9px;
+    text-transform: uppercase;
+    letter-spacing: 0.28em;
+    color: var(--ink-mute);
+    font-weight: 700;
+  }
+  .nowplaying.on .k { color: var(--phosphor); }
+  .nowplaying .id {
+    font-family: var(--display);
+    font-size: 16px;
+    color: var(--ink);
+    letter-spacing: 0.03em;
+    text-transform: lowercase;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .nowplaying.idle .id { color: var(--ink-mute); }
+  .nowplaying .progress-mini {
+    width: 96px; height: 4px;
+    background: rgba(0,0,0,0.4);
+    border: 1px solid var(--rule);
+    position: relative;
+    overflow: hidden;
+  }
+  .nowplaying .progress-mini .fill {
+    position: absolute; inset: 0 auto 0 0;
+    background: var(--phosphor);
+    box-shadow: 0 0 6px var(--phosphor);
+    transition: width .25s linear;
+  }
+  .nowplaying.idle .progress-mini .fill { display: none; }
+
+  /* Instrument tile grid: 3 servos + DC, equal width. */
+  .instruments {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 10px;
+  }
+  .instrument {
+    position: relative;
+    border: 1px solid var(--rule);
+    background:
+      linear-gradient(to bottom, rgba(255,255,255,0.012), transparent 30%),
+      var(--bg-deep);
+    padding: 12px 12px 14px;
+    display: grid;
+    grid-template-rows: auto 1fr auto;
+    gap: 10px;
+    min-height: 168px;
+    overflow: hidden;
+    transition: border-color .2s;
+  }
+  .instrument::before {
+    /* corner tick — matches panel notch language */
+    content: ""; position: absolute; top: -1px; left: -1px;
+    width: 6px; height: 6px;
+    border-top: 1px solid var(--ink-mute);
+    border-left: 1px solid var(--ink-mute);
+    transition: border-color .2s;
+  }
+  .instrument.moving { border-color: var(--amber); }
+  .instrument.moving::before { border-color: var(--amber); }
+  .instrument.fwd { border-color: var(--phosphor); }
+  .instrument.fwd::before { border-color: var(--phosphor); }
+  .instrument.rev { border-color: var(--alert); }
+  .instrument.rev::before { border-color: var(--alert); }
+
+  /* tile header — channel kind + index + status word */
+  .ins-head {
+    display: flex; align-items: baseline; justify-content: space-between;
+    border-bottom: 1px dashed var(--rule);
+    padding-bottom: 6px;
+  }
+  .ins-head .kind {
+    font-family: var(--label);
+    font-size: 8px;
+    text-transform: uppercase;
+    letter-spacing: 0.28em;
+    color: var(--ink-mute);
+    font-weight: 700;
+  }
+  .ins-head .num {
+    font-family: var(--display);
+    font-size: 14px;
+    color: var(--ink);
+    letter-spacing: 0.02em;
+    line-height: 1;
+  }
+  .ins-head .state {
+    font-family: var(--label);
+    font-size: 8px;
+    text-transform: uppercase;
+    letter-spacing: 0.24em;
+    color: var(--ink-mute);
+    font-weight: 700;
+  }
+  .instrument.moving .ins-head .state { color: var(--amber); }
+  .instrument.fwd .ins-head .state { color: var(--phosphor); }
+  .instrument.rev .ins-head .state { color: var(--alert); }
+
+  /* SERVO BODY — big pulse readout + small gauge */
+  .ins-body {
+    display: grid;
+    grid-template-columns: 1fr 28px;
+    gap: 10px;
+    align-items: stretch;
+    min-height: 0;
+  }
+  .ins-readout {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
     gap: 4px;
-    height: 96px;
-    align-items: end;
-    padding: 4px 0 4px;
-    border-top: 1px solid var(--rule);
-    border-bottom: 1px solid var(--rule);
+    overflow: hidden;
+  }
+  .ins-readout .big {
+    font-family: var(--display);
+    font-size: 30px;
+    line-height: 0.9;
+    color: var(--ink);
+    letter-spacing: -0.01em;
+    font-variant-numeric: tabular-nums;
+  }
+  .instrument.moving .ins-readout .big { color: var(--amber); }
+  .ins-readout .unit {
+    font-family: var(--label);
+    font-size: 8px;
+    text-transform: uppercase;
+    letter-spacing: 0.32em;
+    color: var(--ink-mute);
+    font-weight: 600;
+    margin-top: -2px;
+  }
+  .ins-readout .second {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--ink-dim);
+    letter-spacing: 0.02em;
+    margin-top: 6px;
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  .ins-readout .second .k {
+    font-family: var(--label);
+    font-size: 8px;
+    text-transform: uppercase;
+    letter-spacing: 0.24em;
+    color: var(--ink-mute);
+    font-weight: 600;
+  }
+
+  /* Vertical pulse gauge — same scale as old meter (PULSE 150..600) */
+  .ins-gauge {
+    position: relative;
+    width: 28px;
+    background: rgba(0,0,0,0.35);
+    border: 1px solid var(--rule);
     background-image:
       linear-gradient(to bottom,
         transparent 0%, transparent 24%, var(--rule) 24%, var(--rule) calc(24% + 1px),
@@ -491,59 +670,136 @@
         transparent calc(49% + 1px), transparent 74%, var(--rule) 74%, var(--rule) calc(74% + 1px),
         transparent calc(74% + 1px));
   }
-  .meter {
-    position: relative;
-    height: 100%;
-    display: flex;
-    flex-direction: column;
-    justify-content: flex-end;
-    align-items: stretch;
-  }
-  .meter .bar {
-    width: 100%;
+  .ins-gauge .bar {
+    position: absolute; left: 1px; right: 1px; bottom: 1px;
     background: var(--ink-dim);
     transition: height .25s cubic-bezier(.4,.6,.2,1), background .2s;
     min-height: 1px;
   }
-  .meter.moving .bar { background: var(--amber); box-shadow: 0 0 6px var(--amber); }
-  .meter.cont .bar { background: var(--phosphor); }
-  .meter.cont.moving .bar { background: var(--phosphor); box-shadow: 0 0 6px var(--phosphor); }
-  .meter .ghost {
-    position: absolute;
-    left: 0; right: 0;
-    height: 1px;
-    background: var(--amber);
-    opacity: 0.55;
+  .instrument.moving .ins-gauge .bar { background: var(--amber); box-shadow: 0 0 8px var(--amber); }
+  .ins-gauge .ghost {
+    position: absolute; left: 1px; right: 1px; height: 1px;
+    background: var(--amber); opacity: 0.55;
     transition: bottom .25s cubic-bezier(.4,.6,.2,1);
   }
-  .meter .lbl {
-    position: absolute;
-    bottom: -16px; left: 0; right: 0;
-    text-align: center;
-    font-family: var(--mono);
-    font-size: 9px;
-    color: var(--ink-mute);
-    letter-spacing: 0;
+  .ins-gauge .mid {
+    position: absolute; left: -3px; right: -3px; top: 50%;
+    height: 1px;
+    background: var(--rule-hi);
+    pointer-events: none;
   }
-  .meter.moving .lbl { color: var(--amber); }
-  .meter.cont .lbl { color: var(--phosphor); }
-  .channel-numbers { height: 16px; }
 
-  .legend {
-    display: flex; gap: 14px;
+  /* tile footer — micro range hint */
+  .ins-foot {
+    display: flex;
+    justify-content: space-between;
+    font-family: var(--mono);
+    font-size: 8px;
+    color: var(--ink-mute);
+    letter-spacing: 0.04em;
+    padding-top: 4px;
+    border-top: 1px dashed var(--rule);
+  }
+  .ins-foot .k {
     font-family: var(--label);
-    font-size: 9px;
     text-transform: uppercase;
-    letter-spacing: 0.2em;
+    letter-spacing: 0.22em;
+    font-weight: 600;
+  }
+
+  /* DC TILE — bipolar horizontal gauge replaces vertical body */
+  .instrument.dc .ins-body { grid-template-columns: 1fr; }
+  .ins-dc-readout {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  .ins-dc-readout .big {
+    font-family: var(--display);
+    font-size: 30px;
+    line-height: 0.9;
+    color: var(--ink);
+    letter-spacing: -0.01em;
+    font-variant-numeric: tabular-nums;
+  }
+  .instrument.dc.fwd .ins-dc-readout .big { color: var(--phosphor); }
+  .instrument.dc.rev .ins-dc-readout .big { color: var(--alert); }
+  .ins-dc-readout .unit {
+    font-family: var(--label);
+    font-size: 8px;
+    text-transform: uppercase;
+    letter-spacing: 0.28em;
     color: var(--ink-mute);
     font-weight: 600;
-    margin-top: 4px;
   }
-  .legend .swatch { display: inline-block; width: 8px; height: 8px; margin-right: 6px; vertical-align: middle; }
-  .legend .swatch.std { background: var(--ink-dim); }
-  .legend .swatch.cont { background: var(--phosphor); }
-  .legend .swatch.move { background: var(--amber); }
-  .legend .swatch.target { background: transparent; border-bottom: 1px solid var(--amber); height: 0; vertical-align: 2px; }
+  /* Bipolar horizontal gauge: zero centered, fills toward sign. */
+  .ins-bipolar {
+    position: relative;
+    height: 14px;
+    background: rgba(0,0,0,0.35);
+    border: 1px solid var(--rule);
+    margin: 4px 0 2px;
+  }
+  .ins-bipolar::before {
+    /* centerline tick */
+    content: ""; position: absolute; left: 50%; top: -3px; bottom: -3px;
+    width: 1px; background: var(--ink-mute);
+  }
+  .ins-bipolar .fill {
+    position: absolute; top: 1px; bottom: 1px;
+    transition: left .25s cubic-bezier(.4,.6,.2,1), width .25s cubic-bezier(.4,.6,.2,1), background .2s;
+  }
+  .instrument.dc.fwd .ins-bipolar .fill { background: var(--phosphor); box-shadow: 0 0 8px var(--phosphor); }
+  .instrument.dc.rev .ins-bipolar .fill { background: var(--alert); box-shadow: 0 0 8px var(--alert); }
+  .ins-bipolar-labels {
+    display: flex;
+    justify-content: space-between;
+    font-family: var(--label);
+    font-size: 8px;
+    text-transform: uppercase;
+    letter-spacing: 0.28em;
+    color: var(--ink-mute);
+    font-weight: 700;
+  }
+  .ins-bipolar-labels .mid { color: var(--ink-mute); }
+
+  /* Command audit tail at bottom of right column */
+  .lastcmd {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 10px;
+    border: 1px solid var(--rule);
+    background: var(--bg-deep);
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--ink-dim);
+    letter-spacing: 0.02em;
+  }
+  .lastcmd .k {
+    font-family: var(--label);
+    font-size: 8px;
+    text-transform: uppercase;
+    letter-spacing: 0.28em;
+    color: var(--ink-mute);
+    font-weight: 700;
+  }
+  .lastcmd .cmd {
+    color: var(--amber);
+    font-family: var(--mono);
+    font-weight: 500;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .lastcmd .ts {
+    color: var(--ink-mute);
+    font-family: var(--mono);
+    font-size: 9px;
+  }
+  .lastcmd.idle .cmd { color: var(--ink-mute); font-style: italic; }
 
   /* — empty / loading states — */
   .placeholder {
@@ -784,6 +1040,11 @@ let boards = JSON.parse(localStorage.getItem(LS_KEY) || "null") || DEFAULT_BOARD
 let pollHandle = null;
 const lastSeen = new Map();
 const lastStatus = new Map();
+// Track the most recent command we sent to each board, for the audit tail at
+// the bottom of each instrument panel. Value: { cmd, ts }. "broadcast" target
+// records on whichever board actually accepted it (the one returned by
+// broadcastCommand) — that board is the UDP origin for the cluster mirror.
+const lastCmd = new Map();
 const startedAt = Date.now();
 
 // ============================================================
@@ -822,6 +1083,7 @@ async function sendCommand(ip, cmd) {
   const url = `http://${ip}/cmd?c=${encodeURIComponent(cmd)}`;
   try {
     await fetch(url, { method: "GET", mode: "no-cors", cache: "no-store" });
+    lastCmd.set(ip, { cmd, ts: Date.now() });
     return true;
   } catch (e) { console.warn("send failed", ip, e); return false; }
 }
@@ -863,33 +1125,216 @@ function renderBoardList() {
   freeTargetEl.innerHTML = boards.map(ip => `<option value="${ip}">${ip}</option>`).join("");
 }
 
-function renderMeters(servos) {
-  if (!servos) {
-    return '<div class="meters">' +
-      Array.from({ length: 16 }, (_, i) =>
-        `<div class="meter"><div class="bar" style="height:${ZERO_PULSE_HEIGHT_PCT}%"></div><div class="lbl">${pad2(i)}</div></div>`
-      ).join("") + "</div>";
+// This installation uses servos on PCA9685 channels 0, 1, 2 plus a single
+// DC motor. Firmware NUM_SERVOS is still 16, so /status.json returns all
+// 16 entries — render only the channels actually wired up so the UI doesn't
+// pretend there are 13 nonexistent servos sitting at center pulse.
+const VISIBLE_SERVO_CHANNELS = 3;
+
+// Approximate degrees from pulse using the firmware's calibration window.
+// Servos can have per-channel calibration; for a quick degree readout in the
+// UI a 150..600 → 0..180 mapping is close enough to be useful at a glance.
+function pulseToDeg(p) {
+  if (p == null) return null;
+  const clamped = Math.max(PULSE_MIN, Math.min(PULSE_MAX, p));
+  return Math.round((clamped - PULSE_MIN) / (PULSE_MAX - PULSE_MIN) * 180);
+}
+
+function renderServoInstrument(s, idx) {
+  // Skeleton (no telemetry yet)
+  if (!s) {
+    return `<article class="instrument" data-ch="${idx}">
+      <header class="ins-head">
+        <span class="kind">Servo</span>
+        <span class="num">${pad2(idx)}</span>
+        <span class="state">—</span>
+      </header>
+      <div class="ins-body">
+        <div class="ins-readout">
+          <div class="big">—</div>
+          <div class="unit">µs · pulse</div>
+          <div class="second"><span class="k">θ</span><span>—°</span></div>
+        </div>
+        <div class="ins-gauge"><div class="mid"></div><div class="bar" style="height:${ZERO_PULSE_HEIGHT_PCT}%"></div></div>
+      </div>
+      <footer class="ins-foot">
+        <span class="k">range</span><span>150 ┄ 600 µs</span>
+      </footer>
+    </article>`;
   }
-  return '<div class="meters">' +
-    servos.map(s => {
-      const h = pulseToPct(s.pulse);
-      const t = pulseToPct(s.target);
-      const cls = ["meter"];
-      if (s.cont) cls.push("cont");
-      if (s.moving) cls.push("moving");
-      // ghost line shown only if there's a meaningful target/pulse delta
-      const showGhost = Math.abs((s.target ?? s.pulse) - s.pulse) > 4;
-      const ghost = showGhost ? `<div class="ghost" style="bottom:${t}%"></div>` : "";
-      return `<div class="${cls.join(' ')}">
+
+  const h = pulseToPct(s.pulse);
+  const t = pulseToPct(s.target);
+  const deg = pulseToDeg(s.pulse);
+  const targetDeg = pulseToDeg(s.target);
+  const cls = ["instrument"];
+  if (s.moving) cls.push("moving");
+  if (s.cont) cls.push("cont");
+  const stateWord = s.stopped ? "off" : s.moving ? "moving" : (s.cont ? "cont" : "hold");
+  const showGhost = Math.abs((s.target ?? s.pulse) - s.pulse) > 4;
+  const ghost = showGhost ? `<div class="ghost" style="bottom:${t}%"></div>` : "";
+
+  return `<article class="${cls.join(' ')}" data-ch="${idx}">
+    <header class="ins-head">
+      <span class="kind">Servo</span>
+      <span class="num">${pad2(idx)}</span>
+      <span class="state">${stateWord}</span>
+    </header>
+    <div class="ins-body">
+      <div class="ins-readout">
+        <div class="big">${s.pulse}</div>
+        <div class="unit">µs · pulse</div>
+        <div class="second">
+          <span><span class="k">θ</span> ${deg != null ? deg + '°' : '—'}</span>
+          ${showGhost ? `<span><span class="k">→</span> ${targetDeg}°</span>` : ''}
+        </div>
+      </div>
+      <div class="ins-gauge">
+        <div class="mid"></div>
         ${ghost}
         <div class="bar" style="height:${h}%"></div>
-        <div class="lbl">${pad2(s.i)}</div>
-      </div>`;
-    }).join("") + "</div>";
+      </div>
+    </div>
+    <footer class="ins-foot">
+      <span class="k">range</span><span>150 ┄ 600 µs</span>
+    </footer>
+  </article>`;
+}
+
+function renderDcInstrument(motor) {
+  // Skeleton
+  if (!motor) {
+    return `<article class="instrument dc">
+      <header class="ins-head">
+        <span class="kind">DC</span>
+        <span class="num">M0</span>
+        <span class="state">—</span>
+      </header>
+      <div class="ins-body">
+        <div class="ins-dc-readout">
+          <span class="big">—</span>
+          <span class="unit">% · speed</span>
+        </div>
+        <div class="ins-bipolar"><div class="fill" style="left:50%; width:0"></div></div>
+        <div class="ins-bipolar-labels"><span>← rev</span><span class="mid">0</span><span>fwd →</span></div>
+      </div>
+      <footer class="ins-foot">
+        <span class="k">range</span><span>−100 ┄ +100</span>
+      </footer>
+    </article>`;
+  }
+
+  const spd = motor.speed | 0;
+  const cls = ["instrument", "dc"];
+  if (spd > 0) cls.push("fwd");
+  else if (spd < 0) cls.push("rev");
+  const stateWord = motor.ramping ? "ramping" : (spd === 0 ? "stop" : (spd > 0 ? "fwd" : "rev"));
+  // Bipolar fill — width is |spd|% of half the bar (50%), positioned from center.
+  const halfPct = Math.min(100, Math.abs(spd)) / 2;
+  const left = spd >= 0 ? 50 : (50 - halfPct);
+  const width = halfPct;
+  const signed = (spd > 0 ? '+' : '') + spd;
+
+  return `<article class="${cls.join(' ')}">
+    <header class="ins-head">
+      <span class="kind">DC</span>
+      <span class="num">M0</span>
+      <span class="state">${stateWord}</span>
+    </header>
+    <div class="ins-body">
+      <div class="ins-dc-readout">
+        <span class="big">${signed}</span>
+        <span class="unit">% · speed</span>
+      </div>
+      <div class="ins-bipolar">
+        <div class="fill" style="left:${left}%; width:${width}%"></div>
+      </div>
+      <div class="ins-bipolar-labels"><span>← rev</span><span class="mid">0</span><span>fwd →</span></div>
+    </div>
+    <footer class="ins-foot">
+      <span class="k">${motor.ramping ? 'ramping' : 'commit'}</span><span>−100 ┄ +100</span>
+    </footer>
+  </article>`;
+}
+
+function renderNowPlaying(motion, seq) {
+  // Highlights baked MOTION first; falls back to legacy SEQ progress.
+  const motionActive = motion && motion.active;
+  const seqActive = seq && seq.active;
+  if (motionActive) {
+    const elapsed = motion.startedMs || 0;
+    const total = motion.durationMs || 0;
+    const pct = total > 0 ? Math.min(100, (elapsed / total) * 100) : 0;
+    return `<div class="nowplaying on">
+      <span class="k">Now ▶</span>
+      <span class="id">${escapeHtml(motion.id || '—')}</span>
+      <div class="progress-mini"><div class="fill" style="width:${pct}%"></div></div>
+    </div>`;
+  }
+  if (seqActive) {
+    return `<div class="nowplaying on">
+      <span class="k">Seq ▶</span>
+      <span class="id">sequence · ${seq.len} frames${seq.loop ? ' ↺' : ''}</span>
+      <div class="progress-mini"><div class="fill" style="width:30%"></div></div>
+    </div>`;
+  }
+  return `<div class="nowplaying idle">
+    <span class="k">idle</span>
+    <span class="id">no motion playing</span>
+    <div class="progress-mini"><div class="fill"></div></div>
+  </div>`;
+}
+
+function renderLastCmd(ip) {
+  const entry = lastCmd.get(ip);
+  if (!entry) {
+    return `<div class="lastcmd idle">
+      <span class="k">› last</span>
+      <span class="cmd">—</span>
+      <span class="ts">—</span>
+    </div>`;
+  }
+  const ageMs = Date.now() - entry.ts;
+  return `<div class="lastcmd">
+    <span class="k">› last</span>
+    <span class="cmd">${escapeHtml(entry.cmd)}</span>
+    <span class="ts">${fmtAge(ageMs)}</span>
+  </div>`;
+}
+
+function fmtAge(ms) {
+  if (ms < 1000) return "now";
+  const s = Math.floor(ms / 1000);
+  if (s < 60) return s + "s ago";
+  const m = Math.floor(s / 60);
+  if (m < 60) return m + "m ago";
+  const h = Math.floor(m / 60);
+  return h + "h ago";
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => (
+    { '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]
+  ));
+}
+
+function renderInstruments(servos, motor, motion, seq, ip) {
+  const servoList = (servos || []).filter(s => s.i < VISIBLE_SERVO_CHANNELS);
+  const servoByCh = new Map(servoList.map(s => [s.i, s]));
+  const tiles = [];
+  for (let i = 0; i < VISIBLE_SERVO_CHANNELS; i++) {
+    tiles.push(renderServoInstrument(servoByCh.get(i) || null, i));
+  }
+  tiles.push(renderDcInstrument(motor || null));
+  return `
+    ${renderNowPlaying(motion, seq)}
+    <div class="instruments">${tiles.join("")}</div>
+    ${renderLastCmd(ip)}
+  `;
 }
 
 function renderPills(s) {
-  const seq = s.sequence, ssq = s.speedSeq, wv = s.wave;
+  const seq = s.sequence, ssq = s.speedSeq, motion = s.motion, motor = s.motor;
   const out = [];
   if (s.otaInProgress) out.push(`<span class="pill alert">OTA UPLOAD</span>`);
   out.push(seq.active
@@ -898,9 +1343,20 @@ function renderPills(s) {
   out.push(ssq.active
     ? `<span class="pill on">SPEED <span class="v">${ssq.len}</span>${ssq.loop ? ' ↺' : ''}</span>`
     : `<span class="pill">SPEED <span class="v">idle</span></span>`);
-  out.push(wv.active
-    ? `<span class="pill warn">WAVE <span class="v">${wv.start}–${wv.end}</span></span>`
-    : `<span class="pill">WAVE <span class="v">idle</span></span>`);
+  // Motion replaces what used to be the WAVE pill — same shape, different
+  // engine (browser-baked MOTION instead of in-firmware sine sweep).
+  if (motion) {
+    out.push(motion.active
+      ? `<span class="pill on">MOTION <span class="v">${motion.id || '—'}</span></span>`
+      : `<span class="pill">MOTION <span class="v">idle</span></span>`);
+  }
+  // DC motor status — sign-aware speed (-100..+100) plus a ramping indicator
+  // when motorState.ramping is true. Quiet when at rest.
+  if (motor) {
+    const spd = motor.speed | 0;
+    const cls = spd === 0 ? "" : (spd > 0 ? " on" : " warn");
+    out.push(`<span class="pill${cls}">DC <span class="v">${spd > 0 ? '+' : ''}${spd}</span>${motor.ramping ? ' ⇢' : ''}</span>`);
+  }
   return out.join("");
 }
 
@@ -931,7 +1387,9 @@ function renderBoardCard(ip, idx, status, online) {
   const ts = status?.timescale ?? 1;
   const tsCls = ts > 1 ? "warn" : "";
 
-  const meters = renderMeters(status?.servos);
+  const instruments = renderInstruments(
+    status?.servos, status?.motor, status?.motion, status?.sequence, ip
+  );
 
   const offlineNote = !online
     ? `<div style="color: var(--alert); font-family: var(--label); font-size: 10px; text-transform: uppercase; letter-spacing: 0.24em; font-weight:600;">Signal lost ${ageS != null ? '· ' + ageS + 's' : ''}</div>`
@@ -965,16 +1423,10 @@ function renderBoardCard(ip, idx, status, online) {
 
       <section class="channels">
         <div class="channels-head">
-          <span class="label">Servo Channels · 16ch</span>
-          <span class="scale">150 ┄ 375 ┄ 600 µs</span>
+          <span class="label">Actuators · 3 servo · 1 dc</span>
+          <span class="scale">pulse 150 ┄ 600 µs · dc ±100</span>
         </div>
-        ${meters}
-        <div class="legend">
-          <span><span class="swatch std"></span>standard</span>
-          <span><span class="swatch cont"></span>continuous</span>
-          <span><span class="swatch move"></span>in motion</span>
-          <span><span class="swatch target"></span>target line</span>
-        </div>
+        ${instruments}
       </section>
     </article>`;
 }
@@ -988,7 +1440,11 @@ function render() {
   const cards = boards.map((ip, i) => {
     const status = lastStatus.get(ip);
     const lastTs = lastSeen.get(ip) || 0;
-    const online = status && (Date.now() - lastTs < 4000);
+    // Use the same threshold as the header counter (OFFLINE_AFTER_MS). The
+    // previous hardcoded 4000 ms matched STATUS_TIMEOUT_MS, so any response
+    // that took close to the timeout slipped past and the card flickered
+    // offline even while the header still counted the board as online.
+    const online = status && (Date.now() - lastTs < OFFLINE_AFTER_MS);
     return renderBoardCard(ip, i, online ? status : status, !!online);
   });
   boardsEl.innerHTML = cards.join("");
