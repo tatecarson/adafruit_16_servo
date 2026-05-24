@@ -545,7 +545,7 @@ OTA path discovered to be unsafe during this session (silent flash corruption ab
 2. `RUN evening-arc` — alphabetic id routes to schema-v1 path
 3. While running, send `RUN evening-arc LOOP` — verify mid-run cancel + restart with loop
 4. While looping, send `STOP` — verify clean halt
-5. `RUN 1` — verify legacy numeric path still works
+5. `RUN 2` — verify legacy numeric path still works (was `RUN 1` before the showcase program was removed in the flash-cleanup commit)
 6. `RUN nope` — verify "RUN failed: sequence-not-found"
 
 **Expected:**
@@ -556,7 +556,7 @@ OTA path discovered to be unsafe during this session (silent flash corruption ab
 - `/status.json` exposes `runseq.{active, id, step, steps, loop, stepMs}`.
 
 **Result:**
-- [ ] Not tested yet on hardware
+- [x] **2026-05-24 — PASS on hardware (firmware `6a4c606`, post-cleanup).** Bake with `test-arc` + `board-filter` sequences uploaded via `POST /sequences`. `RUN test-arc` fired all six steps at their `durationMs` marks; mid-run `RUN test-arc LOOP` cancelled cleanly and restarted with the loop flag; `STOP` halted the runner immediately. Legacy `RUN 2` still works. `RUN nope` returned the expected `RUN failed: sequence-not-found`. `/status.json` exposed the `runseq` block with the expected fields. Closes servo-3a9.
 
 ---
 
@@ -569,7 +569,7 @@ OTA path discovered to be unsafe during this session (silent flash corruption ab
 
 **2026-05-24 (servo-3a9):**
 - [x] `make -C test sequence` — 8/8 sequence engine
-- [x] `make -C test size` — 121224 / 122880 (+1656 headroom)
+- [x] `make -C test size` — 116664 / 120831 (+4167 headroom; post-cleanup)
 
 ---
 
