@@ -965,10 +965,50 @@
   <div id="boards" class="grid"></div>
 
   <!-- ============================================================
-       OTA FIRMWARE UPLOAD
+       SEQUENCER BAKE
        ============================================================ -->
   <div class="sect">
     <span class="num">// 03</span>
+    <span class="label">Sequencer Bake</span>
+    <span class="rule"></span>
+    <span class="hint">browser library → POST /sequences · per-board slice · rollback</span>
+  </div>
+
+  <div class="panel cmdbar">
+    <span class="panel-corner-bl"></span><span class="panel-corner-br"></span>
+
+    <div class="group">
+      <div class="gname">Library <span class="key">LIB</span></div>
+      <div class="btns" style="align-items:center">
+        <span id="bakeLibSummary" style="font:500 11px/1.4 var(--mono); color:var(--ink-dim)">—</span>
+      </div>
+    </div>
+
+    <div class="group">
+      <div class="gname">Import / Export</div>
+      <div class="btns" style="align-items:center">
+        <input id="bakeFile" type="file" accept=".json,application/json" style="font:500 11px/1 var(--mono); color:var(--ink-dim); max-width:220px">
+        <button class="cmd compact" id="bakeExport">Export</button>
+        <button class="cmd compact" id="bakeClear">Clear</button>
+      </div>
+    </div>
+
+    <div class="group">
+      <div class="gname">Bake</div>
+      <div class="btns">
+        <button class="cmd amber" id="bakeAll" disabled>Bake to Boards</button>
+        <button class="cmd compact" id="bakeRestore">Restore Previous</button>
+      </div>
+    </div>
+
+    <div id="bakeLog" style="padding:8px 0 0; font:500 11px/1.6 var(--mono); color:var(--ink-dim); max-height:200px; overflow-y:auto"></div>
+  </div>
+
+  <!-- ============================================================
+       OTA FIRMWARE UPLOAD
+       ============================================================ -->
+  <div class="sect">
+    <span class="num">// 04</span>
     <span class="label">Firmware Upload</span>
     <span class="rule"></span>
     <span class="hint">browser OTA · select compiled .bin</span>
@@ -1626,10 +1666,321 @@ function renderOtaBoardButtons() {
 }
 
 // ============================================================
+// SEQUENCER BAKE
+// ============================================================
+// Library lives in localStorage under LIB_KEY: the bake-blob shape from
+// docs/sequencer-schema.md minus bakedAtMs (added at bake time). Per-board
+// snapshots of the last successful bake live under LIB_SNAP_PREFIX + ip,
+// used for the pre-bake diff and so the user can see what restore reverts to.
+const LIB_KEY = "servoCluster.library";
+const LIB_SNAP_PREFIX = "servoCluster.lastBake.";
+const SCHEMA_VERSION = 1;
+// Firmware POST /sequences blocks on EEPROM writes; the existing client
+// timeout was too short and surfaced false failures on slow boards.
+const BAKE_TIMEOUT_MS = 15000;
+
+const bakeFileEl    = $("#bakeFile");
+const bakeExportEl  = $("#bakeExport");
+const bakeClearEl   = $("#bakeClear");
+const bakeAllEl     = $("#bakeAll");
+const bakeRestoreEl = $("#bakeRestore");
+const bakeLogEl     = $("#bakeLog");
+const bakeSummaryEl = $("#bakeLibSummary");
+
+function bakeLog(msg, color) {
+  const line = document.createElement("div");
+  if (color) line.style.color = `var(--${color})`;
+  line.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+  bakeLogEl.prepend(line);
+}
+
+function loadLibrary() {
+  const raw = localStorage.getItem(LIB_KEY);
+  if (!raw) return null;
+  try { return JSON.parse(raw); } catch { return null; }
+}
+
+function saveLibrary(lib) {
+  localStorage.setItem(LIB_KEY, JSON.stringify(lib));
+}
+
+function emptyLibrary() {
+  return {
+    schemaVersion: SCHEMA_VERSION,
+    motions: [],
+    sequences: [],
+    setlists: [],
+    activeSetlistId: null,
+    schedulerConfig: { leaderBoardId: 1, graceMs: 10000, tagEnergy: [] },
+  };
+}
+
+function renderLibSummary() {
+  const lib = loadLibrary();
+  if (!lib) {
+    bakeSummaryEl.textContent = "no library — import a JSON file to begin";
+    bakeAllEl.disabled = true;
+    return;
+  }
+  const m = (lib.motions || []).length;
+  const s = (lib.sequences || []).length;
+  const l = (lib.setlists || []).length;
+  const active = lib.activeSetlistId || "none";
+  bakeSummaryEl.textContent = `${m} motion${m===1?"":"s"} · ${s} sequence${s===1?"":"s"} · ${l} setlist${l===1?"":"s"} · active=${active}`;
+  bakeAllEl.disabled = boards.length === 0;
+}
+
+// Slice the library for a single board: keep only Motion tracks whose
+// boardId matches; drop Motions that end up with no tracks. Sequences,
+// setlists, schedulerConfig, activeSetlistId are full-library on every
+// board so any board can become leader (per schema §5).
+function sliceForBoard(lib, boardId) {
+  const motions = [];
+  for (const m of lib.motions || []) {
+    const tracks = (m.tracks || []).filter(t => t.boardId === boardId);
+    if (tracks.length === 0) continue;
+    motions.push({ ...m, tracks });
+  }
+  return {
+    schemaVersion: SCHEMA_VERSION,
+    bakedAtMs: Date.now(),
+    motions,
+    sequences: lib.sequences || [],
+    setlists: lib.setlists || [],
+    activeSetlistId: lib.activeSetlistId ?? null,
+    schedulerConfig: lib.schedulerConfig || { leaderBoardId: 1, graceMs: 10000, tagEnergy: [] },
+  };
+}
+
+// Diff one sliced blob against the last snapshot for the same board.
+// Returns counts across motions+sequences+setlists. We count an item as
+// "changed" if its id matches a snapshot id but its minified JSON differs.
+function diffBlob(prev, next) {
+  function indexById(arr) {
+    const m = new Map();
+    for (const x of arr || []) m.set(x.id, JSON.stringify(x));
+    return m;
+  }
+  const out = { added: 0, changed: 0, deleted: 0 };
+  for (const field of ["motions", "sequences", "setlists"]) {
+    const prevMap = indexById(prev?.[field]);
+    const nextMap = indexById(next?.[field]);
+    for (const [id, json] of nextMap) {
+      if (!prevMap.has(id)) out.added++;
+      else if (prevMap.get(id) !== json) out.changed++;
+    }
+    for (const id of prevMap.keys()) {
+      if (!nextMap.has(id)) out.deleted++;
+    }
+  }
+  return out;
+}
+
+async function fetchBoardId(ip) {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), 4000);
+  try {
+    const r = await fetch(`http://${ip}/boardId`, { signal: ctrl.signal, cache: "no-store" });
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    const j = await r.json();
+    if (!j.ok || typeof j.boardId !== "number") throw new Error("bad response");
+    return j.boardId;
+  } finally { clearTimeout(t); }
+}
+
+async function fetchSequencesInfo(ip) {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), 4000);
+  try {
+    const r = await fetch(`http://${ip}/sequences/info`, { signal: ctrl.signal, cache: "no-store" });
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    return await r.json();
+  } finally { clearTimeout(t); }
+}
+
+// POST /sequences with a long timeout. If the timeout fires but the EEPROM
+// write actually landed, GET /sequences/info will report bytesUsed equal to
+// the payload we just tried to send — treat that as success so we don't
+// retry and stack two bakes (see servo-3k3 notes from servo-28t smoke).
+async function postSequences(ip, payload) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), BAKE_TIMEOUT_MS);
+  try {
+    const r = await fetch(`http://${ip}/sequences`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: payload,
+      signal: ctrl.signal,
+    });
+    const text = await r.text();
+    if (!r.ok) throw new Error(`HTTP ${r.status} ${text}`);
+    return { ok: true, body: text };
+  } catch (e) {
+    if (e.name !== "AbortError") throw e;
+    // Check whether the bake actually landed despite the client timeout.
+    try {
+      const info = await fetchSequencesInfo(ip);
+      if (info.ok && info.bytesUsed === payload.length) {
+        return { ok: true, body: "(client timeout, info confirms bytesUsed match)", recovered: true };
+      }
+    } catch { /* fall through */ }
+    throw new Error("client timeout, bake not confirmed");
+  } finally { clearTimeout(timer); }
+}
+
+async function bakeToAllBoards() {
+  const lib = loadLibrary();
+  if (!lib) { bakeLog("no library loaded", "alert"); return; }
+  if (lib.schemaVersion !== SCHEMA_VERSION) {
+    bakeLog(`unsupported schemaVersion ${lib.schemaVersion}, expected ${SCHEMA_VERSION}`, "alert");
+    return;
+  }
+  if (boards.length === 0) { bakeLog("no boards configured", "alert"); return; }
+
+  bakeAllEl.disabled = true;
+  bakeLog("resolving boardId for each board...");
+
+  // Step 1: resolve boardIds. Skip boards that don't answer.
+  const targets = [];
+  for (const ip of boards) {
+    try {
+      const id = await fetchBoardId(ip);
+      targets.push({ ip, boardId: id });
+    } catch (e) {
+      bakeLog(`${ip}: unreachable — ${e.message}`, "alert");
+    }
+  }
+  if (targets.length === 0) {
+    bakeLog("no reachable boards", "alert");
+    bakeAllEl.disabled = false;
+    return;
+  }
+
+  // Step 2: slice + diff per board, present aggregate diff.
+  const plans = targets.map(({ ip, boardId }) => {
+    const blob = sliceForBoard(lib, boardId);
+    const json = JSON.stringify(blob);
+    let prev = null;
+    try { prev = JSON.parse(localStorage.getItem(LIB_SNAP_PREFIX + ip) || "null"); } catch {}
+    const diff = diffBlob(prev, blob);
+    return { ip, boardId, blob, json, diff };
+  });
+
+  const agg = plans.reduce((a, p) => ({
+    added:   a.added   + p.diff.added,
+    changed: a.changed + p.diff.changed,
+    deleted: a.deleted + p.diff.deleted,
+  }), { added: 0, changed: 0, deleted: 0 });
+  const sizes = plans.map(p => `${p.ip}=${p.json.length}B`).join(", ");
+  const summary = `${agg.changed} changed, ${agg.added} new, ${agg.deleted} deleted across ${plans.length} board(s). sizes: ${sizes}`;
+  if (!confirm(`Bake to ${plans.length} board(s)?\n\n${summary}\n\nProceed?`)) {
+    bakeLog("bake cancelled", "amber");
+    bakeAllEl.disabled = false;
+    return;
+  }
+  bakeLog(summary);
+
+  // Step 3: POST sequentially. A failure on one board doesn't block the rest.
+  let ok = 0, fail = 0;
+  for (const p of plans) {
+    bakeLog(`${p.ip} (board ${p.boardId}): POST ${p.json.length} bytes...`, "amber");
+    try {
+      const res = await postSequences(p.ip, p.json);
+      localStorage.setItem(LIB_SNAP_PREFIX + p.ip, p.json);
+      bakeLog(`${p.ip}: ${res.recovered ? "recovered" : "ok"} — ${res.body}`, "phosphor");
+      ok++;
+    } catch (e) {
+      bakeLog(`${p.ip}: failed — ${e.message}`, "alert");
+      fail++;
+    }
+  }
+  bakeLog(`bake done: ${ok} ok, ${fail} failed`, fail ? "alert" : "phosphor");
+  bakeAllEl.disabled = false;
+}
+
+async function restorePreviousBake() {
+  if (boards.length === 0) { bakeLog("no boards configured", "alert"); return; }
+  if (!confirm(`Restore previous bake on all ${boards.length} board(s)?\nFirmware flips the EEPROM slot pointer to the prior bake.`)) return;
+  bakeRestoreEl.disabled = true;
+  let ok = 0, fail = 0;
+  for (const ip of boards) {
+    bakeLog(`${ip}: restoring...`, "amber");
+    try {
+      const ctrl = new AbortController();
+      const t = setTimeout(() => ctrl.abort(), BAKE_TIMEOUT_MS);
+      const r = await fetch(`http://${ip}/sequences/restore`, { method: "POST", signal: ctrl.signal });
+      clearTimeout(t);
+      const text = await r.text();
+      if (r.ok) {
+        bakeLog(`${ip}: restored — ${text}`, "phosphor");
+        // Clear the snapshot: we no longer know what's on the board.
+        localStorage.removeItem(LIB_SNAP_PREFIX + ip);
+        ok++;
+      } else {
+        bakeLog(`${ip}: rejected (${r.status}) — ${text}`, "alert");
+        fail++;
+      }
+    } catch (e) {
+      bakeLog(`${ip}: error — ${e.message}`, "alert");
+      fail++;
+    }
+  }
+  bakeLog(`restore done: ${ok} ok, ${fail} failed`, fail ? "alert" : "phosphor");
+  bakeRestoreEl.disabled = false;
+}
+
+bakeFileEl.addEventListener("change", async () => {
+  const f = bakeFileEl.files[0];
+  if (!f) return;
+  try {
+    const text = await f.text();
+    const parsed = JSON.parse(text);
+    if (parsed.schemaVersion !== SCHEMA_VERSION) {
+      bakeLog(`import rejected: schemaVersion=${parsed.schemaVersion}, expected ${SCHEMA_VERSION}`, "alert");
+      bakeFileEl.value = "";
+      return;
+    }
+    // Strip bakedAtMs if present — we add it fresh at bake time.
+    delete parsed.bakedAtMs;
+    saveLibrary(parsed);
+    bakeLog(`imported library from ${f.name} (${text.length} bytes)`, "phosphor");
+    renderLibSummary();
+  } catch (e) {
+    bakeLog(`import failed — ${e.message}`, "alert");
+  } finally {
+    bakeFileEl.value = "";
+  }
+});
+
+bakeExportEl.addEventListener("click", () => {
+  const lib = loadLibrary() || emptyLibrary();
+  const blob = new Blob([JSON.stringify(lib, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+  a.href = url;
+  a.download = `servo-library-${stamp}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+  bakeLog("exported library");
+});
+
+bakeClearEl.addEventListener("click", () => {
+  if (!confirm("Clear browser library? This does not touch the boards.")) return;
+  localStorage.removeItem(LIB_KEY);
+  bakeLog("library cleared", "amber");
+  renderLibSummary();
+});
+
+bakeAllEl.addEventListener("click", bakeToAllBoards);
+bakeRestoreEl.addEventListener("click", restorePreviousBake);
+
+// ============================================================
 // INIT
 // ============================================================
 renderBoardList();
 renderOtaBoardButtons();
+renderLibSummary();
 render();
 startPolling();
 </script>
