@@ -2861,6 +2861,18 @@ function scrubMotionTo(atMs, live = true) {
   renderMotionEditor();
 }
 
+// Pending setTimeout IDs for the end-of-playback STOP spray. We
+// schedule ~30 STOPs over 3 seconds and need the ability to cancel
+// them all if the user presses Play again within that window —
+// otherwise leftover STOPs from the previous run land in the middle
+// of the new run and the motor stutters unpredictably (which is
+// exactly what "2nd/3rd play is erratic" looked like).
+let motionStopSprayTimers = [];
+function cancelMotionStopSpray() {
+  for (const t of motionStopSprayTimers) clearTimeout(t);
+  motionStopSprayTimers = [];
+}
+
 // Motion frame fetch. Fire-and-forget — awaiting blocks on the
 // connection-pool back-pressure we're explicitly trying to avoid.
 // At 5Hz to a single board the Arduino's HTTP server keeps up
@@ -2915,18 +2927,22 @@ function stopMotionPlayback(sendStop = false) {
   motionPlayEl.disabled = false;
   motionStopEl.disabled = true;
   if (sendStop) {
-    // STOP spray. Even with the inflight cap and abort, ROTATE bytes
-    // already pushed into the Arduino's TCP buffers will be processed
-    // serially. With 6 HTTP/1.1 connections each maintaining its own
-    // FIFO and the Arduino round-robining between them, a stray
-    // ROTATE on a slow connection can fire briefly between two STOPs
-    // on faster connections. Fire STOPs at 100ms intervals for 3
-    // seconds — long enough that the LAST command processed on every
-    // connection is STOP no matter how slow the drain. Bypass the
-    // inflight cap by going through sendCommand (which doesn't gate).
+    // STOP spray. Even with abort, ROTATE bytes already pushed into
+    // the Arduino's TCP buffers will be processed serially. With 6
+    // HTTP/1.1 connections each maintaining its own FIFO and the
+    // Arduino round-robining between them, a stray ROTATE on a slow
+    // connection can fire briefly between two STOPs on faster
+    // connections. Fire STOPs at 100ms intervals for 3 seconds —
+    // long enough that the LAST command processed on every connection
+    // is STOP no matter how slow the drain. We track the timer IDs
+    // so a fresh Play within 3 seconds can cancel them before they
+    // fire mid-new-playback (bug: 2nd/3rd play erratic).
+    cancelMotionStopSpray();
     const fireStops = () => boards.forEach(ip => sendCommand(ip, "STOP"));
     fireStops();
-    for (let i = 1; i <= 30; i++) setTimeout(fireStops, i * 100);
+    for (let i = 1; i <= 30; i++) {
+      motionStopSprayTimers.push(setTimeout(fireStops, i * 100));
+    }
   }
   setMotionStatus("idle");
 }
@@ -2986,6 +3002,10 @@ function playMotionLive() {
   const motion = readMotionFromDom();
   saveCurrentMotion(motion);
   stopMotionPlayback(false);
+  // Critical: cancel any STOP spray still firing from the previous
+  // run. Without this, leftover STOPs land in the middle of the new
+  // playback and the motor stutters at apparently-random times.
+  cancelMotionStopSpray();
   motionPlayer = {
     active: true, raf: 0,
     startedAt: performance.now(), lastSendAt: 0,
