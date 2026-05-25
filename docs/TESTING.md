@@ -595,6 +595,13 @@ OTA path discovered to be unsafe during this session (silent flash corruption ab
 - [x] `make -C test sequence` — 8/8 sequence engine
 - [x] `make -C test size` — 116664 / 120831 (+4167 headroom; post-cleanup)
 
+**2026-05-25 (servo-iga browser Motion editor):**
+- [x] `node -e "new Function(...inline script...)"` — `servo_controller.html` inline script syntax OK
+- [x] `make -C test` — 7/7 time multiplier
+- [x] `make -C test motion` — 6/6 motion engine
+- [x] `make -C test storage` — 22/22 storage / CRC / bake validation
+- [ ] Browser Playwright smoke — blocked in this environment: bundled wrapper fetched through npm path, then exited with `sh: playwright-cli: command not found`
+
 ---
 
 ## Servo Calibration Notes

@@ -1039,6 +1039,196 @@
   .seq-log .warn { color: var(--amber); }
   .seq-log .bad { color: var(--alert); }
 
+  /* ---------- motion authoring ---------- */
+  .motion-editor {
+    padding: 16px 18px 18px;
+  }
+  .motion-picker {
+    display: grid;
+    grid-template-columns: minmax(180px, 280px) minmax(220px, 1fr) minmax(130px, 180px) auto;
+    gap: 12px;
+    align-items: center;
+    padding-bottom: 14px;
+    border-bottom: 1px dashed var(--rule);
+  }
+  .motion-picker select,
+  .motion-picker input,
+  .motion-toolbar input {
+    appearance: none;
+    -webkit-appearance: none;
+    background: var(--bg-deep);
+    color: var(--ink);
+    border: 1px solid var(--rule-hi);
+    font: 500 11px/1 var(--mono);
+    padding: 8px 10px;
+    outline: none;
+    width: 100%;
+  }
+  .motion-picker input:focus,
+  .motion-picker select:focus,
+  .motion-toolbar input:focus { border-color: var(--amber); }
+  .motion-actions,
+  .motion-toolbar,
+  .motion-tags,
+  .motion-transport {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+  .motion-toolbar {
+    justify-content: space-between;
+    margin: 12px 0;
+  }
+  .motion-tags input { max-width: 150px; }
+  .motion-time {
+    color: var(--ink-dim);
+    font: 700 9px/1 var(--label);
+    text-transform: uppercase;
+    letter-spacing: 0.22em;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .motion-time output {
+    color: var(--amber);
+    font: 600 11px/1 var(--mono);
+    letter-spacing: 0;
+    min-width: 72px;
+  }
+  .motion-grid-wrap {
+    border: 1px solid var(--rule);
+    background: var(--bg-deep);
+    overflow-x: auto;
+  }
+  .motion-grid {
+    min-width: 1080px;
+    user-select: none;
+  }
+  .motion-scale,
+  .motion-row,
+  .motion-board {
+    display: grid;
+    grid-template-columns: 170px 70px 1fr;
+  }
+  .motion-scale {
+    position: sticky;
+    top: 0;
+    z-index: 3;
+    background: var(--bg-deep);
+    border-bottom: 1px solid var(--rule);
+    color: var(--ink-mute);
+    font: 700 8px/1 var(--label);
+    text-transform: uppercase;
+    letter-spacing: 0.22em;
+  }
+  .motion-scale > div { padding: 8px 10px; border-right: 1px solid var(--rule); }
+  .motion-axis {
+    position: relative;
+    min-height: 28px;
+    background-image: repeating-linear-gradient(90deg, transparent 0, transparent calc(10% - 1px), var(--rule) calc(10% - 1px), var(--rule) 10%);
+  }
+  .motion-axis span {
+    position: absolute;
+    top: 9px;
+    transform: translateX(-50%);
+    color: var(--ink-mute);
+    font: 600 8px/1 var(--mono);
+  }
+  .motion-board {
+    border-bottom: 1px solid var(--rule);
+    background: rgba(255,182,39,0.025);
+  }
+  .motion-board button {
+    appearance: none;
+    border: 0;
+    background: transparent;
+    color: var(--amber);
+    cursor: pointer;
+    font: 700 10px/1 var(--label);
+    text-transform: uppercase;
+    letter-spacing: 0.24em;
+    padding: 9px 10px;
+    text-align: left;
+  }
+  .motion-row {
+    min-height: 48px;
+    border-bottom: 1px solid var(--rule);
+  }
+  .motion-row.muted { opacity: .35; }
+  .motion-row.hidden { display: none; }
+  .motion-label {
+    padding: 10px;
+    border-right: 1px solid var(--rule);
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+  .motion-label .id {
+    color: var(--ink);
+    font: 700 11px/1 var(--mono);
+  }
+  .motion-label .range {
+    color: var(--ink-mute);
+    font: 700 8px/1 var(--label);
+    text-transform: uppercase;
+    letter-spacing: 0.2em;
+  }
+  .motion-toggles {
+    padding: 8px;
+    border-right: 1px solid var(--rule);
+    display: flex;
+    gap: 5px;
+    align-items: center;
+    justify-content: center;
+  }
+  .motion-toggles button {
+    min-width: 25px;
+    padding: 5px 0;
+  }
+  .motion-track {
+    position: relative;
+    min-height: 48px;
+    cursor: crosshair;
+    background-image:
+      repeating-linear-gradient(90deg, transparent 0, transparent calc(10% - 1px), rgba(61,58,51,.65) calc(10% - 1px), rgba(61,58,51,.65) 10%),
+      linear-gradient(to bottom, transparent 49%, rgba(61,58,51,.7) 49%, rgba(61,58,51,.7) calc(49% + 1px), transparent calc(49% + 1px));
+  }
+  .motion-key {
+    position: absolute;
+    width: 13px;
+    height: 13px;
+    border: 1px solid var(--amber);
+    background: var(--bg);
+    transform: translate(-50%, -50%) rotate(45deg);
+    cursor: grab;
+    box-shadow: 0 0 0 2px rgba(14,14,12,.85);
+  }
+  .motion-key:active { cursor: grabbing; }
+  .motion-key.dc { border-color: var(--phosphor); }
+  .motion-key.ghost {
+    width: 9px;
+    height: 9px;
+    border-color: var(--ink-dim);
+    opacity: .5;
+    pointer-events: none;
+  }
+  .motion-playhead {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 1px;
+    background: var(--alert);
+    box-shadow: 0 0 6px var(--alert);
+    pointer-events: none;
+    z-index: 2;
+  }
+  .motion-status {
+    color: var(--ink-dim);
+    font: 500 10px/1.4 var(--mono);
+    min-height: 16px;
+  }
+
   /* ---------- setlist additions ---------- */
   .sl-mode {
     display: inline-flex;
@@ -1434,8 +1624,64 @@
       </div>
     </div>
 
-    <div id="slLog" class="seq-log"></div>
+  <div id="slLog" class="seq-log"></div>
 
+  </div>
+
+  <!-- ============================================================
+       MOTION EDITOR
+       ============================================================ -->
+  <div class="sect">
+    <span class="num">// 06</span>
+    <span class="label">Motion</span>
+    <span class="rule"></span>
+    <span class="hint">12-track cluster keyframes · live scrub · local library</span>
+  </div>
+
+  <div class="panel motion-editor">
+    <span class="panel-corner-bl"></span><span class="panel-corner-br"></span>
+
+    <div class="motion-picker">
+      <select id="motionSelect" title="Motion"></select>
+      <input id="motionName" type="text" placeholder="motion name" autocomplete="off" spellcheck="false">
+      <label class="motion-time" title="Total Motion duration">
+        <span>duration</span>
+        <input id="motionDuration" type="number" min="100" max="120000" step="100" value="8000">
+      </label>
+      <div class="motion-actions">
+        <button class="cmd compact" id="motionNew">New</button>
+        <button class="cmd compact" id="motionDuplicate">Duplicate</button>
+        <button class="cmd compact" id="motionRename">Rename</button>
+        <button class="cmd compact alert" id="motionDelete">Delete</button>
+      </div>
+    </div>
+
+    <div class="motion-toolbar">
+      <div class="motion-tags">
+        <div id="motionTags" class="seq-tags"></div>
+        <input id="motionTagInput" type="text" placeholder="add tag" autocomplete="off" spellcheck="false">
+        <button class="cmd compact" id="motionAddTag">Tag</button>
+      </div>
+      <div class="motion-transport">
+        <button class="cmd amber" id="motionPlay">Play Live</button>
+        <button class="cmd compact alert" id="motionStop" disabled>Stop</button>
+        <button class="cmd compact" id="motionFire">MOTION Cmd</button>
+        <button class="cmd compact amber" id="motionSave">Save</button>
+        <label class="motion-time">
+          <span>playhead</span>
+          <input id="motionScrub" type="range" min="0" max="8000" step="100" value="0">
+          <output id="motionScrubLabel">0ms</output>
+        </label>
+      </div>
+    </div>
+
+    <div class="motion-grid-wrap">
+      <div id="motionGrid" class="motion-grid"></div>
+    </div>
+
+    <div class="seq-tools">
+      <div id="motionStatus" class="motion-status">idle</div>
+    </div>
   </div>
 
   <!-- ============================================================
@@ -1998,7 +2244,10 @@ $("#saveBoards").addEventListener("click", () => {
   localStorage.setItem(LS_KEY, JSON.stringify(boards));
   renderBoardList();
   renderOtaBoardButtons();
+  renderMotionEditor();
   renderSequencer();
+  renderSetlist();
+  renderLibSummary();
   startPolling();
 });
 autoPollEl.addEventListener("change", startPolling);
@@ -2239,6 +2488,537 @@ function slugifyId(name) {
   return base.slice(0, 32);
 }
 
+// ============================================================
+// MOTION EDITOR
+// ============================================================
+const motionSelectEl     = $("#motionSelect");
+const motionNameEl       = $("#motionName");
+const motionDurationEl   = $("#motionDuration");
+const motionTagsEl       = $("#motionTags");
+const motionTagInputEl   = $("#motionTagInput");
+const motionGridEl       = $("#motionGrid");
+const motionScrubEl      = $("#motionScrub");
+const motionScrubLabelEl = $("#motionScrubLabel");
+const motionStatusEl     = $("#motionStatus");
+const motionPlayEl       = $("#motionPlay");
+const motionStopEl       = $("#motionStop");
+
+const MOTION_TRACK_SPECS = [1, 2, 3].flatMap(boardId => ([
+  { kind: "servo", boardId, channel: 0, label: `B${boardId}.S0`, min: 0, max: 180, unit: "deg" },
+  { kind: "servo", boardId, channel: 1, label: `B${boardId}.S1`, min: 0, max: 180, unit: "deg" },
+  { kind: "servo", boardId, channel: 2, label: `B${boardId}.S2`, min: 0, max: 180, unit: "deg" },
+  { kind: "dc",    boardId, channel: 0, label: `B${boardId}.DC`, min: -100, max: 100, unit: "spd" },
+]));
+
+let currentMotionId = null;
+let motionDirty = false;
+let motionDrag = null;
+let motionPlayer = { active: false, raf: 0, startedAt: 0, lastSendAt: 0 };
+const motionCollapsedBoards = new Set();
+const motionMutedTracks = new Set();
+let motionSoloTracks = new Set();
+
+function motionTrackKey(track) {
+  return `${track.boardId}:${track.kind}:${track.channel}`;
+}
+
+function trackSpecKey(spec) {
+  return `${spec.boardId}:${spec.kind}:${spec.channel}`;
+}
+
+function uniqueMotionId(lib, seed) {
+  const used = new Set((lib.motions || []).map(m => m.id));
+  const base = slugifyId(seed || "motion") || "motion";
+  if (!used.has(base)) return base;
+  for (let i = 2; i < 1000; i++) {
+    const candidate = `${base}-${i}`.slice(0, 32);
+    if (!used.has(candidate)) return candidate;
+  }
+  return `mot-${Date.now().toString(36)}`.slice(0, 32);
+}
+
+function defaultMotion(lib) {
+  const id = uniqueMotionId(lib, "new-motion");
+  const durationMs = 8000;
+  return {
+    id,
+    name: "New Motion",
+    tags: [],
+    scope: "cluster",
+    durationMs,
+    tracks: MOTION_TRACK_SPECS.map(spec => ({
+      kind: spec.kind,
+      boardId: spec.boardId,
+      channel: spec.channel,
+      label: spec.label,
+      keyframes: [
+        { atMs: 0, value: spec.kind === "dc" ? 0 : 90 },
+        { atMs: durationMs, value: spec.kind === "dc" ? 0 : 90 },
+      ],
+    })),
+  };
+}
+
+function normalizeKeyframes(track, durationMs, spec) {
+  const byTime = new Map();
+  for (const raw of track?.keyframes || []) {
+    const atMs = Math.max(0, Math.min(durationMs, parseInt(raw?.atMs, 10) || 0));
+    const value = clampMotionValue(parseFloat(raw?.value ?? 0), spec);
+    byTime.set(atMs, { atMs, value, ...(raw?.easing ? { easing: "linear" } : {}) });
+  }
+  if (!byTime.has(0)) byTime.set(0, { atMs: 0, value: spec.kind === "dc" ? 0 : 90 });
+  if (!byTime.has(durationMs)) byTime.set(durationMs, { atMs: durationMs, value: spec.kind === "dc" ? 0 : 90 });
+  return Array.from(byTime.values()).sort((a, b) => a.atMs - b.atMs);
+}
+
+function normalizeMotion(motion) {
+  const durationMs = Math.max(100, parseInt(motion?.durationMs, 10) || 8000);
+  const incoming = new Map((motion?.tracks || []).map(t => [motionTrackKey(t), t]));
+  return {
+    id: String(motion?.id || "motion").slice(0, 32),
+    name: String(motion?.name || motion?.id || "Motion").slice(0, 64),
+    tags: Array.from(new Set((motion?.tags || []).map(t => String(t).toLowerCase().slice(0, 24)).filter(Boolean))).slice(0, 8),
+    scope: motion?.scope === "board" ? "board" : "cluster",
+    durationMs,
+    tracks: MOTION_TRACK_SPECS.map(spec => {
+      const existing = incoming.get(trackSpecKey(spec));
+      return {
+        kind: spec.kind,
+        boardId: spec.boardId,
+        channel: spec.channel,
+        label: existing?.label || spec.label,
+        keyframes: normalizeKeyframes(existing, durationMs, spec),
+      };
+    }),
+  };
+}
+
+function getCurrentMotion(lib = sequenceLibrary()) {
+  if (!lib.motions.length) {
+    const motion = defaultMotion(lib);
+    lib.motions.push(motion);
+    currentMotionId = motion.id;
+    saveLibrary(lib);
+  }
+  let motion = lib.motions.find(m => m.id === currentMotionId);
+  if (!motion) {
+    motion = lib.motions[0];
+    currentMotionId = motion?.id || null;
+  }
+  return motion ? normalizeMotion(motion) : null;
+}
+
+function saveCurrentMotion(motion) {
+  const lib = sequenceLibrary();
+  const clean = normalizeMotion(motion);
+  const idx = lib.motions.findIndex(m => m.id === clean.id);
+  if (idx >= 0) lib.motions[idx] = clean;
+  else lib.motions.push(clean);
+  currentMotionId = clean.id;
+  saveLibrary(lib);
+  motionDirty = false;
+  renderLibSummary();
+  renderMotionEditor();
+}
+
+function setMotionStatus(msg, color) {
+  motionStatusEl.textContent = msg;
+  motionStatusEl.style.color = color ? `var(--${color})` : "var(--ink-dim)";
+}
+
+function clampMotionValue(value, spec) {
+  const n = Number.isFinite(value) ? value : 0;
+  return Math.max(spec.min, Math.min(spec.max, n));
+}
+
+function snapMotionTime(ms, shiftKey) {
+  const n = Math.max(0, ms);
+  return shiftKey ? Math.round(n) : Math.round(n / 100) * 100;
+}
+
+function snapMotionValue(value, shiftKey) {
+  return shiftKey ? Math.round(value * 10) / 10 : Math.round(value);
+}
+
+function motionTimeToPct(ms, durationMs) {
+  return durationMs > 0 ? Math.max(0, Math.min(100, (ms / durationMs) * 100)) : 0;
+}
+
+function motionValueToPct(value, spec) {
+  return 100 - ((value - spec.min) / (spec.max - spec.min)) * 100;
+}
+
+function pctToMotionValue(pct, spec) {
+  return spec.min + (1 - pct / 100) * (spec.max - spec.min);
+}
+
+function findTrack(motion, spec) {
+  return motion.tracks.find(t => motionTrackKey(t) === trackSpecKey(spec));
+}
+
+function valueAtTrackTime(track, spec, atMs) {
+  const frames = normalizeKeyframes(track, Math.max(atMs, track.keyframes.at(-1)?.atMs || 0), spec);
+  let prev = frames[0], next = frames[frames.length - 1];
+  for (let i = 0; i < frames.length; i++) {
+    if (frames[i].atMs <= atMs) prev = frames[i];
+    if (frames[i].atMs >= atMs) { next = frames[i]; break; }
+  }
+  if (!prev || !next || prev.atMs === next.atMs) return prev?.value ?? next?.value ?? 0;
+  const u = (atMs - prev.atMs) / (next.atMs - prev.atMs);
+  return prev.value + (next.value - prev.value) * u;
+}
+
+function previousKeyframe(track, atMs) {
+  return (track.keyframes || []).filter(k => k.atMs <= atMs).sort((a, b) => b.atMs - a.atMs)[0] || null;
+}
+
+function renderMotionEditor() {
+  const lib = sequenceLibrary();
+  const motion = getCurrentMotion(lib);
+  if (!motion) return;
+  const playheadMs = Math.min(parseInt(motionScrubEl.value, 10) || 0, motion.durationMs);
+  motionSelectEl.innerHTML = lib.motions.map(m =>
+    `<option value="${escapeHtml(m.id)}"${m.id === motion.id ? " selected" : ""}>${escapeHtml(m.name || m.id)}</option>`
+  ).join("");
+  if (document.activeElement !== motionNameEl) motionNameEl.value = motion.name || motion.id;
+  if (document.activeElement !== motionDurationEl) motionDurationEl.value = motion.durationMs;
+  motionScrubEl.max = motion.durationMs;
+  motionScrubEl.value = playheadMs;
+  motionScrubLabelEl.textContent = `${playheadMs}ms`;
+  motionTagsEl.innerHTML = (motion.tags || []).map(tag =>
+    `<span class="seq-chip">${escapeHtml(tag)} <button data-motion-tag-remove="${escapeHtml(tag)}" title="Remove tag">x</button></span>`
+  ).join("");
+
+  const ticks = [];
+  for (let i = 0; i <= 10; i++) {
+    ticks.push(`<span style="left:${i * 10}%">${formatMs(Math.round(motion.durationMs * i / 10))}</span>`);
+  }
+  let html = `<div class="motion-scale"><div>track</div><div>mode</div><div class="motion-axis">${ticks.join("")}</div></div>`;
+  for (const boardId of [1, 2, 3]) {
+    const collapsed = motionCollapsedBoards.has(boardId);
+    html += `<div class="motion-board"><button data-motion-collapse="${boardId}">${collapsed ? "+" : "-"} board ${boardId}</button><div></div><div></div></div>`;
+    for (const spec of MOTION_TRACK_SPECS.filter(s => s.boardId === boardId)) {
+      const track = findTrack(motion, spec);
+      const key = trackSpecKey(spec);
+      const muted = motionMutedTracks.has(key);
+      const solo = motionSoloTracks.has(key);
+      const prev = previousKeyframe(track, playheadMs);
+      html += `<div class="motion-row${collapsed ? " hidden" : ""}${muted ? " muted" : ""}" data-track="${escapeHtml(key)}">
+        <div class="motion-label">
+          <span class="id">${escapeHtml(spec.label)}</span>
+          <span class="range">${spec.min}..${spec.max} ${spec.unit}</span>
+        </div>
+        <div class="motion-toggles">
+          <button class="cmd compact${solo ? " amber" : ""}" data-motion-solo="${escapeHtml(key)}" title="Solo">S</button>
+          <button class="cmd compact${muted ? " alert" : ""}" data-motion-mute="${escapeHtml(key)}" title="Mute">M</button>
+        </div>
+        <div class="motion-track" data-track="${escapeHtml(key)}">
+          <div class="motion-playhead" style="left:${motionTimeToPct(playheadMs, motion.durationMs)}%"></div>
+          ${prev ? `<span class="motion-key ghost ${spec.kind}" style="left:${motionTimeToPct(prev.atMs, motion.durationMs)}%; top:${motionValueToPct(prev.value, spec)}%"></span>` : ""}
+          ${(track.keyframes || []).map((kf, idx) => `<span class="motion-key ${spec.kind}" data-track="${escapeHtml(key)}" data-key-index="${idx}" title="${kf.atMs}ms · ${kf.value}${spec.unit}" style="left:${motionTimeToPct(kf.atMs, motion.durationMs)}%; top:${motionValueToPct(kf.value, spec)}%"></span>`).join("")}
+        </div>
+      </div>`;
+    }
+  }
+  motionGridEl.innerHTML = html;
+}
+
+function readMotionFromDom() {
+  const lib = sequenceLibrary();
+  const existing = getCurrentMotion(lib);
+  const durationMs = Math.max(100, parseInt(motionDurationEl.value, 10) || existing.durationMs || 8000);
+  const motion = normalizeMotion({ ...existing, name: motionNameEl.value.trim().slice(0, 64) || existing.name, durationMs });
+  for (const track of motion.tracks) {
+    for (const kf of track.keyframes) kf.atMs = Math.min(kf.atMs, durationMs);
+    track.keyframes = normalizeKeyframes(track, durationMs, MOTION_TRACK_SPECS.find(s => trackSpecKey(s) === motionTrackKey(track)));
+  }
+  return motion;
+}
+
+function mutateCurrentMotion(mutator, save = true) {
+  const motion = readMotionFromDom();
+  mutator(motion);
+  motionDirty = true;
+  if (save) saveCurrentMotion(motion);
+  else {
+    const lib = sequenceLibrary();
+    const idx = lib.motions.findIndex(m => m.id === motion.id);
+    if (idx >= 0) lib.motions[idx] = normalizeMotion(motion);
+    saveLibrary(lib);
+    renderLibSummary();
+    renderMotionEditor();
+  }
+}
+
+function addMotionKeyframe(spec, atMs, value) {
+  mutateCurrentMotion(motion => {
+    const track = findTrack(motion, spec);
+    const snappedAt = Math.max(0, Math.min(motion.durationMs, atMs));
+    const snappedValue = clampMotionValue(value, spec);
+    const existing = track.keyframes.find(k => Math.abs(k.atMs - snappedAt) < 1);
+    if (existing) existing.value = snappedValue;
+    else track.keyframes.push({ atMs: snappedAt, value: snappedValue });
+    track.keyframes = normalizeKeyframes(track, motion.durationMs, spec);
+  });
+  setMotionStatus(`keyframe ${spec.label} · ${atMs}ms`, "phosphor");
+}
+
+function motionPointFromEvent(trackEl, spec, event) {
+  const rect = trackEl.getBoundingClientRect();
+  const xPct = ((event.clientX - rect.left) / rect.width) * 100;
+  const yPct = ((event.clientY - rect.top) / rect.height) * 100;
+  const durationMs = Math.max(100, parseInt(motionDurationEl.value, 10) || 8000);
+  const atMs = Math.max(0, Math.min(durationMs, snapMotionTime((xPct / 100) * durationMs, event.shiftKey)));
+  const value = clampMotionValue(snapMotionValue(pctToMotionValue(yPct, spec), event.shiftKey), spec);
+  return { atMs, value };
+}
+
+function scrubMotionTo(atMs, live = true) {
+  const motion = readMotionFromDom();
+  const t = Math.max(0, Math.min(motion.durationMs, atMs));
+  motionScrubEl.value = t;
+  motionScrubLabelEl.textContent = `${Math.round(t)}ms`;
+  if (live) sendMotionFrame(motion, t);
+  renderMotionEditor();
+}
+
+async function sendMotionFrame(motion, atMs) {
+  const soloActive = motionSoloTracks.size > 0;
+  for (const spec of MOTION_TRACK_SPECS) {
+    const key = trackSpecKey(spec);
+    if (motionMutedTracks.has(key)) continue;
+    if (soloActive && !motionSoloTracks.has(key)) continue;
+    const ip = boards[spec.boardId - 1];
+    if (!ip) continue;
+    const track = findTrack(motion, spec);
+    const rawValue = valueAtTrackTime(track, spec, atMs);
+    const value = Math.round(clampMotionValue(rawValue, spec));
+    const cmd = spec.kind === "servo" ? `S${spec.channel} ${value}` : `ROTATE ${value}`;
+    sendCommand(ip, cmd);
+  }
+}
+
+function stopMotionPlayback(sendStop = false) {
+  if (motionPlayer.raf) cancelAnimationFrame(motionPlayer.raf);
+  motionPlayer = { active: false, raf: 0, startedAt: 0, lastSendAt: 0 };
+  motionPlayEl.disabled = false;
+  motionStopEl.disabled = true;
+  if (sendStop) broadcastCommand("STOP");
+  setMotionStatus("idle");
+}
+
+function tickMotionPlayback() {
+  if (!motionPlayer.active) return;
+  const motion = readMotionFromDom();
+  const elapsed = performance.now() - motionPlayer.startedAt;
+  const atMs = Math.min(motion.durationMs, elapsed);
+  motionScrubEl.value = Math.round(atMs / 100) * 100;
+  motionScrubLabelEl.textContent = `${Math.round(atMs)}ms`;
+  if (performance.now() - motionPlayer.lastSendAt >= 95 || atMs >= motion.durationMs) {
+    motionPlayer.lastSendAt = performance.now();
+    sendMotionFrame(motion, atMs);
+    renderMotionEditor();
+  }
+  if (atMs >= motion.durationMs) {
+    stopMotionPlayback(false);
+    setMotionStatus(`complete · ${motion.name || motion.id}`, "phosphor");
+    return;
+  }
+  motionPlayer.raf = requestAnimationFrame(tickMotionPlayback);
+}
+
+function playMotionLive() {
+  const motion = readMotionFromDom();
+  saveCurrentMotion(motion);
+  stopMotionPlayback(false);
+  motionPlayer = { active: true, raf: 0, startedAt: performance.now(), lastSendAt: 0 };
+  motionPlayEl.disabled = true;
+  motionStopEl.disabled = false;
+  setMotionStatus(`playing live · ${motion.name || motion.id}`, "amber");
+  tickMotionPlayback();
+}
+
+motionSelectEl.addEventListener("change", () => {
+  if (motionDirty) saveCurrentMotion(readMotionFromDom());
+  currentMotionId = motionSelectEl.value;
+  motionDirty = false;
+  renderMotionEditor();
+});
+motionNameEl.addEventListener("input", () => { motionDirty = true; setMotionStatus("name edited"); });
+motionNameEl.addEventListener("blur", () => {
+  if (motionDirty) saveCurrentMotion(readMotionFromDom());
+});
+motionNameEl.addEventListener("keydown", e => {
+  if (e.key === "Enter") { saveCurrentMotion(readMotionFromDom()); motionNameEl.blur(); }
+});
+motionDurationEl.addEventListener("change", () => {
+  saveCurrentMotion(readMotionFromDom());
+  setMotionStatus("duration updated", "phosphor");
+});
+
+$("#motionNew").addEventListener("click", () => {
+  if (motionDirty) saveCurrentMotion(readMotionFromDom());
+  const lib = sequenceLibrary();
+  const motion = defaultMotion(lib);
+  lib.motions.push(motion);
+  currentMotionId = motion.id;
+  saveLibrary(lib);
+  renderLibSummary();
+  renderMotionEditor();
+  setMotionStatus(`created ${motion.name}`, "phosphor");
+});
+$("#motionDuplicate").addEventListener("click", () => {
+  const lib = sequenceLibrary();
+  const motion = readMotionFromDom();
+  const copy = JSON.parse(JSON.stringify(motion));
+  copy.id = uniqueMotionId(lib, `${motion.id}-copy`);
+  copy.name = `${motion.name || motion.id} Copy`;
+  lib.motions.push(copy);
+  currentMotionId = copy.id;
+  saveLibrary(lib);
+  motionDirty = false;
+  renderLibSummary();
+  renderMotionEditor();
+  setMotionStatus(`duplicated ${motion.name || motion.id}`, "phosphor");
+});
+$("#motionRename").addEventListener("click", () => {
+  saveCurrentMotion(readMotionFromDom());
+  setMotionStatus("renamed", "phosphor");
+});
+$("#motionDelete").addEventListener("click", () => {
+  const lib = sequenceLibrary();
+  const motion = getCurrentMotion(lib);
+  if (!motion || !confirm(`Delete motion "${motion.name || motion.id}"?`)) return;
+  lib.motions = lib.motions.filter(m => m.id !== motion.id);
+  if (!lib.motions.length) lib.motions.push(defaultMotion(lib));
+  currentMotionId = lib.motions[0].id;
+  saveLibrary(lib);
+  motionDirty = false;
+  renderLibSummary();
+  renderMotionEditor();
+  setMotionStatus("motion deleted", "amber");
+});
+$("#motionAddTag").addEventListener("click", () => {
+  const tag = motionTagInputEl.value.trim().toLowerCase().replace(/[^a-z0-9-]/g, "").slice(0, 24);
+  if (!tag) return;
+  mutateCurrentMotion(motion => {
+    motion.tags = Array.from(new Set([...(motion.tags || []), tag])).slice(0, 8);
+  });
+  motionTagInputEl.value = "";
+});
+motionTagInputEl.addEventListener("keydown", e => {
+  if (e.key === "Enter") $("#motionAddTag").click();
+});
+motionTagsEl.addEventListener("click", e => {
+  const tag = e.target.dataset.motionTagRemove;
+  if (!tag) return;
+  mutateCurrentMotion(motion => { motion.tags = (motion.tags || []).filter(t => t !== tag); });
+});
+
+motionGridEl.addEventListener("click", e => {
+  const collapse = e.target.dataset.motionCollapse;
+  if (collapse) {
+    const boardId = parseInt(collapse, 10);
+    if (motionCollapsedBoards.has(boardId)) motionCollapsedBoards.delete(boardId);
+    else motionCollapsedBoards.add(boardId);
+    renderMotionEditor();
+    return;
+  }
+  const solo = e.target.dataset.motionSolo;
+  if (solo) {
+    if (motionSoloTracks.has(solo)) motionSoloTracks.delete(solo);
+    else motionSoloTracks = new Set([solo]);
+    renderMotionEditor();
+    return;
+  }
+  const mute = e.target.dataset.motionMute;
+  if (mute) {
+    if (motionMutedTracks.has(mute)) motionMutedTracks.delete(mute);
+    else motionMutedTracks.add(mute);
+    renderMotionEditor();
+    return;
+  }
+  const trackEl = e.target.closest(".motion-track");
+  if (!trackEl || e.target.classList.contains("motion-key")) return;
+  const spec = MOTION_TRACK_SPECS.find(s => trackSpecKey(s) === trackEl.dataset.track);
+  if (!spec) return;
+  const point = motionPointFromEvent(trackEl, spec, e);
+  addMotionKeyframe(spec, point.atMs, point.value);
+});
+
+motionGridEl.addEventListener("dblclick", e => {
+  const keyEl = e.target.closest(".motion-key:not(.ghost)");
+  if (!keyEl) return;
+  const key = keyEl.dataset.track;
+  const idx = parseInt(keyEl.dataset.keyIndex, 10);
+  mutateCurrentMotion(motion => {
+    const track = motion.tracks.find(t => motionTrackKey(t) === key);
+    const spec = MOTION_TRACK_SPECS.find(s => trackSpecKey(s) === key);
+    if (!track || !spec || idx < 0) return;
+    track.keyframes.splice(idx, 1);
+    track.keyframes = normalizeKeyframes(track, motion.durationMs, spec);
+  });
+  setMotionStatus("keyframe deleted", "amber");
+});
+
+motionGridEl.addEventListener("pointerdown", e => {
+  const keyEl = e.target.closest(".motion-key:not(.ghost)");
+  if (!keyEl) return;
+  e.preventDefault();
+  motionDrag = { trackKey: keyEl.dataset.track, keyIndex: parseInt(keyEl.dataset.keyIndex, 10) };
+  keyEl.setPointerCapture(e.pointerId);
+});
+window.addEventListener("pointermove", e => {
+  if (!motionDrag) return;
+  const trackEl = e.target.closest(".motion-track") || motionGridEl.querySelector(`.motion-track[data-track="${CSS.escape(motionDrag.trackKey)}"]`);
+  const spec = MOTION_TRACK_SPECS.find(s => trackSpecKey(s) === motionDrag.trackKey);
+  if (!trackEl || !spec) return;
+  const point = motionPointFromEvent(trackEl, spec, e);
+  const lib = sequenceLibrary();
+  const motion = getCurrentMotion(lib);
+  const track = motion.tracks.find(t => motionTrackKey(t) === motionDrag.trackKey);
+  if (!track || !track.keyframes[motionDrag.keyIndex]) return;
+  track.keyframes[motionDrag.keyIndex] = { ...track.keyframes[motionDrag.keyIndex], atMs: point.atMs, value: point.value };
+  track.keyframes = normalizeKeyframes(track, motion.durationMs, spec);
+  const idx = lib.motions.findIndex(m => m.id === motion.id);
+  if (idx >= 0) lib.motions[idx] = motion;
+  saveLibrary(lib);
+  motionDirty = true;
+  renderMotionEditor();
+});
+window.addEventListener("pointerup", () => {
+  if (!motionDrag) return;
+  motionDrag = null;
+  saveCurrentMotion(readMotionFromDom());
+  setMotionStatus("keyframe moved", "phosphor");
+});
+
+motionScrubEl.addEventListener("input", () => {
+  scrubMotionTo(parseInt(motionScrubEl.value, 10) || 0, false);
+});
+motionScrubEl.addEventListener("change", () => {
+  scrubMotionTo(parseInt(motionScrubEl.value, 10) || 0, true);
+  setMotionStatus(`scrubbed · ${motionScrubEl.value}ms`, "amber");
+});
+motionPlayEl.addEventListener("click", playMotionLive);
+motionStopEl.addEventListener("click", () => stopMotionPlayback(true));
+$("#motionFire").addEventListener("click", async () => {
+  const motion = readMotionFromDom();
+  saveCurrentMotion(motion);
+  const ip = await broadcastCommand(`MOTION ${motion.id}`);
+  setMotionStatus(ip ? `sent MOTION ${motion.id}` : "MOTION command failed", ip ? "phosphor" : "alert");
+  setTimeout(pollOnce, 200);
+});
+$("#motionSave").addEventListener("click", () => {
+  saveCurrentMotion(readMotionFromDom());
+  setMotionStatus("saved to localStorage", "phosphor");
+});
+
+function motionOptionsForCommands() {
+  const lib = sequenceLibrary();
+  return (lib.motions || []).map(m => `MOTION ${m.id}`);
+}
+
 function uniqueSequenceId(lib, seed) {
   const used = new Set((lib.sequences || []).map(s => s.id));
   const base = slugifyId(seed);
@@ -2363,7 +3143,8 @@ const SEQUENCE_COMMAND_PRESETS = [
 
 function commandOptions(selected) {
   const current = String(selected || "").trim();
-  return SEQUENCE_COMMAND_PRESETS.map(cmd =>
+  const presets = Array.from(new Set([...SEQUENCE_COMMAND_PRESETS, ...motionOptionsForCommands()]));
+  return presets.map(cmd =>
     `<option value="${escapeHtml(cmd)}"${cmd === current ? " selected" : ""}>${escapeHtml(cmd)}</option>`
   ).join("");
 }
@@ -2827,7 +3608,11 @@ bakeFileEl.addEventListener("change", async () => {
     bakeFileInfoEl.textContent = `${f.name} · ${text.length}B`;
     renderLibSummary();
     currentSeqId = null;
+    currentMotionId = null;
+    renderMotionEditor();
     renderSequencer();
+    renderSetlist();
+    renderLibSummary();
   } catch (e) {
     bakeLog(`import failed — ${e.message}`, "alert");
     bakeFileInfoEl.textContent = `rejected: ${f.name}`;
@@ -2859,7 +3644,11 @@ bakeClearEl.addEventListener("click", () => {
   bakeLog("library cleared", "amber");
   renderLibSummary();
   currentSeqId = null;
+  currentMotionId = null;
+  renderMotionEditor();
   renderSequencer();
+  renderSetlist();
+  renderLibSummary();
 });
 
 bakeAllEl.addEventListener("click", bakeToAllBoards);
@@ -3697,9 +4486,10 @@ slDryRunEl.addEventListener("click", () => playSetlist(true));
 // ============================================================
 renderBoardList();
 renderOtaBoardButtons();
-renderLibSummary();
+renderMotionEditor();
 renderSequencer();
 renderSetlist();
+renderLibSummary();
 render();
 startPolling();
 </script>

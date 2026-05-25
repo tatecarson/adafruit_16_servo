@@ -75,6 +75,12 @@ Servo calibration and control system for the Adafruit PCA9685 16-channel PWM dri
 - Supports Play/Pause/Stop/Loop auditioning from the browser and record-from-terminal step capture
 - Saves authored Sequences to the existing `servoCluster.library` localStorage object used by import/export/bake
 
+### 12. Browser Motion Keyframe Editor (Complete)
+- Added section `// 06 Motion` to `servo_controller.html`
+- Authors schema v1 cluster Motions across 12 tracks: three boards, each with three servo tracks and one DC track
+- Supports create, duplicate, rename, delete, tag chips, duration edits, board collapse, per-track solo/mute, click-to-add keyframes, drag-to-move, double-click delete, snapped 100ms/1-unit editing, and Shift unsnapped editing
+- Adds playhead scrub, previous-keyframe onion skin, live browser playback for tuning, direct `MOTION <id>` fire, and localStorage save through the shared bake library
+
 ## In Progress
 
 (None)
@@ -155,6 +161,10 @@ adafruit_16_servo/
 ## Git Commits (Browser Sequence Editor)
 
 27. `feat: add browser sequence editor`
+
+## Git Commits (Browser Motion Editor)
+
+28. `feat: add browser motion editor`
 
 ## Future Features
 
