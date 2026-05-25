@@ -3265,7 +3265,9 @@ function mulberry32(seed) {
 }
 
 // Map each entry to a numeric energy (lower = calmer) based on
-// schedulerConfig.tagEnergy. Tags without an energy entry contribute 0.
+// schedulerConfig.tagEnergy. Per docs/sequencer-schema.md, tagEnergy is
+// an ordered string[] from calmest → most agitated, so a tag's energy is
+// just its index in that list. Tags not in the list contribute 0.
 // Used to sort the shuffle pool when moodArc is rising/falling/breathing.
 function entryEnergy(entry, lib) {
   const tagEnergy = (lib.schedulerConfig?.tagEnergy) || [];
@@ -3273,8 +3275,8 @@ function entryEnergy(entry, lib) {
   if (!seq) return 0;
   let sum = 0;
   for (const tag of (seq.tags || [])) {
-    const found = tagEnergy.find(t => t.tag === tag);
-    if (found) sum += Number(found.energy) || 0;
+    const idx = tagEnergy.indexOf(tag);
+    if (idx >= 0) sum += idx;
   }
   return sum;
 }
