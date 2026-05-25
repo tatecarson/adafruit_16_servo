@@ -69,6 +69,12 @@ Servo calibration and control system for the Adafruit PCA9685 16-channel PWM dri
 - Cancels active Motion on manual servo moves, `PLAY`, `SPLAY`, `RUN`, and `STOP`
 - Added host regression coverage for Motion parsing, boardId filtering, and playback interpolation
 
+### 11. Browser Sequence Editor (Complete)
+- Added section `// 04 Sequencer` to `servo_controller.html`
+- Authors schema v1 Sequences in the browser library with picker controls, tags, timed steps, target selection, labels, holds, preview, scrub, and drag reorder
+- Supports Play/Pause/Stop/Loop auditioning from the browser and record-from-terminal step capture
+- Saves authored Sequences to the existing `servoCluster.library` localStorage object used by import/export/bake
+
 ## In Progress
 
 (None)
@@ -145,6 +151,10 @@ adafruit_16_servo/
 ## Git Commits (Browser-Baked Motion Playback)
 
 26. `feat: add MOTION playback for baked browser motions`
+
+## Git Commits (Browser Sequence Editor)
+
+27. `feat: add browser sequence editor`
 
 ## Future Features
 

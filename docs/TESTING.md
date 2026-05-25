@@ -218,6 +218,30 @@ keyframes — schema doc §2.
 
 ---
 
+## Browser Sequencer Editor Smoke Test - 2026-05-24
+
+**Scope:** `servo_controller.html` section `// 04 Sequencer`
+
+**Environment:**
+- Served locally with `python3 -m http.server 4173 --bind 127.0.0.1`
+- Opened in the Codex in-app browser at `http://127.0.0.1:4173/servo_controller.html`
+
+**Checks:**
+1. Load page and verify sections `// 01` through `// 05` render with `// 04 Sequencer`.
+2. Verify the sequencer initializes a default one-step Sequence with total duration `1s`.
+3. Click `Add Step`.
+4. Edit step 1 to `PLAY 1`, duration `1500`.
+5. Edit step 2 to `STOP`, duration `500`.
+6. Click `Save`.
+
+**Expected:** Two steps remain visible, total duration reads `2s`, and status reads `saved to localStorage`.
+
+**Result:** Pass.
+
+**Not run:** Hardware playback, terminal record-to-board, and bake-to-board were not run because no reachable Arduino hardware was attached in this session.
+
+---
+
 ## Verification Note: Directional Percent Commands
 
 Manual hardware verification for the current `UP` / `DOWN` / `UMOVE` / `DMOVE` commands should be run against the live winch installation.

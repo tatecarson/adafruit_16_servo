@@ -81,12 +81,8 @@ const Keyframe sequence1[] PROGMEM = {
 
 Current `PLAY` sequences in this repo:
 
-- `PLAY 1`: staggered sweep
-- `PLAY 2`: slow raise and lower
-- `PLAY 3`: tilt sweep
-- `PLAY 4`: gentle bob
-- `PLAY 5`: wave tilt
-- `PLAY 6`: tripod walk, where two winches lift and the third stays low enough to touch the base
+- `PLAY 7`: progressive winch drop and reverse using dense keyframes
+- `PLAY 8`: progressive winch drop and reverse using compact keyframes
 
 ### Speed Sequences (Continuous Servos)
 
@@ -156,7 +152,6 @@ const SequenceProgramDefinition program1 = {
 
 Current `RUN` programs in this repo:
 
-- `RUN 1`: showcase program with mixed positional textures and `SPLAY 1`
 - `RUN 2`: drift program using sequence 8 with `SPLAY 2`
 - `RUN 3`: slow drift program using sequence 8 with `SPLAY 3`
 
@@ -174,6 +169,15 @@ STOP
 - DC tracks interpolate signed speed values from `-100` to `100`
 - Each board executes only its local sliced tracks; if a baked track still has `boardId`, mismatched boards skip it
 - Manual servo/DC commands, `PLAY`, `SPLAY`, `RUN`, or `STOP` cancel the active Motion cleanly
+
+### Browser Sequence Editor
+
+Open `servo_controller.html` to author schema v1 Sequences in the browser library before exporting or baking.
+
+- Section `// 04 Sequencer` creates, duplicates, renames, deletes, tags, and saves Sequences in `localStorage`
+- Steps support free-text commands, duration, target board, private labels, hold points, drag reorder, preview, scrub, looped playback, and pause/resume
+- Record mode appends commands sent through the free-form terminal and fills each new step's duration from elapsed time
+- Section `// 03 Sequencer Bake` still imports, exports, slices, and POSTs the same library to the boards
 
 ### Sequence Time Scaling
 
