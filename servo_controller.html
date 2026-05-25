@@ -3464,15 +3464,6 @@ async function playSetlist(dryRun = false) {
   slLogEl.innerHTML = "";
   const seedNote = (set.mode === "shuffle" && order.appliedSeed != null) ? ` · seed=${order.appliedSeed}` : "";
   setlistLog(`run ${runId} start${dryRun ? " · dry-run" : ""} · ${order.length} entries · mode=${set.mode}${seedNote}`, "ok");
-  if (set.mode === "shuffle") {
-    // Diagnostic: confirm the pool actually carries the weights you set
-    // in the table. If you see all weights showing "w=1" here despite
-    // typing 40 in the UI, the DOM read is broken; if weights match the
-    // table but distribution is still flat, the sampling is broken.
-    const weightDump = (set.entries || []).map(e => `${e.seqId}(w=${e.weight}, r=${e.repeat})`).join(" · ");
-    setlistLog(`pool · ${weightDump}`, "ok");
-    setlistLog(`resolved order · ${order.map(o => o.seqId).join(" → ")}`, "ok");
-  }
   if (setlistPlayer.broadcastIp) setlistLog(`broadcast origin pinned · ${setlistPlayer.broadcastIp}`, "ok");
   slPlayEl.disabled = true;
   slPauseEl.disabled = false;
@@ -3495,9 +3486,6 @@ async function runSetlistStep(runId = setlistPlayer.runId) {
         setlistPlayer.resolvedOrder = next;
         const seedNote = (set.mode === "shuffle" && next.appliedSeed != null) ? ` · seed=${next.appliedSeed}` : "";
         setlistLog(`loop · restarting${seedNote}`, "ok");
-        if (set.mode === "shuffle") {
-          setlistLog(`resolved order · ${next.map(o => o.seqId).join(" → ")}`, "ok");
-        }
       } else {
         setlistLog(`loop · restarting`, "ok");
       }
