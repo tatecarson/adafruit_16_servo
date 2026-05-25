@@ -2888,7 +2888,13 @@ function stopMotionPlayback(sendStop = false) {
   motionPlayer = { active: false, raf: 0, startedAt: 0, lastSendAt: 0, lastSent: {} };
   motionPlayEl.disabled = false;
   motionStopEl.disabled = true;
-  if (sendStop) broadcastCommand("STOP");
+  if (sendStop) {
+    // Same rationale as the natural-completion path: STOP must enter
+    // each board's per-board HTTP queue or a queued ROTATE behind a
+    // UDP-mirrored STOP will resume the motor.
+    for (const ip of boards) sendCommand(ip, "STOP");
+    setTimeout(() => { for (const ip of boards) sendCommand(ip, "STOP"); }, 250);
+  }
   setMotionStatus("idle");
 }
 
@@ -2900,7 +2906,12 @@ function tickMotionPlayback() {
   const atEnd = atMs >= motion.durationMs;
   motionScrubEl.value = Math.round(atMs / 100) * 100;
   motionScrubLabelEl.textContent = `${Math.round(atMs)}ms`;
-  if (performance.now() - motionPlayer.lastSendAt >= 95 || atEnd) {
+  // ~5 Hz. The Renesas HTTP server is the bottleneck; pushing 10 Hz
+  // worth of unique values per track saturates the per-board queue and
+  // command latency balloons (motor visibly lags the playhead). 5 Hz +
+  // the delta gate keeps per-board traffic well under the queue depth
+  // even on continuously-moving curves.
+  if (performance.now() - motionPlayer.lastSendAt >= 200 || atEnd) {
     motionPlayer.lastSendAt = performance.now();
     // Boundary frame: force-send so the final keyframe value reaches
     // every track even if the delta gate would otherwise skip it.
@@ -2920,11 +2931,17 @@ function tickMotionPlayback() {
       motionPlayer.raf = requestAnimationFrame(tickMotionPlayback);
       return;
     }
-    // Natural completion: an in-flight ROTATE <speed> can otherwise
-    // stay in the firmware's HTTP queue for several seconds and leave
-    // the DC motor spinning after the playhead has stopped. Broadcast
-    // STOP to flush state across the cluster.
-    broadcastCommand("STOP");
+    // Natural completion. broadcastCommand("STOP") alone is not enough
+    // because it HTTPs to one board and UDP-mirrors to the others —
+    // the UDP STOP arrives at peer boards "out of band" while their
+    // own HTTP queues still hold pending ROTATE/S0 commands that get
+    // processed AFTER the STOP. Queue STOP directly into every board's
+    // per-board HTTP queue (and repeat once after a 250ms gap) so it
+    // lands AFTER the last in-flight motion command on each board,
+    // guaranteeing the final state is stopped no matter how deep the
+    // queue is.
+    for (const ip of boards) sendCommand(ip, "STOP");
+    setTimeout(() => { for (const ip of boards) sendCommand(ip, "STOP"); }, 250);
     stopMotionPlayback(false);
     setMotionStatus(`complete · ${motion.name || motion.id}`, "phosphor");
     return;
