@@ -2861,32 +2861,50 @@ function scrubMotionTo(atMs, live = true) {
   renderMotionEditor();
 }
 
-// Pending setTimeout IDs for the end-of-playback STOP spray. We
-// schedule ~30 STOPs over 3 seconds and need the ability to cancel
-// them all if the user presses Play again within that window —
-// otherwise leftover STOPs from the previous run land in the middle
-// of the new run and the motor stutters unpredictably (which is
-// exactly what "2nd/3rd play is erratic" looked like).
-let motionStopSprayTimers = [];
-function cancelMotionStopSpray() {
-  for (const t of motionStopSprayTimers) clearTimeout(t);
-  motionStopSprayTimers = [];
+// Per-board send rate-matching. The previous approach (no cap + STOP
+// spray) caused between-run interference: 30 STOPs from run 1 are
+// still draining through the Arduino's TCP receive buffer when run 2
+// starts, so run 2's new ROTATEs queue behind run 1's stale STOPs
+// and the motor moves to wrong positions. An earlier inflight=1-drop
+// approach was non-deterministic (which ticks got dropped depended
+// on Arduino response timing). The fix is inflight=1 with REPLACE:
+//   - if we already have a fetch in flight to a board, stash the
+//     latest cmd as "pending" instead of dropping or queueing
+//   - when the in-flight fetch resolves, fire the pending one
+// So at every moment, the on-wire command for each board carries the
+// latest target value, and the Arduino's queue depth stays at 0-1.
+// No backlog means STOP at end of playback only needs to be sent
+// once — there's nothing to outrun.
+const motionInflightIps = new Set();
+const motionPendingByIp = new Map(); // ip -> { cmd, signal }
+
+function clearMotionSendQueues() {
+  motionInflightIps.clear();
+  motionPendingByIp.clear();
 }
 
-// Motion frame fetch. Fire-and-forget — awaiting blocks on the
-// connection-pool back-pressure we're explicitly trying to avoid.
-// At 5Hz to a single board the Arduino's HTTP server keeps up
-// natively, so we don't gate by inflight count here (an earlier
-// cap=1 attempt caused non-deterministic frame drops and visibly
-// erratic playback because whichever ticks happened to race with
-// an in-flight fetch were silently skipped). End-of-playback
-// cleanup is handled by the AbortController + STOP spray in
-// stopMotionPlayback.
 function sendMotionCommand(ip, cmd, signal) {
+  if (motionInflightIps.has(ip)) {
+    // Coalesce: only the most recent value matters; older pending
+    // commands are superseded.
+    motionPendingByIp.set(ip, { cmd, signal });
+    return;
+  }
+  motionInflightIps.add(ip);
   const url = `http://${ip}/cmd?c=${encodeURIComponent(cmd)}&t=${Date.now().toString(36)}`;
   fetch(url, { method: "GET", mode: "no-cors", cache: "no-store", signal })
     .then(() => { lastCmd.set(ip, { cmd, ts: Date.now() }); })
-    .catch(() => { /* aborted or transport error — ignore */ });
+    .catch(() => { /* aborted or transport error */ })
+    .finally(() => {
+      motionInflightIps.delete(ip);
+      const pending = motionPendingByIp.get(ip);
+      if (pending && !pending.signal?.aborted) {
+        motionPendingByIp.delete(ip);
+        sendMotionCommand(ip, pending.cmd, pending.signal);
+      } else {
+        motionPendingByIp.delete(ip);
+      }
+    });
 }
 
 // force=true: bypass the delta gate (boundary frames, scrub jumps, loop
@@ -2919,30 +2937,23 @@ async function sendMotionFrame(motion, atMs, force = false) {
 
 function stopMotionPlayback(sendStop = false) {
   if (motionPlayer.raf) cancelAnimationFrame(motionPlayer.raf);
-  // Cancel every queued motion fetch still in the browser's pool.
   if (motionPlayer.fetchAbort) {
     try { motionPlayer.fetchAbort.abort(); } catch {}
   }
+  // Drop any pending coalesced sends — they're stale now. In-flight
+  // fetches will reject from the abort signal and their .finally()
+  // handlers will find nothing pending, so no re-trigger.
+  clearMotionSendQueues();
   motionPlayer = { active: false, raf: 0, startedAt: 0, lastSendAt: 0, lastSent: {}, fetchAbort: null };
   motionPlayEl.disabled = false;
   motionStopEl.disabled = true;
   if (sendStop) {
-    // STOP spray. Even with abort, ROTATE bytes already pushed into
-    // the Arduino's TCP buffers will be processed serially. With 6
-    // HTTP/1.1 connections each maintaining its own FIFO and the
-    // Arduino round-robining between them, a stray ROTATE on a slow
-    // connection can fire briefly between two STOPs on faster
-    // connections. Fire STOPs at 100ms intervals for 3 seconds —
-    // long enough that the LAST command processed on every connection
-    // is STOP no matter how slow the drain. We track the timer IDs
-    // so a fresh Play within 3 seconds can cancel them before they
-    // fire mid-new-playback (bug: 2nd/3rd play erratic).
-    cancelMotionStopSpray();
-    const fireStops = () => boards.forEach(ip => sendCommand(ip, "STOP"));
-    fireStops();
-    for (let i = 1; i <= 30; i++) {
-      motionStopSprayTimers.push(setTimeout(fireStops, i * 100));
-    }
+    // Because inflight was capped at 1 per board with coalescing,
+    // there is at most ~1 fresh ROTATE per board in the Arduino's
+    // TCP receive buffer when we abort. A single STOP per board
+    // is enough — it queues behind whatever's in flight on its
+    // connection and is the last command processed. No more spray.
+    for (const ip of boards) sendCommand(ip, "STOP");
   }
   setMotionStatus("idle");
 }
@@ -3002,10 +3013,6 @@ function playMotionLive() {
   const motion = readMotionFromDom();
   saveCurrentMotion(motion);
   stopMotionPlayback(false);
-  // Critical: cancel any STOP spray still firing from the previous
-  // run. Without this, leftover STOPs land in the middle of the new
-  // playback and the motor stutters at apparently-random times.
-  cancelMotionStopSpray();
   motionPlayer = {
     active: true, raf: 0,
     startedAt: performance.now(), lastSendAt: 0,
