@@ -1136,6 +1136,9 @@
     font: 600 8px/1 var(--mono);
   }
   .motion-board {
+    /* Header row spans full width so "board 1 · 192.168.8.198" can fit
+       without truncating the IP into the 170px label column. */
+    display: block;
     border-bottom: 1px solid var(--rule);
     background: rgba(255,182,39,0.025);
   }
@@ -1150,6 +1153,17 @@
     letter-spacing: 0.24em;
     padding: 9px 10px;
     text-align: left;
+    width: 100%;
+  }
+  .motion-board button .ip {
+    color: var(--phosphor);
+    font: 600 10px/1 var(--mono);
+    text-transform: none;
+    letter-spacing: 0;
+    margin-left: 6px;
+  }
+  .motion-board button .ip.missing {
+    color: var(--ink-mute);
   }
   .motion-row {
     min-height: 48px;
@@ -2696,7 +2710,18 @@ function renderMotionEditor() {
   let html = `<div class="motion-scale"><div>track</div><div>mode</div><div class="motion-axis">${ticks.join("")}</div></div>`;
   for (const boardId of [1, 2, 3]) {
     const collapsed = motionCollapsedBoards.has(boardId);
-    html += `<div class="motion-board"><button data-motion-collapse="${boardId}">${collapsed ? "+" : "-"} board ${boardId}</button><div></div><div></div></div>`;
+    // Surface the IP that this boardId resolves to in the configured
+    // boards list so authors can tell which physical sculpture maps to
+    // B1/B2/B3 without leaving the // 06 panel. boards is indexed 0..N
+    // and the bake uses /boardId resolution = idx+1, so boardId N → boards[N-1].
+    const ip = boards[boardId - 1];
+    const ipHtml = ip
+      ? `<span class="ip">${escapeHtml(ip)}</span>`
+      : `<span class="ip missing">not configured</span>`;
+    const titleAttr = ip
+      ? `Maps to ${ip} (boards[${boardId - 1}])`
+      : "No IP at this slot — configure boards in // 01";
+    html += `<div class="motion-board"><button data-motion-collapse="${boardId}" title="${escapeHtml(titleAttr)}">${collapsed ? "+" : "-"} board ${boardId} ${ipHtml}</button></div>`;
     for (const spec of MOTION_TRACK_SPECS.filter(s => s.boardId === boardId)) {
       const track = findTrack(motion, spec);
       const key = trackSpecKey(spec);
