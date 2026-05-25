@@ -2861,16 +2861,30 @@ function scrubMotionTo(atMs, live = true) {
   renderMotionEditor();
 }
 
-// Lightweight fetch dedicated to motion frames so we can route every
-// fetch through a single AbortController. Mirrors sendCommand's URL
-// shape (so firmware sees identical requests) but does NOT await the
-// response — awaiting blocks the tick on connection-pool back-pressure
-// and snowballs the latency we're trying to avoid.
+// Per-board inflight counter. The Arduino HTTP server processes
+// requests on each TCP connection serially at ~5 req/sec; if the
+// browser fires faster than that, requests pile up in TCP buffers
+// and at the connection pool. We cap to 1 outstanding motion fetch
+// per board — if the previous send hasn't completed yet, drop the
+// new send. The next tick will pick up the most-recent target value
+// anyway thanks to the delta gate, so the motor receives the latest
+// position at the board's natural rate instead of accumulating a
+// growing latency tail.
+const motionInflight = new Map(); // ip -> count
+
 function sendMotionCommand(ip, cmd, signal) {
+  if ((motionInflight.get(ip) || 0) >= 1) return false;
+  motionInflight.set(ip, (motionInflight.get(ip) || 0) + 1);
   const url = `http://${ip}/cmd?c=${encodeURIComponent(cmd)}&t=${Date.now().toString(36)}`;
   fetch(url, { method: "GET", mode: "no-cors", cache: "no-store", signal })
     .then(() => { lastCmd.set(ip, { cmd, ts: Date.now() }); })
-    .catch(() => { /* aborted or transport error — ignore */ });
+    .catch(() => { /* aborted or transport error — ignore */ })
+    .finally(() => {
+      const cur = motionInflight.get(ip) || 1;
+      if (cur <= 1) motionInflight.delete(ip);
+      else motionInflight.set(ip, cur - 1);
+    });
+  return true;
 }
 
 // force=true: bypass the delta gate (boundary frames, scrub jumps, loop
@@ -2903,31 +2917,30 @@ async function sendMotionFrame(motion, atMs, force = false) {
 
 function stopMotionPlayback(sendStop = false) {
   if (motionPlayer.raf) cancelAnimationFrame(motionPlayer.raf);
-  // Cancel every queued motion fetch in the browser's connection pool
-  // before we send STOP, so STOP isn't stuck behind a wall of pending
-  // ROTATE/S0 requests. Without this, fresh STOPs land at position 50+
-  // in the queue and the motor keeps spinning for seconds after the
-  // playhead ended.
+  // Cancel every queued motion fetch still in the browser's pool. The
+  // .finally() handler on each fetch will drain motionInflight as it
+  // rejects. Clear the map explicitly anyway so the inflight cap
+  // doesn't carry over and block a fresh play.
   if (motionPlayer.fetchAbort) {
     try { motionPlayer.fetchAbort.abort(); } catch {}
   }
+  motionInflight.clear();
   motionPlayer = { active: false, raf: 0, startedAt: 0, lastSendAt: 0, lastSent: {}, fetchAbort: null };
   motionPlayEl.disabled = false;
   motionStopEl.disabled = true;
   if (sendStop) {
-    // STOP spray. AbortController only cancels fetches still in the
-    // browser's queue — any ROTATE already transmitted over the wire
-    // when we aborted will be processed by the Arduino regardless.
-    // HTTP/1.1 over ~6 parallel connections to the same origin means
-    // each connection has its own FIFO; STOP sent on connection 1
-    // can't preempt a ROTATE already in flight on connection 4. So
-    // we fire STOP repeatedly for ~1.2s — enough times that on every
-    // connection the LAST command processed is STOP, no matter how
-    // many leftover ROTATEs are still draining. The browser spreads
-    // these across the pool naturally.
+    // STOP spray. Even with the inflight cap and abort, ROTATE bytes
+    // already pushed into the Arduino's TCP buffers will be processed
+    // serially. With 6 HTTP/1.1 connections each maintaining its own
+    // FIFO and the Arduino round-robining between them, a stray
+    // ROTATE on a slow connection can fire briefly between two STOPs
+    // on faster connections. Fire STOPs at 100ms intervals for 3
+    // seconds — long enough that the LAST command processed on every
+    // connection is STOP no matter how slow the drain. Bypass the
+    // inflight cap by going through sendCommand (which doesn't gate).
     const fireStops = () => boards.forEach(ip => sendCommand(ip, "STOP"));
     fireStops();
-    for (let i = 1; i <= 12; i++) setTimeout(fireStops, i * 100);
+    for (let i = 1; i <= 30; i++) setTimeout(fireStops, i * 100);
   }
   setMotionStatus("idle");
 }
