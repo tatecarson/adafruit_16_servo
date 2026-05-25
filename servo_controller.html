@@ -3445,9 +3445,21 @@ async function runSetlistStep(runId = setlistPlayer.runId) {
   const entry = setlistPlayer.resolvedOrder[setlistPlayer.entryIndex];
   if (!entry) {
     if (slLoopEl.checked) {
+      // Re-resolve on every loop wrap so shuffle mode actually reshuffles
+      // each pass. In ordered mode this is a no-op; in shuffle with seed=0
+      // the time-based effectiveSeed advances; with a fixed seed the order
+      // stays reproducible (same array, intentional).
+      const set = sequenceLibrary().setlists.find(s => s.id === currentSetlistId);
+      if (set) {
+        const next = resolveSetlistOrder(set, sequenceLibrary());
+        setlistPlayer.resolvedOrder = next;
+        const seedNote = (set.mode === "shuffle" && next.appliedSeed != null) ? ` · seed=${next.appliedSeed}` : "";
+        setlistLog(`loop · restarting${seedNote}`, "ok");
+      } else {
+        setlistLog(`loop · restarting`, "ok");
+      }
       setlistPlayer.entryIndex = 0;
       setlistPlayer.stepIndex = 0;
-      setlistLog(`loop · restarting`, "ok");
       return runSetlistStep(runId);
     }
     setlistLog(`run ${runId} complete`, "ok");
