@@ -2915,14 +2915,19 @@ function stopMotionPlayback(sendStop = false) {
   motionPlayEl.disabled = false;
   motionStopEl.disabled = true;
   if (sendStop) {
-    // Fresh fetches (not tied to the aborted controller) so STOP
-    // actually goes out. Direct per-board HTTP so each board sees
-    // STOP in its own command stream, not a UDP mirror that races
-    // its in-flight commands. Belt-and-suspenders second STOP 300ms
-    // later covers the edge case where the first one races a frame
-    // we sent just before abort.
-    for (const ip of boards) sendCommand(ip, "STOP");
-    setTimeout(() => { for (const ip of boards) sendCommand(ip, "STOP"); }, 300);
+    // STOP spray. AbortController only cancels fetches still in the
+    // browser's queue — any ROTATE already transmitted over the wire
+    // when we aborted will be processed by the Arduino regardless.
+    // HTTP/1.1 over ~6 parallel connections to the same origin means
+    // each connection has its own FIFO; STOP sent on connection 1
+    // can't preempt a ROTATE already in flight on connection 4. So
+    // we fire STOP repeatedly for ~1.2s — enough times that on every
+    // connection the LAST command processed is STOP, no matter how
+    // many leftover ROTATEs are still draining. The browser spreads
+    // these across the pool naturally.
+    const fireStops = () => boards.forEach(ip => sendCommand(ip, "STOP"));
+    fireStops();
+    for (let i = 1; i <= 12; i++) setTimeout(fireStops, i * 100);
   }
   setMotionStatus("idle");
 }
