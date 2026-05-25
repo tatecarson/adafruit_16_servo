@@ -3209,11 +3209,17 @@ function renderSetlist() {
 
   slTotalEl.textContent = `${(set.entries || []).length} entr${(set.entries || []).length === 1 ? "y" : "ies"}`;
 
+  // Highlight the table row whose seqId matches the currently-playing
+  // entry from resolvedOrder — NOT the row whose table position matches
+  // entryIndex. In ordered mode those happen to agree; in shuffle they
+  // diverge, which made playback look like it was going 1→2→3 every time.
+  const playing = setlistPlayer.active ? setlistPlayer.resolvedOrder[setlistPlayer.entryIndex] : null;
+  const playingSeqId = playing ? playing.seqId : null;
   slEntriesEl.innerHTML = (set.entries || []).map((raw, index) => {
     const entry = normalizeEntry(raw);
     const seq = lookupSequence(lib, entry.seqId);
     const tags = seq ? (seq.tags || []).join(", ") : "(missing sequence)";
-    const active = setlistPlayer.active && setlistPlayer.entryIndex === index;
+    const active = playingSeqId && entry.seqId === playingSeqId;
     return `<tr data-index="${index}" draggable="true"${active ? ' class="active"' : ''}>
       <td class="seq-drag" title="Drag to reorder">=</td>
       <td class="seq-index">${pad2(index + 1)}</td>
@@ -3484,7 +3490,7 @@ async function runSetlistStep(runId = setlistPlayer.runId) {
     return runSetlistStep(runId);
   }
   const step = normalizeStep(steps[setlistPlayer.stepIndex]);
-  setSetlistStatus(`entry ${pad2(setlistPlayer.entryIndex + 1)} · step ${pad2(setlistPlayer.stepIndex + 1)} · ${step.cmd}`, "amber");
+  setSetlistStatus(`entry ${pad2(setlistPlayer.entryIndex + 1)}/${pad2(setlistPlayer.resolvedOrder.length)} · ${seq.name || seq.id} · step ${pad2(setlistPlayer.stepIndex + 1)} · ${step.cmd}`, "amber");
   setlistLog(`  step ${pad2(setlistPlayer.stepIndex + 1)} · ${step.cmd} · next in ${step.durationMs}ms`, "warn");
   const sent = await dispatchSetlistStep(step);
   if (!setlistPlayer.active || setlistPlayer.runId !== runId) return;
