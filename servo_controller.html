@@ -1318,6 +1318,7 @@
             <th>label</th>
             <th>hold</th>
             <th>preview</th>
+            <th></th>
           </tr>
         </thead>
         <tbody id="seqSteps"></tbody>
@@ -2405,6 +2406,7 @@ function renderSequencer() {
       <td><input data-field="label" type="text" value="${escapeHtml(step.label)}" spellcheck="false"></td>
       <td class="seq-hold"><input data-field="hold" type="checkbox"${step.hold ? " checked" : ""}></td>
       <td><button class="cmd compact" data-preview="${index}">Preview</button></td>
+      <td><button class="cmd compact alert" data-step-remove="${index}" title="Remove step">x</button></td>
     </tr>`;
   }).join("");
 }
@@ -2957,6 +2959,21 @@ seqStepsEl.addEventListener("change", () => {
   if (seqDirty) saveCurrentSequence(readSequenceFromDom());
 });
 seqStepsEl.addEventListener("click", async e => {
+  const remove = e.target.dataset.stepRemove;
+  if (remove != null) {
+    const seq = readSequenceFromDom();
+    // Keep at least one step so the rest of the editor has something to
+    // render; replacing the last step with a STOP placeholder matches the
+    // Delete-sequence flow's "default empty" feel.
+    if (seq.steps.length <= 1) {
+      seq.steps = [{ cmd: "STOP", durationMs: 1000, target: "all", label: "", hold: false }];
+    } else {
+      seq.steps.splice(parseInt(remove, 10), 1);
+    }
+    saveCurrentSequence(seq);
+    setSeqStatus(`removed step ${pad2(parseInt(remove, 10) + 1)}`, "amber");
+    return;
+  }
   const preview = e.target.dataset.preview;
   if (preview == null) return;
   const seq = readSequenceFromDom();
