@@ -2566,12 +2566,17 @@ let motionDrag = null;
 // pointerup commits the final state and clears the override.
 let motionDraftOverride = null;
 // lastSent: per-track last value pushed to the wire, used to skip
-// redundant fetches when an interpolated value hasn't moved. Without
-// this each tick fired up to 12 commands × 3 boards regardless of
-// whether anything changed, saturating the UNO R4's HTTP server and
-// leaving the closing ROTATE 0 stuck in a queue for ~10s after the
-// playhead ended (servo-83m).
-let motionPlayer = { active: false, raf: 0, startedAt: 0, lastSendAt: 0, lastSent: {} };
+// redundant fetches when an interpolated value hasn't moved.
+//
+// fetchAbort: a single AbortController whose signal is attached to
+// every motion-frame fetch. The Chrome HTTP/1.1 connection pool holds
+// ~6 sockets per origin, so motion fetches that exceed the per-board
+// processing rate sit in a browser-side queue we cannot otherwise
+// reach. On STOP/end we abort the controller to cancel every queued
+// motion fetch in flight, then send fresh STOP requests (not bound
+// to the aborted controller) so STOP lands at the head of each
+// board's queue rather than behind a wall of pending ROTATEs.
+let motionPlayer = { active: false, raf: 0, startedAt: 0, lastSendAt: 0, lastSent: {}, fetchAbort: null };
 const motionCollapsedBoards = new Set();
 const motionMutedTracks = new Set();
 let motionSoloTracks = new Set();
@@ -2856,12 +2861,25 @@ function scrubMotionTo(atMs, live = true) {
   renderMotionEditor();
 }
 
+// Lightweight fetch dedicated to motion frames so we can route every
+// fetch through a single AbortController. Mirrors sendCommand's URL
+// shape (so firmware sees identical requests) but does NOT await the
+// response — awaiting blocks the tick on connection-pool back-pressure
+// and snowballs the latency we're trying to avoid.
+function sendMotionCommand(ip, cmd, signal) {
+  const url = `http://${ip}/cmd?c=${encodeURIComponent(cmd)}&t=${Date.now().toString(36)}`;
+  fetch(url, { method: "GET", mode: "no-cors", cache: "no-store", signal })
+    .then(() => { lastCmd.set(ip, { cmd, ts: Date.now() }); })
+    .catch(() => { /* aborted or transport error — ignore */ });
+}
+
 // force=true: bypass the delta gate (boundary frames, scrub jumps, loop
 // wraps) so the receiving board can't "remember" a stale value across
 // a discontinuity.
 async function sendMotionFrame(motion, atMs, force = false) {
   const soloActive = motionSoloTracks.size > 0;
   const lastSent = motionPlayer.lastSent || {};
+  const signal = motionPlayer.fetchAbort?.signal;
   for (const spec of MOTION_TRACK_SPECS) {
     const key = trackSpecKey(spec);
     if (motionMutedTracks.has(key)) continue;
@@ -2878,22 +2896,33 @@ async function sendMotionFrame(motion, atMs, force = false) {
     if (!force && lastSent[key] === value) continue;
     lastSent[key] = value;
     const cmd = spec.kind === "servo" ? `S${spec.channel} ${value}` : `ROTATE ${value}`;
-    sendCommand(ip, cmd);
+    sendMotionCommand(ip, cmd, signal);
   }
   motionPlayer.lastSent = lastSent;
 }
 
 function stopMotionPlayback(sendStop = false) {
   if (motionPlayer.raf) cancelAnimationFrame(motionPlayer.raf);
-  motionPlayer = { active: false, raf: 0, startedAt: 0, lastSendAt: 0, lastSent: {} };
+  // Cancel every queued motion fetch in the browser's connection pool
+  // before we send STOP, so STOP isn't stuck behind a wall of pending
+  // ROTATE/S0 requests. Without this, fresh STOPs land at position 50+
+  // in the queue and the motor keeps spinning for seconds after the
+  // playhead ended.
+  if (motionPlayer.fetchAbort) {
+    try { motionPlayer.fetchAbort.abort(); } catch {}
+  }
+  motionPlayer = { active: false, raf: 0, startedAt: 0, lastSendAt: 0, lastSent: {}, fetchAbort: null };
   motionPlayEl.disabled = false;
   motionStopEl.disabled = true;
   if (sendStop) {
-    // Same rationale as the natural-completion path: STOP must enter
-    // each board's per-board HTTP queue or a queued ROTATE behind a
-    // UDP-mirrored STOP will resume the motor.
+    // Fresh fetches (not tied to the aborted controller) so STOP
+    // actually goes out. Direct per-board HTTP so each board sees
+    // STOP in its own command stream, not a UDP mirror that races
+    // its in-flight commands. Belt-and-suspenders second STOP 300ms
+    // later covers the edge case where the first one races a frame
+    // we sent just before abort.
     for (const ip of boards) sendCommand(ip, "STOP");
-    setTimeout(() => { for (const ip of boards) sendCommand(ip, "STOP"); }, 250);
+    setTimeout(() => { for (const ip of boards) sendCommand(ip, "STOP"); }, 300);
   }
   setMotionStatus("idle");
 }
@@ -2923,7 +2952,13 @@ function tickMotionPlayback() {
       // Reset the run clock so the next tick computes elapsed from now.
       // lastSendAt and lastSent both reset so the next loop's first
       // frame fires unsuppressed by either the 95ms throttle or the
-      // delta gate.
+      // delta gate. Also abort and recreate the fetch controller so
+      // any still-pending frames from the just-ended pass don't bleed
+      // into the new pass and arrive out of order at the boards.
+      if (motionPlayer.fetchAbort) {
+        try { motionPlayer.fetchAbort.abort(); } catch {}
+      }
+      motionPlayer.fetchAbort = new AbortController();
       motionPlayer.startedAt = performance.now();
       motionPlayer.lastSendAt = 0;
       motionPlayer.lastSent = {};
@@ -2931,18 +2966,12 @@ function tickMotionPlayback() {
       motionPlayer.raf = requestAnimationFrame(tickMotionPlayback);
       return;
     }
-    // Natural completion. broadcastCommand("STOP") alone is not enough
-    // because it HTTPs to one board and UDP-mirrors to the others —
-    // the UDP STOP arrives at peer boards "out of band" while their
-    // own HTTP queues still hold pending ROTATE/S0 commands that get
-    // processed AFTER the STOP. Queue STOP directly into every board's
-    // per-board HTTP queue (and repeat once after a 250ms gap) so it
-    // lands AFTER the last in-flight motion command on each board,
-    // guaranteeing the final state is stopped no matter how deep the
-    // queue is.
-    for (const ip of boards) sendCommand(ip, "STOP");
-    setTimeout(() => { for (const ip of boards) sendCommand(ip, "STOP"); }, 250);
-    stopMotionPlayback(false);
+    // Natural completion — route through stopMotionPlayback(true) so
+    // we abort the entire queued motion-fetch backlog FIRST, then send
+    // fresh STOPs that land at the head of each board's queue. Without
+    // the abort, STOP queues at position 50+ behind in-flight ROTATEs
+    // and the motor visibly outruns the playhead by many seconds.
+    stopMotionPlayback(true);
     setMotionStatus(`complete · ${motion.name || motion.id}`, "phosphor");
     return;
   }
@@ -2953,7 +2982,15 @@ function playMotionLive() {
   const motion = readMotionFromDom();
   saveCurrentMotion(motion);
   stopMotionPlayback(false);
-  motionPlayer = { active: true, raf: 0, startedAt: performance.now(), lastSendAt: 0, lastSent: {} };
+  motionPlayer = {
+    active: true, raf: 0,
+    startedAt: performance.now(), lastSendAt: 0,
+    lastSent: {},
+    // Fresh AbortController for this run's motion fetches so STOP/loop
+    // wrap can cancel any in-flight ROTATE/S0 commands instead of
+    // letting them drain on their own schedule.
+    fetchAbort: new AbortController(),
+  };
   motionPlayEl.disabled = true;
   motionStopEl.disabled = false;
   setMotionStatus(`playing live · ${motion.name || motion.id}`, "amber");
