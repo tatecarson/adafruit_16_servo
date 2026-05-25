@@ -2565,7 +2565,13 @@ let motionDrag = null;
 // localStorage on every pointermove (servo-60q). saveCurrentMotion on
 // pointerup commits the final state and clears the override.
 let motionDraftOverride = null;
-let motionPlayer = { active: false, raf: 0, startedAt: 0, lastSendAt: 0 };
+// lastSent: per-track last value pushed to the wire, used to skip
+// redundant fetches when an interpolated value hasn't moved. Without
+// this each tick fired up to 12 commands × 3 boards regardless of
+// whether anything changed, saturating the UNO R4's HTTP server and
+// leaving the closing ROTATE 0 stuck in a queue for ~10s after the
+// playhead ended (servo-83m).
+let motionPlayer = { active: false, raf: 0, startedAt: 0, lastSendAt: 0, lastSent: {} };
 const motionCollapsedBoards = new Set();
 const motionMutedTracks = new Set();
 let motionSoloTracks = new Set();
@@ -2850,8 +2856,12 @@ function scrubMotionTo(atMs, live = true) {
   renderMotionEditor();
 }
 
-async function sendMotionFrame(motion, atMs) {
+// force=true: bypass the delta gate (boundary frames, scrub jumps, loop
+// wraps) so the receiving board can't "remember" a stale value across
+// a discontinuity.
+async function sendMotionFrame(motion, atMs, force = false) {
   const soloActive = motionSoloTracks.size > 0;
+  const lastSent = motionPlayer.lastSent || {};
   for (const spec of MOTION_TRACK_SPECS) {
     const key = trackSpecKey(spec);
     if (motionMutedTracks.has(key)) continue;
@@ -2861,14 +2871,21 @@ async function sendMotionFrame(motion, atMs) {
     const track = findTrack(motion, spec);
     const rawValue = valueAtTrackTime(track, spec, atMs);
     const value = Math.round(clampMotionValue(rawValue, spec));
+    // Skip fetches when the integer-rounded value is unchanged. The
+    // Renesas HTTP server can only sustain a few requests/sec per board
+    // before queueing, and a 12-track playback at 10 Hz quickly exceeds
+    // that — most ticks the interpolated value rounds to the same int.
+    if (!force && lastSent[key] === value) continue;
+    lastSent[key] = value;
     const cmd = spec.kind === "servo" ? `S${spec.channel} ${value}` : `ROTATE ${value}`;
     sendCommand(ip, cmd);
   }
+  motionPlayer.lastSent = lastSent;
 }
 
 function stopMotionPlayback(sendStop = false) {
   if (motionPlayer.raf) cancelAnimationFrame(motionPlayer.raf);
-  motionPlayer = { active: false, raf: 0, startedAt: 0, lastSendAt: 0 };
+  motionPlayer = { active: false, raf: 0, startedAt: 0, lastSendAt: 0, lastSent: {} };
   motionPlayEl.disabled = false;
   motionStopEl.disabled = true;
   if (sendStop) broadcastCommand("STOP");
@@ -2880,24 +2897,34 @@ function tickMotionPlayback() {
   const motion = readMotionFromDom();
   const elapsed = performance.now() - motionPlayer.startedAt;
   const atMs = Math.min(motion.durationMs, elapsed);
+  const atEnd = atMs >= motion.durationMs;
   motionScrubEl.value = Math.round(atMs / 100) * 100;
   motionScrubLabelEl.textContent = `${Math.round(atMs)}ms`;
-  if (performance.now() - motionPlayer.lastSendAt >= 95 || atMs >= motion.durationMs) {
+  if (performance.now() - motionPlayer.lastSendAt >= 95 || atEnd) {
     motionPlayer.lastSendAt = performance.now();
-    sendMotionFrame(motion, atMs);
+    // Boundary frame: force-send so the final keyframe value reaches
+    // every track even if the delta gate would otherwise skip it.
+    sendMotionFrame(motion, atMs, atEnd);
     renderMotionEditor();
   }
-  if (atMs >= motion.durationMs) {
+  if (atEnd) {
     if (motionLoopEl.checked) {
       // Reset the run clock so the next tick computes elapsed from now.
-      // lastSendAt also resets so the boundary-frame send isn't suppressed
-      // by the 95ms throttle.
+      // lastSendAt and lastSent both reset so the next loop's first
+      // frame fires unsuppressed by either the 95ms throttle or the
+      // delta gate.
       motionPlayer.startedAt = performance.now();
       motionPlayer.lastSendAt = 0;
+      motionPlayer.lastSent = {};
       setMotionStatus(`looping · ${motion.name || motion.id}`, "amber");
       motionPlayer.raf = requestAnimationFrame(tickMotionPlayback);
       return;
     }
+    // Natural completion: an in-flight ROTATE <speed> can otherwise
+    // stay in the firmware's HTTP queue for several seconds and leave
+    // the DC motor spinning after the playhead has stopped. Broadcast
+    // STOP to flush state across the cluster.
+    broadcastCommand("STOP");
     stopMotionPlayback(false);
     setMotionStatus(`complete · ${motion.name || motion.id}`, "phosphor");
     return;
@@ -2909,7 +2936,7 @@ function playMotionLive() {
   const motion = readMotionFromDom();
   saveCurrentMotion(motion);
   stopMotionPlayback(false);
-  motionPlayer = { active: true, raf: 0, startedAt: performance.now(), lastSendAt: 0 };
+  motionPlayer = { active: true, raf: 0, startedAt: performance.now(), lastSendAt: 0, lastSent: {} };
   motionPlayEl.disabled = true;
   motionStopEl.disabled = false;
   setMotionStatus(`playing live · ${motion.name || motion.id}`, "amber");
