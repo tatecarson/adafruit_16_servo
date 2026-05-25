@@ -3276,16 +3276,29 @@ function entryEnergy(entry, lib) {
   return sum;
 }
 
-// Resolve the full play order for a setlist:
-//   - ordered: literal walk; repeat N means the entry plays N times in a row.
-//   - shuffle: build a pool with each entry repeated `repeat` times, then
-//     sample without replacement using a weighted PRNG; honor avoidSameTag
-//     and minGapEntries by re-sampling when a pick would violate the rule
-//     (with a fallback so we never deadlock). Mood arc post-sorts the
-//     resolved pool by energy bands.
-// Returns an array of resolved entry objects (with .__seq attached for
-// convenience). Sequences that no longer exist in the library are skipped
-// and logged.
+// Resolve the play order for a setlist.
+//
+// ORDERED mode: literal walk; an entry's `repeat` plays it N times in a row.
+//
+// SHUFFLE mode: weighted random with REPLACEMENT. At each slot we
+// independently weighted-pick from the full entry set — so a heavy weight
+// produces a sequence that actually dominates the show (slot 1 AND 2 AND 3...
+// not just slot 1). `repeat` becomes a BURST length: when a sequence is
+// picked, it plays N slots in a row before the next weighted pick.
+// Pass length = sum(repeat) so the show feels comparable to ordered mode.
+//
+// Constraints (applied at pick time, not during a burst):
+//   - minGapEntries: exclude any seqId that appeared in the last N slots
+//   - avoidSameTag : exclude any entry sharing a tag with the slot just played
+// If exclusion empties the pool we fall back to all entries so we never
+// deadlock.
+//
+// Mood arc post-sorts the final output by tag-energy (random/rising/
+// falling/breathing). It re-orders across burst boundaries, so for clean
+// bursts pick mood=random.
+//
+// Each resolved item is { ...entry, __seq: seq, __burst: true|false } where
+// __burst flags slots that are part of a burst (vs a fresh pick).
 function resolveSetlistOrder(set, lib) {
   const entries = (set.entries || []).map(normalizeEntry).filter(e => e.seqId);
   if (!entries.length) return [];
@@ -3295,30 +3308,28 @@ function resolveSetlistOrder(set, lib) {
     for (const e of entries) {
       const seq = lookupSequence(lib, e.seqId);
       if (!seq) continue;
-      for (let i = 0; i < e.repeat; i++) out.push({ ...e, __seq: seq });
+      for (let i = 0; i < e.repeat; i++) out.push({ ...e, __seq: seq, __burst: i > 0 });
     }
     out.appliedSeed = null;
     return out;
   }
 
-  // shuffle: build pool with multiplicity = repeat
-  // seed=0 means "fresh random each play" — user enters a non-zero seed
-  // only when they want reproducibility (debugging, A/B comparison, etc.)
+  // Resolve entries → sequences once. Drop any whose sequence is gone.
+  const resolved = entries
+    .map(e => ({ ...e, __seq: lookupSequence(lib, e.seqId) }))
+    .filter(e => e.__seq);
+  if (!resolved.length) return [];
+
   const rules = set.shuffleRules || {};
+  // seed=0 → fresh time-based seed each call. Non-zero is reproducible.
   const effectiveSeed = (rules.seed | 0) || ((Date.now() & 0xffffffff) >>> 0);
   const rand = mulberry32(effectiveSeed);
-  const pool = [];
-  for (const e of entries) {
-    const seq = lookupSequence(lib, e.seqId);
-    if (!seq) continue;
-    for (let i = 0; i < e.repeat; i++) pool.push({ ...e, __seq: seq });
-  }
 
-  const out = [];
-  const tagsLastSeenAt = new Map();
-  const lastSeqSeenAt  = new Map();
+  // Total pass length matches ordered-mode count, so a setlist with three
+  // repeat=1 entries plays 3 slots per pass; with one repeat=3 entry and
+  // two repeat=1, it plays 5 slots.
+  const passLength = resolved.reduce((sum, e) => sum + e.repeat, 0);
 
-  // Weighted pick — entries with weight 0 effectively never play.
   function weightedPick(candidates) {
     let total = 0;
     for (const c of candidates) total += Math.max(0, c.weight || 0);
@@ -3334,34 +3345,45 @@ function resolveSetlistOrder(set, lib) {
     return candidates[candidates.length - 1];
   }
 
-  while (pool.length) {
-    const pos = out.length;
-    const eligible = pool.filter(cand => {
-      if ((rules.minGapEntries || 0) > 0) {
-        const last = lastSeqSeenAt.get(cand.seqId);
-        if (last !== undefined && pos - last <= rules.minGapEntries) return false;
+  const out = [];
+  let burstRemaining = 0;
+  let burstEntry = null;
+  const minGap = Math.max(0, rules.minGapEntries | 0);
+
+  for (let slot = 0; slot < passLength; slot++) {
+    if (burstRemaining > 0 && burstEntry) {
+      // Continue an in-progress burst — no constraint check.
+      out.push({ ...burstEntry, __burst: true });
+      burstRemaining--;
+      continue;
+    }
+    // Fresh weighted pick. Filter by constraints; fall back to full set
+    // if everything got excluded.
+    const prev = out[out.length - 1];
+    const recentSeqIds = new Set();
+    if (minGap > 0) {
+      for (let i = Math.max(0, out.length - minGap); i < out.length; i++) {
+        recentSeqIds.add(out[i].seqId);
       }
-      if (rules.avoidSameTag) {
+    }
+    const eligible = resolved.filter(cand => {
+      if (recentSeqIds.has(cand.seqId)) return false;
+      if (rules.avoidSameTag && prev) {
         for (const tag of (cand.__seq.tags || [])) {
-          const last = tagsLastSeenAt.get(tag);
-          if (last === pos - 1) return false;
+          if ((prev.__seq.tags || []).includes(tag)) return false;
         }
       }
       return true;
     });
-    // If the rule filter starves us, fall back to anything still in the
-    // pool so we never deadlock.
-    const candidates = eligible.length ? eligible : pool;
+    const candidates = eligible.length ? eligible : resolved;
     const pick = weightedPick(candidates);
-    const idx = pool.indexOf(pick);
-    pool.splice(idx, 1);
-    out.push(pick);
-    lastSeqSeenAt.set(pick.seqId, pos);
-    for (const tag of (pick.__seq.tags || [])) tagsLastSeenAt.set(tag, pos);
+    out.push({ ...pick, __burst: false });
+    burstEntry = pick;
+    burstRemaining = Math.max(0, pick.repeat - 1);
   }
 
-  // Apply mood arc as a post-sort: rising/falling sort by energy; breathing
-  // alternates calm/loud bands; random leaves the rule-resolved order alone.
+  // Mood arc post-sort. Note this can break bursts; pick mood=random if
+  // you care about preserving burst adjacency.
   if (rules.moodArc === "rising") {
     out.sort((a, b) => entryEnergy(a, lib) - entryEnergy(b, lib));
   } else if (rules.moodArc === "falling") {
@@ -3439,6 +3461,15 @@ async function playSetlist(dryRun = false) {
   slLogEl.innerHTML = "";
   const seedNote = (set.mode === "shuffle" && order.appliedSeed != null) ? ` · seed=${order.appliedSeed}` : "";
   setlistLog(`run ${runId} start${dryRun ? " · dry-run" : ""} · ${order.length} entries · mode=${set.mode}${seedNote}`, "ok");
+  if (set.mode === "shuffle") {
+    // Diagnostic: confirm the pool actually carries the weights you set
+    // in the table. If you see all weights showing "w=1" here despite
+    // typing 40 in the UI, the DOM read is broken; if weights match the
+    // table but distribution is still flat, the sampling is broken.
+    const weightDump = (set.entries || []).map(e => `${e.seqId}(w=${e.weight}, r=${e.repeat})`).join(" · ");
+    setlistLog(`pool · ${weightDump}`, "ok");
+    setlistLog(`resolved order · ${order.map(o => o.seqId).join(" → ")}`, "ok");
+  }
   if (setlistPlayer.broadcastIp) setlistLog(`broadcast origin pinned · ${setlistPlayer.broadcastIp}`, "ok");
   slPlayEl.disabled = true;
   slPauseEl.disabled = false;
@@ -3461,6 +3492,9 @@ async function runSetlistStep(runId = setlistPlayer.runId) {
         setlistPlayer.resolvedOrder = next;
         const seedNote = (set.mode === "shuffle" && next.appliedSeed != null) ? ` · seed=${next.appliedSeed}` : "";
         setlistLog(`loop · restarting${seedNote}`, "ok");
+        if (set.mode === "shuffle") {
+          setlistLog(`resolved order · ${next.map(o => o.seqId).join(" → ")}`, "ok");
+        }
       } else {
         setlistLog(`loop · restarting`, "ok");
       }
