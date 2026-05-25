@@ -1426,8 +1426,8 @@
             <option value="breathing">breathing</option>
           </select>
         </label>
-        <label title="Reproducible seed; same seed + library = same shuffle order">
-          <span>seed</span>
+        <label title="0 = fresh random each play. Set non-zero to reproduce a specific shuffle (same seed + library = same order).">
+          <span>seed (0 = random)</span>
           <input id="slSeed" type="number" min="0" step="1" value="0">
         </label>
       </div>
@@ -3274,12 +3274,16 @@ function resolveSetlistOrder(set, lib) {
       if (!seq) continue;
       for (let i = 0; i < e.repeat; i++) out.push({ ...e, __seq: seq });
     }
+    out.appliedSeed = null;
     return out;
   }
 
   // shuffle: build pool with multiplicity = repeat
+  // seed=0 means "fresh random each play" — user enters a non-zero seed
+  // only when they want reproducibility (debugging, A/B comparison, etc.)
   const rules = set.shuffleRules || {};
-  const rand = mulberry32(rules.seed | 0);
+  const effectiveSeed = (rules.seed | 0) || ((Date.now() & 0xffffffff) >>> 0);
+  const rand = mulberry32(effectiveSeed);
   const pool = [];
   for (const e of entries) {
     const seq = lookupSequence(lib, e.seqId);
@@ -3350,6 +3354,7 @@ function resolveSetlistOrder(set, lib) {
     }
     out.splice(0, out.length, ...woven);
   }
+  out.appliedSeed = effectiveSeed;
   return out;
 }
 
@@ -3409,7 +3414,8 @@ async function playSetlist(dryRun = false) {
     logCount: 0, broadcastIp: dryRun ? null : preferredBroadcastOrigin(),
   };
   slLogEl.innerHTML = "";
-  setlistLog(`run ${runId} start${dryRun ? " · dry-run" : ""} · ${order.length} entries · mode=${set.mode}`, "ok");
+  const seedNote = (set.mode === "shuffle" && order.appliedSeed != null) ? ` · seed=${order.appliedSeed}` : "";
+  setlistLog(`run ${runId} start${dryRun ? " · dry-run" : ""} · ${order.length} entries · mode=${set.mode}${seedNote}`, "ok");
   if (setlistPlayer.broadcastIp) setlistLog(`broadcast origin pinned · ${setlistPlayer.broadcastIp}`, "ok");
   slPlayEl.disabled = true;
   slPauseEl.disabled = false;
