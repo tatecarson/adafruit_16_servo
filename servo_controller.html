@@ -2861,30 +2861,20 @@ function scrubMotionTo(atMs, live = true) {
   renderMotionEditor();
 }
 
-// Per-board inflight counter. The Arduino HTTP server processes
-// requests on each TCP connection serially at ~5 req/sec; if the
-// browser fires faster than that, requests pile up in TCP buffers
-// and at the connection pool. We cap to 1 outstanding motion fetch
-// per board — if the previous send hasn't completed yet, drop the
-// new send. The next tick will pick up the most-recent target value
-// anyway thanks to the delta gate, so the motor receives the latest
-// position at the board's natural rate instead of accumulating a
-// growing latency tail.
-const motionInflight = new Map(); // ip -> count
-
+// Motion frame fetch. Fire-and-forget — awaiting blocks on the
+// connection-pool back-pressure we're explicitly trying to avoid.
+// At 5Hz to a single board the Arduino's HTTP server keeps up
+// natively, so we don't gate by inflight count here (an earlier
+// cap=1 attempt caused non-deterministic frame drops and visibly
+// erratic playback because whichever ticks happened to race with
+// an in-flight fetch were silently skipped). End-of-playback
+// cleanup is handled by the AbortController + STOP spray in
+// stopMotionPlayback.
 function sendMotionCommand(ip, cmd, signal) {
-  if ((motionInflight.get(ip) || 0) >= 1) return false;
-  motionInflight.set(ip, (motionInflight.get(ip) || 0) + 1);
   const url = `http://${ip}/cmd?c=${encodeURIComponent(cmd)}&t=${Date.now().toString(36)}`;
   fetch(url, { method: "GET", mode: "no-cors", cache: "no-store", signal })
     .then(() => { lastCmd.set(ip, { cmd, ts: Date.now() }); })
-    .catch(() => { /* aborted or transport error — ignore */ })
-    .finally(() => {
-      const cur = motionInflight.get(ip) || 1;
-      if (cur <= 1) motionInflight.delete(ip);
-      else motionInflight.set(ip, cur - 1);
-    });
-  return true;
+    .catch(() => { /* aborted or transport error — ignore */ });
 }
 
 // force=true: bypass the delta gate (boundary frames, scrub jumps, loop
@@ -2917,14 +2907,10 @@ async function sendMotionFrame(motion, atMs, force = false) {
 
 function stopMotionPlayback(sendStop = false) {
   if (motionPlayer.raf) cancelAnimationFrame(motionPlayer.raf);
-  // Cancel every queued motion fetch still in the browser's pool. The
-  // .finally() handler on each fetch will drain motionInflight as it
-  // rejects. Clear the map explicitly anyway so the inflight cap
-  // doesn't carry over and block a fresh play.
+  // Cancel every queued motion fetch still in the browser's pool.
   if (motionPlayer.fetchAbort) {
     try { motionPlayer.fetchAbort.abort(); } catch {}
   }
-  motionInflight.clear();
   motionPlayer = { active: false, raf: 0, startedAt: 0, lastSendAt: 0, lastSent: {}, fetchAbort: null };
   motionPlayEl.disabled = false;
   motionStopEl.disabled = true;
