@@ -869,6 +869,176 @@
     transform: rotate(45deg);
   }
 
+  /* ---------- sequence authoring ---------- */
+
+  .sequencer {
+    padding: 16px 18px 18px;
+  }
+  .seq-picker {
+    display: grid;
+    grid-template-columns: minmax(180px, 280px) minmax(220px, 1fr) auto;
+    gap: 12px;
+    align-items: center;
+    padding-bottom: 14px;
+    border-bottom: 1px dashed var(--rule);
+  }
+  .seq-picker select,
+  .seq-picker input[type=text],
+  .seq-table input,
+  .seq-table select {
+    appearance: none;
+    -webkit-appearance: none;
+    background: var(--bg-deep);
+    color: var(--ink);
+    border: 1px solid var(--rule-hi);
+    font: 500 11px/1 var(--mono);
+    padding: 8px 10px;
+    outline: none;
+    width: 100%;
+  }
+  .seq-picker select:focus,
+  .seq-picker input[type=text]:focus,
+  .seq-table input:focus,
+  .seq-table select:focus { border-color: var(--amber); }
+  .seq-picker .seq-actions,
+  .seq-tags,
+  .seq-transport {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+  .seq-tags {
+    margin-top: 12px;
+  }
+  .seq-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    border: 1px solid var(--rule-hi);
+    color: var(--phosphor);
+    background: rgba(75,227,193,0.05);
+    padding: 5px 8px;
+    font: 700 9px/1 var(--label);
+    text-transform: uppercase;
+    letter-spacing: 0.22em;
+  }
+  .seq-chip button {
+    appearance: none;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    cursor: pointer;
+    padding: 0;
+    font: 700 12px/1 var(--mono);
+  }
+  .seq-total {
+    color: var(--ink-dim);
+    font: 600 10px/1 var(--mono);
+    margin-left: auto;
+  }
+  .seq-table-wrap {
+    margin-top: 14px;
+    overflow-x: auto;
+    border: 1px solid var(--rule);
+    background: var(--bg-deep);
+  }
+  .seq-table {
+    width: 100%;
+    min-width: 940px;
+    border-collapse: collapse;
+  }
+  .seq-table th {
+    color: var(--ink-mute);
+    font: 700 8px/1 var(--label);
+    text-transform: uppercase;
+    letter-spacing: 0.26em;
+    text-align: left;
+    padding: 9px 8px;
+    border-bottom: 1px solid var(--rule);
+    white-space: nowrap;
+  }
+  .seq-table td {
+    padding: 7px 8px;
+    border-bottom: 1px solid var(--rule);
+    vertical-align: middle;
+  }
+  .seq-table tr:last-child td { border-bottom: 0; }
+  .seq-table tr.active td { background: rgba(255,182,39,0.08); }
+  .seq-index {
+    color: var(--amber);
+    font: 600 11px/1 var(--mono);
+    width: 36px;
+  }
+  .seq-drag {
+    cursor: grab;
+    color: var(--ink-mute);
+    user-select: none;
+    font: 700 16px/1 var(--mono);
+    text-align: center;
+  }
+  .seq-hold {
+    display: flex;
+    justify-content: center;
+  }
+  .seq-hold input {
+    appearance: none;
+    width: 14px;
+    height: 14px;
+    border: 1px solid var(--ink-dim);
+    background: transparent;
+    cursor: pointer;
+  }
+  .seq-hold input:checked {
+    background: var(--amber);
+    border-color: var(--amber);
+  }
+  .seq-tools {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    align-items: center;
+    margin-top: 12px;
+    flex-wrap: wrap;
+  }
+  .seq-scrub {
+    display: grid;
+    grid-template-columns: auto minmax(220px, 360px) auto;
+    gap: 10px;
+    align-items: center;
+    color: var(--ink-dim);
+    font: 700 9px/1 var(--label);
+    text-transform: uppercase;
+    letter-spacing: 0.24em;
+  }
+  .seq-scrub input[type=range] {
+    accent-color: var(--amber);
+  }
+  .seq-status {
+    color: var(--ink-dim);
+    font: 500 10px/1.4 var(--mono);
+    min-height: 16px;
+  }
+  .seq-log {
+    margin-top: 12px;
+    max-height: 120px;
+    overflow-y: auto;
+    border-top: 1px dashed var(--rule);
+    padding-top: 8px;
+    color: var(--ink-dim);
+    font: 500 10px/1.5 var(--mono);
+  }
+  .seq-log div {
+    display: grid;
+    grid-template-columns: 42px 72px 1fr;
+    gap: 10px;
+  }
+  .seq-log .n { color: var(--amber); text-align: right; }
+  .seq-log .t { color: var(--ink-mute); }
+  .seq-log .ok { color: var(--phosphor); }
+  .seq-log .warn { color: var(--amber); }
+  .seq-log .bad { color: var(--alert); }
+
   /* small screens */
   @media (max-width: 1100px) {
     .board { grid-template-columns: 160px 1fr; }
@@ -912,14 +1082,10 @@
     <div class="group">
       <div class="gname">Position <span class="key">PLAY</span></div>
       <div class="btns">
-        <button class="cmd" data-cmd="PLAY 1">PLAY 1</button>
-        <button class="cmd" data-cmd="PLAY 2">PLAY 2</button>
-        <button class="cmd" data-cmd="PLAY 3">PLAY 3</button>
-        <button class="cmd" data-cmd="PLAY 4">PLAY 4</button>
-        <button class="cmd" data-cmd="PLAY 5">PLAY 5</button>
-        <button class="cmd compact" data-cmd="PLAY 1 LOOP">1 ↺</button>
-        <button class="cmd compact" data-cmd="PLAY 2 LOOP">2 ↺</button>
-        <button class="cmd compact" data-cmd="PLAY 3 LOOP">3 ↺</button>
+        <button class="cmd" data-cmd="PLAY 7">PLAY 7</button>
+        <button class="cmd" data-cmd="PLAY 8">PLAY 8</button>
+        <button class="cmd compact" data-cmd="PLAY 7 LOOP">7 ↺</button>
+        <button class="cmd compact" data-cmd="PLAY 8 LOOP">8 ↺</button>
       </div>
     </div>
 
@@ -927,13 +1093,21 @@
       <div class="gname">Speed <span class="key">SPLAY</span></div>
       <div class="btns">
         <button class="cmd" data-cmd="SPLAY 1">SPLAY 1</button>
+        <button class="cmd" data-cmd="SPLAY 2">SPLAY 2</button>
+        <button class="cmd" data-cmd="SPLAY 3">SPLAY 3</button>
         <button class="cmd compact" data-cmd="SPLAY 1 LOOP">1 ↺</button>
+        <button class="cmd compact" data-cmd="SPLAY 2 LOOP">2 ↺</button>
+        <button class="cmd compact" data-cmd="SPLAY 3 LOOP">3 ↺</button>
       </div>
     </div>
 
     <div class="group">
       <div class="gname">Master</div>
       <div class="btns">
+        <button class="cmd" data-cmd="RUN 2">RUN 2</button>
+        <button class="cmd" data-cmd="RUN 3">RUN 3</button>
+        <button class="cmd compact" data-cmd="RUN 2 LOOP">2 ↺</button>
+        <button class="cmd compact" data-cmd="RUN 3 LOOP">3 ↺</button>
         <button class="cmd alert" data-cmd="STOP">STOP</button>
         <button class="cmd amber" data-cmd="STATUS">STATUS</button>
         <button class="cmd" data-cmd="TIMESCALE 1">×1</button>
@@ -1010,10 +1184,86 @@
   </div>
 
   <!-- ============================================================
-       OTA FIRMWARE UPLOAD
+       SEQUENCE EDITOR
        ============================================================ -->
   <div class="sect">
     <span class="num">// 04</span>
+    <span class="label">Sequencer</span>
+    <span class="rule"></span>
+    <span class="hint">author · record terminal · local library</span>
+  </div>
+
+  <div class="panel sequencer">
+    <span class="panel-corner-bl"></span><span class="panel-corner-br"></span>
+
+    <div class="seq-picker">
+      <select id="seqSelect" title="Sequence"></select>
+      <input id="seqName" type="text" placeholder="sequence name" autocomplete="off" spellcheck="false">
+      <div class="seq-actions">
+        <button class="cmd compact" id="seqNew">New</button>
+        <button class="cmd compact" id="seqDuplicate">Duplicate</button>
+        <button class="cmd compact alert" id="seqDelete">Delete</button>
+      </div>
+    </div>
+
+    <div class="seq-tags">
+      <div id="seqTags" class="seq-tags"></div>
+      <input id="seqTagInput" type="text" placeholder="add tag" autocomplete="off" spellcheck="false" style="max-width:160px">
+      <button class="cmd compact" id="seqAddTag">Tag</button>
+      <span id="seqTotal" class="seq-total">total 0ms</span>
+    </div>
+
+    <div class="seq-tools">
+      <div class="seq-transport">
+        <button class="cmd amber" id="seqPlay">Play</button>
+        <button class="cmd compact" id="seqPause" disabled>Pause</button>
+        <button class="cmd compact alert" id="seqStop" disabled>Stop</button>
+        <label style="display:inline-flex; gap:6px; align-items:center; color:var(--ink-dim); font:700 9px/1 var(--label); text-transform:uppercase; letter-spacing:.22em">
+          <input id="seqLoop" type="checkbox"> Loop
+        </label>
+        <button class="cmd compact" id="seqRecord">Record</button>
+        <button class="cmd compact amber" id="seqSave">Save</button>
+        <button class="cmd compact" id="seqDryRun">Dry Run</button>
+      </div>
+      <div class="seq-scrub">
+        <span>Scrub</span>
+        <input id="seqScrub" type="range" min="0" max="0" step="1" value="0">
+        <span id="seqScrubLabel">00 / 00</span>
+      </div>
+    </div>
+
+    <div class="seq-table-wrap">
+      <table class="seq-table">
+        <thead>
+          <tr>
+            <th></th>
+            <th>#</th>
+            <th>cmd</th>
+            <th>duration</th>
+            <th>target</th>
+            <th>label</th>
+            <th>hold</th>
+            <th>preview</th>
+          </tr>
+        </thead>
+        <tbody id="seqSteps"></tbody>
+      </table>
+    </div>
+
+    <div class="seq-tools">
+      <button class="cmd compact" id="seqAddStep">Add Step</button>
+      <div id="seqStatus" class="seq-status">idle</div>
+    </div>
+
+    <div id="seqLog" class="seq-log"></div>
+
+  </div>
+
+  <!-- ============================================================
+       OTA FIRMWARE UPLOAD
+       ============================================================ -->
+  <div class="sect">
+    <span class="num">// 05</span>
     <span class="label">Firmware Upload</span>
     <span class="rule"></span>
     <span class="hint">browser OTA · select compiled .bin</span>
@@ -1125,7 +1375,7 @@ async function fetchStatus(ip) {
 }
 
 async function sendCommand(ip, cmd) {
-  const url = `http://${ip}/cmd?c=${encodeURIComponent(cmd)}`;
+  const url = `http://${ip}/cmd?c=${encodeURIComponent(cmd)}&t=${Date.now().toString(36)}`;
   try {
     await fetch(url, { method: "GET", mode: "no-cors", cache: "no-store" });
     lastCmd.set(ip, { cmd, ts: Date.now() });
@@ -1141,6 +1391,11 @@ async function broadcastCommand(cmd) {
     if (await sendCommand(ip, cmd)) return ip;
   }
   return null;
+}
+
+function preferredBroadcastOrigin() {
+  if (!boards.length) return null;
+  return boards.slice().sort((a, b) => (lastSeen.get(b) || 0) - (lastSeen.get(a) || 0))[0] || null;
 }
 
 // ============================================================
@@ -1549,6 +1804,7 @@ document.querySelectorAll("[data-cmd]").forEach(btn => {
 $("#freeSend").addEventListener("click", async () => {
   const cmd = $("#freeCmd").value.trim();
   if (!cmd) return;
+  appendRecordedStep(cmd);
   const ip = freeTargetEl.value;
   await sendCommand(ip, cmd);
   setTimeout(pollOnce, 200);
@@ -1563,16 +1819,17 @@ $("#saveBoards").addEventListener("click", () => {
   localStorage.setItem(LS_KEY, JSON.stringify(boards));
   renderBoardList();
   renderOtaBoardButtons();
+  renderSequencer();
   startPolling();
 });
 autoPollEl.addEventListener("change", startPolling);
 pollMsEl.addEventListener("change", () => { metaPoll.textContent = `${pollMsEl.value} ms`; startPolling(); });
 
-// keyboard shortcut: ESC = STOP, 1-5 = PLAY n, S = SPLAY 1
+// keyboard shortcut: ESC = STOP, 7/8 = PLAY n, S = SPLAY 1
 window.addEventListener("keydown", e => {
   if (e.target.tagName === "INPUT" || e.target.tagName === "SELECT") return;
   if (e.key === "Escape") { broadcastCommand("STOP"); }
-  else if (/^[1-5]$/.test(e.key)) { broadcastCommand("PLAY " + e.key); }
+  else if (/^[78]$/.test(e.key)) { broadcastCommand("PLAY " + e.key); }
   else if (e.key === "s" || e.key === "S") { broadcastCommand("SPLAY 1"); }
 });
 
@@ -1700,6 +1957,42 @@ const bakeRestoreEl = $("#bakeRestore");
 const bakeLogEl     = $("#bakeLog");
 const bakeSummaryEl = $("#bakeLibSummary");
 
+const seqSelectEl     = $("#seqSelect");
+const seqNameEl       = $("#seqName");
+const seqTagsEl       = $("#seqTags");
+const seqTagInputEl   = $("#seqTagInput");
+const seqTotalEl      = $("#seqTotal");
+const seqStepsEl      = $("#seqSteps");
+const seqScrubEl      = $("#seqScrub");
+const seqScrubLabelEl = $("#seqScrubLabel");
+const seqStatusEl     = $("#seqStatus");
+const seqLogEl        = $("#seqLog");
+const seqLoopEl       = $("#seqLoop");
+const seqPlayEl       = $("#seqPlay");
+const seqPauseEl      = $("#seqPause");
+const seqStopEl       = $("#seqStop");
+const seqRecordEl     = $("#seqRecord");
+const seqDryRunEl     = $("#seqDryRun");
+
+let currentSeqId = null;
+let seqDirty = false;
+let seqDragIndex = null;
+let seqRecord = { active: false, lastAt: 0 };
+let seqPlayer = {
+  active: false,
+  paused: false,
+  index: 0,
+  timer: null,
+  remainingMs: 0,
+  stepStartedAt: 0,
+  runId: 0,
+  runStartedAt: 0,
+  dryRun: false,
+  logCount: 0,
+  broadcastIp: null,
+};
+let seqRunSerial = 0;
+
 function bakeLog(msg, color) {
   const line = document.createElement("div");
   if (color) line.style.color = `var(--${color})`;
@@ -1741,6 +2034,365 @@ function renderLibSummary() {
   const active = lib.activeSetlistId || "none";
   bakeSummaryEl.textContent = `${m} motion${m===1?"":"s"} · ${s} sequence${s===1?"":"s"} · ${l} setlist${l===1?"":"s"} · active=${active}`;
   bakeAllEl.disabled = boards.length === 0;
+}
+
+// ============================================================
+// SEQUENCE EDITOR
+// ============================================================
+function sequenceLibrary() {
+  const lib = loadLibrary() || emptyLibrary();
+  lib.motions = lib.motions || [];
+  lib.sequences = lib.sequences || [];
+  lib.setlists = lib.setlists || [];
+  return lib;
+}
+
+function slugifyId(name) {
+  const base = String(name || "sequence")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .replace(/^[^a-z]+/, "")
+    .slice(0, 24) || "sequence";
+  return base.slice(0, 32);
+}
+
+function uniqueSequenceId(lib, seed) {
+  const used = new Set((lib.sequences || []).map(s => s.id));
+  const base = slugifyId(seed);
+  if (!used.has(base)) return base;
+  for (let i = 2; i < 1000; i++) {
+    const candidate = `${base}-${i}`.slice(0, 32);
+    if (!used.has(candidate)) return candidate;
+  }
+  return `seq-${Date.now().toString(36)}`.slice(0, 32);
+}
+
+function defaultSequence(lib) {
+  const id = uniqueSequenceId(lib, "new-sequence");
+  return {
+    id,
+    name: "New Sequence",
+    tags: [],
+    steps: [{ cmd: "STOP", durationMs: 1000, target: "all", label: "", hold: false }],
+  };
+}
+
+function getCurrentSequence(lib = sequenceLibrary()) {
+  if (!lib.sequences.length) {
+    const seq = defaultSequence(lib);
+    lib.sequences.push(seq);
+    currentSeqId = seq.id;
+    saveLibrary(lib);
+  }
+  let seq = lib.sequences.find(s => s.id === currentSeqId);
+  if (!seq) {
+    seq = lib.sequences[0];
+    currentSeqId = seq?.id || null;
+  }
+  return seq;
+}
+
+function saveCurrentSequence(seq) {
+  const lib = sequenceLibrary();
+  const idx = lib.sequences.findIndex(s => s.id === seq.id);
+  if (idx >= 0) lib.sequences[idx] = seq;
+  else lib.sequences.push(seq);
+  currentSeqId = seq.id;
+  saveLibrary(lib);
+  seqDirty = false;
+  renderLibSummary();
+  renderSequencer();
+}
+
+function normalizeStep(step) {
+  return {
+    cmd: String(step?.cmd || "").trim(),
+    durationMs: Math.max(0, parseInt(step?.durationMs, 10) || 0),
+    target: step?.target ?? "all",
+    label: String(step?.label || ""),
+    hold: !!step?.hold,
+  };
+}
+
+function readSequenceFromDom() {
+  const lib = sequenceLibrary();
+  const existing = getCurrentSequence(lib);
+  const rows = Array.from(seqStepsEl.querySelectorAll("tr[data-index]"));
+  const steps = rows.map(row => normalizeStep({
+    cmd: row.querySelector("[data-field=cmd]").value,
+    durationMs: row.querySelector("[data-field=durationMs]").value,
+    target: row.querySelector("[data-field=target]").value,
+    label: row.querySelector("[data-field=label]").value,
+    hold: row.querySelector("[data-field=hold]").checked,
+  })).filter(step => step.cmd);
+  return { ...existing, steps: steps.length ? steps : [{ cmd: "STOP", durationMs: 1000, target: "all" }] };
+}
+
+function markSeqDirty() {
+  seqDirty = true;
+  seqStatusEl.textContent = "edited";
+}
+
+function formatMs(ms) {
+  if (ms < 1000) return `${ms}ms`;
+  const s = ms / 1000;
+  return `${s.toFixed(s % 1 ? 1 : 0)}s`;
+}
+
+const SEQUENCE_COMMAND_PRESETS = [
+  "PLAY 7",
+  "PLAY 8",
+  "PLAY 7 LOOP",
+  "PLAY 8 LOOP",
+  "SPLAY 1",
+  "SPLAY 2",
+  "SPLAY 3",
+  "SPLAY 1 LOOP",
+  "SPLAY 2 LOOP",
+  "SPLAY 3 LOOP",
+  "RUN 2",
+  "RUN 3",
+  "RUN 2 LOOP",
+  "RUN 3 LOOP",
+  "ROTATE -100",
+  "ROTATE -75",
+  "ROTATE -50",
+  "ROTATE -30",
+  "ROTATE -15",
+  "ROTATE 0",
+  "ROTATE 15",
+  "ROTATE 30",
+  "ROTATE 50",
+  "ROTATE 75",
+  "ROTATE 100",
+  "RIG UP 80 35 3000",
+  "RIG DOWN 20 -25",
+  "MOVE 0 90 1000",
+  "S0 90",
+  "S1 90",
+  "S2 90",
+  "TIMESCALE 1",
+  "TIMESCALE 2",
+  "MOTION tidal-drift",
+  "STATUS",
+  "STOP",
+];
+
+function commandOptions(selected) {
+  const current = String(selected || "").trim();
+  return SEQUENCE_COMMAND_PRESETS.map(cmd =>
+    `<option value="${escapeHtml(cmd)}"${cmd === current ? " selected" : ""}>${escapeHtml(cmd)}</option>`
+  ).join("");
+}
+
+function targetOptions(selected) {
+  const opts = [`<option value="all"${selected === "all" ? " selected" : ""}>all</option>`];
+  boards.forEach((ip, idx) => {
+    const boardId = String(idx + 1);
+    const isSelected = String(selected) === boardId || selected === ip;
+    opts.push(`<option value="${boardId}"${isSelected ? " selected" : ""}>${escapeHtml(ip)}</option>`);
+  });
+  return opts.join("");
+}
+
+function renderSequencer() {
+  const lib = sequenceLibrary();
+  const seq = getCurrentSequence(lib);
+  if (!seq) return;
+  seqSelectEl.innerHTML = lib.sequences.map(s =>
+    `<option value="${escapeHtml(s.id)}"${s.id === seq.id ? " selected" : ""}>${escapeHtml(s.name || s.id)}</option>`
+  ).join("");
+  if (document.activeElement !== seqNameEl) {
+    seqNameEl.value = seq.name || seq.id;
+  }
+  seqTagsEl.innerHTML = (seq.tags || []).map(tag =>
+    `<span class="seq-chip">${escapeHtml(tag)} <button data-tag-remove="${escapeHtml(tag)}" title="Remove tag">x</button></span>`
+  ).join("");
+  const total = (seq.steps || []).reduce((sum, step) => sum + (parseInt(step.durationMs, 10) || 0), 0);
+  seqTotalEl.textContent = `total ${formatMs(total)}`;
+  seqScrubEl.max = Math.max(0, (seq.steps || []).length - 1);
+  seqScrubEl.value = Math.min(parseInt(seqScrubEl.value, 10) || 0, parseInt(seqScrubEl.max, 10) || 0);
+  seqScrubLabelEl.textContent = `${pad2((parseInt(seqScrubEl.value, 10) || 0) + 1)} / ${pad2((seq.steps || []).length)}`;
+
+  seqStepsEl.innerHTML = (seq.steps || []).map((raw, index) => {
+    const step = normalizeStep(raw);
+    const active = seqPlayer.active && seqPlayer.index === index;
+    return `<tr data-index="${index}" draggable="true"${active ? ' class="active"' : ''}>
+      <td class="seq-drag" title="Drag to reorder">=</td>
+      <td class="seq-index">${pad2(index + 1)}</td>
+      <td><select data-field="cmd">${commandOptions(step.cmd)}</select></td>
+      <td><input data-field="durationMs" type="number" min="0" step="100" value="${step.durationMs}"></td>
+      <td><select data-field="target">${targetOptions(step.target)}</select></td>
+      <td><input data-field="label" type="text" value="${escapeHtml(step.label)}" spellcheck="false"></td>
+      <td class="seq-hold"><input data-field="hold" type="checkbox"${step.hold ? " checked" : ""}></td>
+      <td><button class="cmd compact" data-preview="${index}">Preview</button></td>
+    </tr>`;
+  }).join("");
+}
+
+function setSeqStatus(msg, color) {
+  seqStatusEl.textContent = msg;
+  seqStatusEl.style.color = color ? `var(--${color})` : "var(--ink-dim)";
+}
+
+function seqLog(msg, tone = "") {
+  const line = document.createElement("div");
+  const elapsed = seqPlayer.runStartedAt ? Math.round(performance.now() - seqPlayer.runStartedAt) : 0;
+  const n = ++seqPlayer.logCount;
+  line.innerHTML = `<span class="n">${pad2(n)}</span><span class="t">+${elapsed}ms</span><span class="${tone}">${escapeHtml(msg)}</span>`;
+  seqLogEl.appendChild(line);
+  seqLogEl.scrollTop = seqLogEl.scrollHeight;
+  while (seqLogEl.children.length > 80) seqLogEl.firstElementChild.remove();
+}
+
+async function dispatchSequenceStep(step) {
+  const cmd = String(step.cmd || "").trim();
+  if (!cmd) return { ok: false, target: "none" };
+  if (seqPlayer.dryRun) return { ok: true, target: "dry-run" };
+  if (String(step.target) === "all") {
+    const ip = seqPlayer.broadcastIp || preferredBroadcastOrigin();
+    if (!ip) return { ok: false, target: "all" };
+    return { ok: await sendCommand(ip, cmd), target: `all via pinned ${ip}` };
+  }
+  const idx = Math.max(0, (parseInt(step.target, 10) || 1) - 1);
+  const ip = boards[idx];
+  if (!ip) return { ok: false, target: `board ${idx + 1}` };
+  return { ok: await sendCommand(ip, cmd), target: ip };
+}
+
+function stopSequencePlayback(sendStop = false) {
+  if (seqPlayer.timer) clearTimeout(seqPlayer.timer);
+  const wasDryRun = seqPlayer.dryRun;
+  seqRunSerial++;
+  seqPlayer = { active: false, paused: false, index: 0, timer: null, remainingMs: 0, stepStartedAt: 0, runId: seqRunSerial, runStartedAt: 0, dryRun: false, logCount: seqPlayer.logCount, broadcastIp: null };
+  seqScrubEl.value = 0;
+  seqPlayEl.disabled = false;
+  seqPauseEl.disabled = true;
+  seqPauseEl.textContent = "Pause";
+  seqStopEl.disabled = true;
+  if (sendStop && !wasDryRun) {
+    seqLog("manual STOP requested", "warn");
+    broadcastCommand("STOP");
+  } else if (sendStop) {
+    seqLog("manual STOP requested · dry-run", "warn");
+  }
+  setSeqStatus("idle");
+  renderSequencer();
+}
+
+async function playSequenceFrom(index = 0, dryRun = false) {
+  const seq = readSequenceFromDom();
+  saveCurrentSequence(seq);
+  if (!seq.steps.length) return;
+  if (seqPlayer.timer) clearTimeout(seqPlayer.timer);
+  const runId = ++seqRunSerial;
+  seqPlayer.active = true;
+  seqPlayer.paused = false;
+  seqPlayer.index = Math.max(0, Math.min(index, seq.steps.length - 1));
+  seqPlayer.runId = runId;
+  seqPlayer.runStartedAt = performance.now();
+  seqPlayer.dryRun = dryRun;
+  seqPlayer.broadcastIp = dryRun ? null : preferredBroadcastOrigin();
+  seqPlayer.logCount = 0;
+  seqLogEl.innerHTML = "";
+  seqLog(`run ${runId} start${dryRun ? " · dry-run" : ""} · ${seq.steps.length} steps`, "ok");
+  if (seqPlayer.broadcastIp) seqLog(`broadcast origin pinned · ${seqPlayer.broadcastIp}`, "ok");
+  seqPlayEl.disabled = true;
+  seqPauseEl.disabled = false;
+  seqStopEl.disabled = false;
+  seqPauseEl.textContent = "Pause";
+  await runSequenceStep(runId);
+}
+
+async function runSequenceStep(runId = seqPlayer.runId) {
+  if (!seqPlayer.active || seqPlayer.runId !== runId) return;
+  const seq = getCurrentSequence();
+  const index = seqPlayer.index;
+  const step = normalizeStep(seq.steps[index]);
+  seqScrubEl.value = index;
+  renderSequencer();
+  setSeqStatus(`playing ${pad2(index + 1)} · ${step.cmd}`, "amber");
+  seqLog(`step ${pad2(index + 1)} send · ${step.cmd} · next in ${step.durationMs}ms`, "warn");
+  const sent = await dispatchSequenceStep(step);
+  if (!seqPlayer.active || seqPlayer.runId !== runId) {
+    seqLog(`step ${pad2(index + 1)} ignored after stale send returned`, "bad");
+    return;
+  }
+  seqLog(`step ${pad2(index + 1)} ${sent.ok ? "accepted" : "failed"} · ${sent.target}`, sent.ok ? "ok" : "bad");
+  setTimeout(pollOnce, 200);
+  if (step.hold) {
+    seqPlayer.paused = true;
+    seqPlayer.remainingMs = step.durationMs;
+    seqPauseEl.textContent = "Resume";
+    setSeqStatus(`holding at ${pad2(index + 1)} · press Resume`, "amber");
+    seqLog(`step ${pad2(index + 1)} hold`, "warn");
+    return;
+  }
+  scheduleNextSequenceStep(step.durationMs, runId);
+}
+
+function scheduleNextSequenceStep(delayMs, runId = seqPlayer.runId) {
+  seqPlayer.remainingMs = Math.max(0, delayMs);
+  seqPlayer.stepStartedAt = Date.now();
+  seqPlayer.timer = setTimeout(async () => {
+    if (!seqPlayer.active || seqPlayer.runId !== runId) return;
+    const seq = getCurrentSequence();
+    seqPlayer.index++;
+    if (seqPlayer.index >= seq.steps.length) {
+      if (seqLoopEl.checked) seqPlayer.index = 0;
+      else {
+        seqLog(`run ${runId} complete`, "ok");
+        stopSequencePlayback(false);
+        return;
+      }
+    }
+    await runSequenceStep(runId);
+  }, seqPlayer.remainingMs);
+}
+
+function pauseOrResumeSequence() {
+  if (!seqPlayer.active) return;
+  if (!seqPlayer.paused) {
+    if (seqPlayer.timer) clearTimeout(seqPlayer.timer);
+    seqPlayer.remainingMs = Math.max(0, seqPlayer.remainingMs - (Date.now() - seqPlayer.stepStartedAt));
+    seqPlayer.paused = true;
+    seqPauseEl.textContent = "Resume";
+    setSeqStatus(`paused · ${formatMs(seqPlayer.remainingMs)} to next step`, "amber");
+    return;
+  }
+  seqPlayer.paused = false;
+  seqPauseEl.textContent = "Pause";
+  setSeqStatus(`resumed ${pad2(seqPlayer.index + 1)}`, "amber");
+  const seq = getCurrentSequence();
+  const current = normalizeStep(seq.steps[seqPlayer.index]);
+  if (current.hold) {
+    seqPlayer.index++;
+    if (seqPlayer.index >= seq.steps.length) {
+      if (seqLoopEl.checked) seqPlayer.index = 0;
+      else { stopSequencePlayback(false); return; }
+    }
+    runSequenceStep(seqPlayer.runId);
+  } else {
+    scheduleNextSequenceStep(seqPlayer.remainingMs, seqPlayer.runId);
+  }
+}
+
+function appendRecordedStep(cmd) {
+  if (!seqRecord.active) return;
+  const now = performance.now();
+  const elapsed = seqRecord.lastAt ? Math.max(0, Math.round(now - seqRecord.lastAt)) : 0;
+  seqRecord.lastAt = now;
+  const seq = readSequenceFromDom();
+  seq.steps.push({ cmd, durationMs: elapsed, target: freeTargetEl.value ? String(boards.indexOf(freeTargetEl.value) + 1) : "all", label: "", hold: false });
+  saveCurrentSequence(seq);
+  setSeqStatus(`recorded ${cmd}`, "phosphor");
+}
+
+function addSequenceStep() {
+  const seq = readSequenceFromDom();
+  seq.steps.push({ cmd: "STOP", durationMs: 1000, target: "all", label: "", hold: false });
+  saveCurrentSequence(seq);
 }
 
 // Slice the library for a single board: keep only Motion tracks whose
@@ -1991,6 +2643,8 @@ bakeFileEl.addEventListener("change", async () => {
     bakeLog(`imported library from ${f.name} (${text.length} bytes)`, "phosphor");
     bakeFileInfoEl.textContent = `${f.name} · ${text.length}B`;
     renderLibSummary();
+    currentSeqId = null;
+    renderSequencer();
   } catch (e) {
     bakeLog(`import failed — ${e.message}`, "alert");
     bakeFileInfoEl.textContent = `rejected: ${f.name}`;
@@ -2021,10 +2675,176 @@ bakeClearEl.addEventListener("click", () => {
   bakeFileInfoEl.textContent = "";
   bakeLog("library cleared", "amber");
   renderLibSummary();
+  currentSeqId = null;
+  renderSequencer();
 });
 
 bakeAllEl.addEventListener("click", bakeToAllBoards);
 bakeRestoreEl.addEventListener("click", restorePreviousBake);
+
+seqSelectEl.addEventListener("change", () => {
+  if (seqDirty) saveCurrentSequence(readSequenceFromDom());
+  currentSeqId = seqSelectEl.value;
+  seqDirty = false;
+  renderSequencer();
+});
+
+function commitSequenceName() {
+  const seq = readSequenceFromDom();
+  const nextName = seqNameEl.value.trim().slice(0, 64);
+  if (!nextName || nextName === seq.name) return;
+  seq.name = nextName;
+  saveCurrentSequence(seq);
+  setSeqStatus(`renamed ${seq.name}`, "phosphor");
+}
+
+seqNameEl.addEventListener("input", () => {
+  seqStatusEl.textContent = "name edited";
+});
+seqNameEl.addEventListener("blur", commitSequenceName);
+seqNameEl.addEventListener("keydown", e => {
+  if (e.key === "Enter") {
+    commitSequenceName();
+    seqNameEl.blur();
+  }
+});
+
+$("#seqNew").addEventListener("click", () => {
+  if (seqDirty) saveCurrentSequence(readSequenceFromDom());
+  const lib = sequenceLibrary();
+  const seq = defaultSequence(lib);
+  lib.sequences.push(seq);
+  currentSeqId = seq.id;
+  saveLibrary(lib);
+  renderLibSummary();
+  renderSequencer();
+  setSeqStatus(`created ${seq.name}`, "phosphor");
+});
+
+$("#seqDuplicate").addEventListener("click", () => {
+  const lib = sequenceLibrary();
+  const seq = readSequenceFromDom();
+  const copy = JSON.parse(JSON.stringify(seq));
+  copy.id = uniqueSequenceId(lib, `${seq.id}-copy`);
+  copy.name = `${seq.name || seq.id} Copy`;
+  lib.sequences.push(copy);
+  currentSeqId = copy.id;
+  saveLibrary(lib);
+  seqDirty = false;
+  renderLibSummary();
+  renderSequencer();
+  setSeqStatus(`duplicated ${seq.name || seq.id}`, "phosphor");
+});
+
+$("#seqDelete").addEventListener("click", () => {
+  const lib = sequenceLibrary();
+  const seq = getCurrentSequence(lib);
+  if (!seq || !confirm(`Delete sequence "${seq.name || seq.id}"?`)) return;
+  lib.sequences = lib.sequences.filter(s => s.id !== seq.id);
+  if (!lib.sequences.length) lib.sequences.push(defaultSequence(lib));
+  currentSeqId = lib.sequences[0].id;
+  saveLibrary(lib);
+  seqDirty = false;
+  renderLibSummary();
+  renderSequencer();
+  setSeqStatus("sequence deleted", "amber");
+});
+
+$("#seqAddTag").addEventListener("click", () => {
+  const tag = seqTagInputEl.value.trim().toLowerCase().replace(/[^a-z0-9-]/g, "").slice(0, 24);
+  if (!tag) return;
+  const seq = readSequenceFromDom();
+  seq.tags = Array.from(new Set([...(seq.tags || []), tag])).slice(0, 8);
+  seqTagInputEl.value = "";
+  saveCurrentSequence(seq);
+});
+seqTagInputEl.addEventListener("keydown", e => {
+  if (e.key === "Enter") $("#seqAddTag").click();
+});
+seqTagsEl.addEventListener("click", e => {
+  const tag = e.target.dataset.tagRemove;
+  if (!tag) return;
+  const seq = readSequenceFromDom();
+  seq.tags = (seq.tags || []).filter(t => t !== tag);
+  saveCurrentSequence(seq);
+});
+
+seqStepsEl.addEventListener("input", () => {
+  markSeqDirty();
+  const seq = readSequenceFromDom();
+  const total = seq.steps.reduce((sum, step) => sum + step.durationMs, 0);
+  seqTotalEl.textContent = `total ${formatMs(total)}`;
+});
+seqStepsEl.addEventListener("change", () => {
+  if (seqDirty) saveCurrentSequence(readSequenceFromDom());
+});
+seqStepsEl.addEventListener("click", async e => {
+  const preview = e.target.dataset.preview;
+  if (preview == null) return;
+  const seq = readSequenceFromDom();
+  saveCurrentSequence(seq);
+  const step = normalizeStep(seq.steps[parseInt(preview, 10)]);
+  setSeqStatus(`preview ${pad2(parseInt(preview, 10) + 1)} · ${step.cmd}`, "amber");
+  await dispatchSequenceStep(step);
+  setTimeout(pollOnce, 200);
+});
+seqStepsEl.addEventListener("dragstart", e => {
+  const row = e.target.closest("tr[data-index]");
+  if (!row) return;
+  seqDragIndex = parseInt(row.dataset.index, 10);
+  e.dataTransfer.effectAllowed = "move";
+});
+seqStepsEl.addEventListener("dragover", e => {
+  if (seqDragIndex == null) return;
+  e.preventDefault();
+});
+seqStepsEl.addEventListener("drop", e => {
+  const row = e.target.closest("tr[data-index]");
+  if (!row || seqDragIndex == null) return;
+  e.preventDefault();
+  const to = parseInt(row.dataset.index, 10);
+  const seq = readSequenceFromDom();
+  const [moved] = seq.steps.splice(seqDragIndex, 1);
+  seq.steps.splice(to, 0, moved);
+  seqDragIndex = null;
+  saveCurrentSequence(seq);
+  setSeqStatus(`moved step ${pad2(to + 1)}`, "phosphor");
+});
+
+$("#seqAddStep").addEventListener("click", addSequenceStep);
+$("#seqSave").addEventListener("click", () => {
+  saveCurrentSequence(readSequenceFromDom());
+  setSeqStatus("saved to localStorage", "phosphor");
+});
+seqPlayEl.addEventListener("click", () => playSequenceFrom(0));
+seqPauseEl.addEventListener("click", pauseOrResumeSequence);
+seqStopEl.addEventListener("click", () => stopSequencePlayback(true));
+seqDryRunEl.addEventListener("click", () => {
+  playSequenceFrom(0, true);
+});
+seqRecordEl.addEventListener("click", () => {
+  seqRecord.active = !seqRecord.active;
+  seqRecord.lastAt = performance.now();
+  seqRecordEl.classList.toggle("amber", seqRecord.active);
+  seqRecordEl.textContent = seqRecord.active ? "Recording" : "Record";
+  setSeqStatus(seqRecord.active ? "recording terminal commands" : "recording stopped", seqRecord.active ? "amber" : null);
+});
+seqScrubEl.addEventListener("input", () => {
+  const idx = parseInt(seqScrubEl.value, 10) || 0;
+  const seq = getCurrentSequence();
+  seqScrubLabelEl.textContent = `${pad2(idx + 1)} / ${pad2((seq.steps || []).length)}`;
+});
+seqScrubEl.addEventListener("change", async () => {
+  const idx = parseInt(seqScrubEl.value, 10) || 0;
+  const seq = readSequenceFromDom();
+  saveCurrentSequence(seq);
+  if (seq.steps[idx]) {
+    const step = normalizeStep(seq.steps[idx]);
+    setSeqStatus(`scrubbed to ${pad2(idx + 1)} · ${step.cmd}`, "amber");
+    await dispatchSequenceStep(step);
+    setTimeout(pollOnce, 200);
+  }
+});
 
 // ============================================================
 // INIT
@@ -2032,6 +2852,7 @@ bakeRestoreEl.addEventListener("click", restorePreviousBake);
 renderBoardList();
 renderOtaBoardButtons();
 renderLibSummary();
+renderSequencer();
 render();
 startPolling();
 </script>

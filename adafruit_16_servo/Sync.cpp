@@ -12,7 +12,8 @@ void dispatchCommand(const char* cmd, bool fromNetwork);
 struct Peer {
   uint8_t id;
   IPAddress ip;
-  uint32_t lastSeq;
+  uint32_t lastEventSeq;
+  uint32_t lastHeartbeatSeq;
   uint32_t lastUptimeMs;
   unsigned long lastSeenMs;
 };
@@ -52,7 +53,8 @@ static Peer* upsertPeer(uint8_t id, IPAddress ip) {
   if (peerCount < MAX_PEERS) {
     peers[peerCount].id = id;
     peers[peerCount].ip = ip;
-    peers[peerCount].lastSeq = 0;
+    peers[peerCount].lastEventSeq = 0;
+    peers[peerCount].lastHeartbeatSeq = 0;
     peers[peerCount].lastUptimeMs = 0;
     peers[peerCount].lastSeenMs = millis();
     return &peers[peerCount++];
@@ -125,12 +127,13 @@ static void handleSyncPacket() {
   Peer* peer = upsertPeer((uint8_t)originId, udp.remoteIP());
   if (peer == nullptr) return;
 
-  if (seq <= peer->lastSeq && peer->lastSeq != 0) return;
-  peer->lastSeq = seq;
-
   if (strcmp(type, "EVT") == 0) {
+    if (seq <= peer->lastEventSeq && peer->lastEventSeq != 0) return;
+    peer->lastEventSeq = seq;
     onSyncEvent(payload);
   } else if (strcmp(type, "HB") == 0) {
+    if (seq <= peer->lastHeartbeatSeq && peer->lastHeartbeatSeq != 0) return;
+    peer->lastHeartbeatSeq = seq;
     unsigned long uptime = strtoul(payload, nullptr, 10);
     peer->lastUptimeMs = uptime;
     if ((uint8_t)originId == lowestAlivePeerId() && (uint8_t)originId < nodeId) {
