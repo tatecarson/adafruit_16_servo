@@ -2120,12 +2120,15 @@ const SCHEMA_VERSION = 1;
 // writes are ~5-10ms each plus per-block erase, so a multi-KB bake can
 // spend 60s+ in storageWriteSlot before the HTTP response goes out. 15s
 // produced false failures even though the write landed (confirmed via
-// GET /sequences/info bytesUsed match after the timeout).
-const BAKE_TIMEOUT_MS = 90000;
-// /sequences/info is cheap, but the firmware is single-threaded — if it's
-// mid-write when the recovery probe fires, the GET queues until the write
-// finishes.
-const INFO_TIMEOUT_MS = 15000;
+// GET /sequences/info bytesUsed match after the timeout). Some boards
+// run slower than others — 90s reliably timed out on the slowest of our
+// three for a 2118B payload, so 150s leaves comfortable headroom.
+const BAKE_TIMEOUT_MS = 150000;
+// /sequences/info is cheap on a quiet board, but the firmware is
+// single-threaded — if the board is mid-write when the recovery probe
+// fires, the GET queues until the write finishes. 30s covers worst-case
+// queue depth without making genuinely-dead boards hang forever.
+const INFO_TIMEOUT_MS = 30000;
 
 const bakeFileEl    = $("#bakeFile");
 const bakeFileInfoEl = $("#bakeFileInfo");
