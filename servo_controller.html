@@ -2986,15 +2986,37 @@ motionGridEl.addEventListener("dblclick", e => {
   setMotionStatus("keyframe deleted", "amber");
 });
 
+// Drag-vs-click discrimination. pointerdown on a keyframe stages a
+// potential drag but does NOT mutate state. We only start mutating
+// (and re-rendering) once the pointer has moved past MOTION_DRAG_THRESHOLD
+// pixels — that way a stationary click leaves the original DOM keyframe
+// element intact so the browser can fire a real `dblclick` for deletion.
+// Without this threshold, any sub-pixel jitter between pointerdown and
+// pointerup caused pointermove → renderMotionEditor() → element replaced,
+// and the subsequent click hit a fresh element, so dblclick never matched
+// two clicks on the same target (servo-alp).
+const MOTION_DRAG_THRESHOLD = 4;
 motionGridEl.addEventListener("pointerdown", e => {
   const keyEl = e.target.closest(".motion-key:not(.ghost)");
   if (!keyEl) return;
   e.preventDefault();
-  motionDrag = { trackKey: keyEl.dataset.track, keyIndex: parseInt(keyEl.dataset.keyIndex, 10) };
+  motionDrag = {
+    trackKey: keyEl.dataset.track,
+    keyIndex: parseInt(keyEl.dataset.keyIndex, 10),
+    startX: e.clientX,
+    startY: e.clientY,
+    moved: false,
+  };
   keyEl.setPointerCapture(e.pointerId);
 });
 window.addEventListener("pointermove", e => {
   if (!motionDrag) return;
+  if (!motionDrag.moved) {
+    const dx = e.clientX - motionDrag.startX;
+    const dy = e.clientY - motionDrag.startY;
+    if ((dx * dx + dy * dy) < (MOTION_DRAG_THRESHOLD * MOTION_DRAG_THRESHOLD)) return;
+    motionDrag.moved = true;
+  }
   const trackEl = e.target.closest(".motion-track") || motionGridEl.querySelector(`.motion-track[data-track="${CSS.escape(motionDrag.trackKey)}"]`);
   const spec = MOTION_TRACK_SPECS.find(s => trackSpecKey(s) === motionDrag.trackKey);
   if (!trackEl || !spec) return;
@@ -3005,6 +3027,12 @@ window.addEventListener("pointermove", e => {
   if (!track || !track.keyframes[motionDrag.keyIndex]) return;
   track.keyframes[motionDrag.keyIndex] = { ...track.keyframes[motionDrag.keyIndex], atMs: point.atMs, value: point.value };
   track.keyframes = normalizeKeyframes(track, motion.durationMs, spec);
+  // normalizeKeyframes resorts by atMs — find the new index of the
+  // keyframe we just moved so subsequent pointermoves keep targeting
+  // the same logical keyframe, not whichever happens to share its old
+  // slot.
+  const movedIdx = track.keyframes.findIndex(k => k.atMs === point.atMs && k.value === point.value);
+  if (movedIdx >= 0) motionDrag.keyIndex = movedIdx;
   const idx = lib.motions.findIndex(m => m.id === motion.id);
   if (idx >= 0) lib.motions[idx] = motion;
   saveLibrary(lib);
@@ -3013,7 +3041,11 @@ window.addEventListener("pointermove", e => {
 });
 window.addEventListener("pointerup", () => {
   if (!motionDrag) return;
+  const moved = motionDrag.moved;
   motionDrag = null;
+  // Stationary click → no state changed, don't trigger a save/render
+  // that would tear down the keyframe element before dblclick can fire.
+  if (!moved) return;
   saveCurrentMotion(readMotionFromDom());
   setMotionStatus("keyframe moved", "phosphor");
 });
