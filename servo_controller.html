@@ -1039,6 +1039,80 @@
   .seq-log .warn { color: var(--amber); }
   .seq-log .bad { color: var(--alert); }
 
+  /* ---------- setlist additions ---------- */
+  .sl-mode {
+    display: inline-flex;
+    gap: 8px;
+    align-items: center;
+    color: var(--ink-dim);
+    font: 700 9px/1 var(--label);
+    text-transform: uppercase;
+    letter-spacing: 0.22em;
+  }
+  .sl-mode select {
+    appearance: none;
+    -webkit-appearance: none;
+    background: var(--bg-deep);
+    color: var(--ink);
+    border: 1px solid var(--rule-hi);
+    font: 500 11px/1 var(--mono);
+    padding: 6px 8px;
+    outline: none;
+    text-transform: none;
+    letter-spacing: 0;
+  }
+  .sl-table { min-width: 820px; }
+  .sl-table td.sl-tags {
+    color: var(--ink-mute);
+    font: 500 10px/1.3 var(--mono);
+    max-width: 160px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .sl-rules {
+    margin-top: 14px;
+    padding: 12px 14px;
+    border: 1px dashed var(--rule);
+    background: var(--bg-deep);
+  }
+  .sl-rules[hidden] { display: none; }
+  .sl-rules-title {
+    color: var(--ink-mute);
+    font: 700 8px/1 var(--label);
+    text-transform: uppercase;
+    letter-spacing: 0.26em;
+    margin-bottom: 10px;
+  }
+  .sl-rules-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 10px 18px;
+  }
+  .sl-rules-grid label {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--ink-dim);
+    font: 700 9px/1 var(--label);
+    text-transform: uppercase;
+    letter-spacing: 0.22em;
+  }
+  .sl-rules-grid input[type=number],
+  .sl-rules-grid select {
+    appearance: none;
+    -webkit-appearance: none;
+    background: var(--bg);
+    color: var(--ink);
+    border: 1px solid var(--rule-hi);
+    font: 500 11px/1 var(--mono);
+    padding: 6px 8px;
+    width: 110px;
+    outline: none;
+    text-transform: none;
+    letter-spacing: 0;
+  }
+
   /* small screens */
   @media (max-width: 1100px) {
     .board { grid-template-columns: 160px 1fr; }
@@ -1244,6 +1318,7 @@
             <th>label</th>
             <th>hold</th>
             <th>preview</th>
+            <th></th>
           </tr>
         </thead>
         <tbody id="seqSteps"></tbody>
@@ -1260,10 +1335,114 @@
   </div>
 
   <!-- ============================================================
-       OTA FIRMWARE UPLOAD
+       SETLIST EDITOR
        ============================================================ -->
   <div class="sect">
     <span class="num">// 05</span>
+    <span class="label">Setlist</span>
+    <span class="rule"></span>
+    <span class="hint">ordered or shuffle · sequence playlists for gallery autonomy</span>
+  </div>
+
+  <div class="panel sequencer">
+    <span class="panel-corner-bl"></span><span class="panel-corner-br"></span>
+
+    <div class="seq-picker">
+      <select id="slSelect" title="Setlist"></select>
+      <input id="slName" type="text" placeholder="setlist name" autocomplete="off" spellcheck="false">
+      <div class="seq-actions">
+        <button class="cmd compact" id="slNew">New</button>
+        <button class="cmd compact" id="slDuplicate">Duplicate</button>
+        <button class="cmd compact alert" id="slDelete">Delete</button>
+      </div>
+    </div>
+
+    <div class="seq-tags">
+      <label class="sl-mode" title="Play entries in order or pick at random">
+        <span>mode</span>
+        <select id="slMode">
+          <option value="ordered">ordered</option>
+          <option value="shuffle">shuffle</option>
+        </select>
+      </label>
+      <label class="sl-mode" title="Mark this setlist as the one the gallery runs on boot">
+        <input id="slActive" type="checkbox"> active on boot
+      </label>
+      <span id="slTotal" class="seq-total">0 entries</span>
+    </div>
+
+    <div class="seq-tools">
+      <div class="seq-transport">
+        <button class="cmd amber" id="slPlay">Play</button>
+        <button class="cmd compact" id="slPause" disabled>Pause</button>
+        <button class="cmd compact alert" id="slStop" disabled>Stop</button>
+        <label style="display:inline-flex; gap:6px; align-items:center; color:var(--ink-dim); font:700 9px/1 var(--label); text-transform:uppercase; letter-spacing:.22em">
+          <input id="slLoop" type="checkbox"> Loop
+        </label>
+        <button class="cmd compact amber" id="slSave">Save</button>
+        <button class="cmd compact" id="slDryRun">Dry Run</button>
+      </div>
+    </div>
+
+    <div class="seq-table-wrap">
+      <table class="seq-table sl-table">
+        <thead>
+          <tr>
+            <th></th>
+            <th>#</th>
+            <th>sequence</th>
+            <th>repeat</th>
+            <th>gap ms</th>
+            <th>weight</th>
+            <th>tags</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="slEntries"></tbody>
+      </table>
+    </div>
+
+    <div class="seq-tools">
+      <button class="cmd compact" id="slAddEntry">Add Entry</button>
+      <div id="slStatus" class="seq-status">idle</div>
+    </div>
+
+    <div id="slShufflePanel" class="sl-rules" hidden>
+      <div class="sl-rules-title">shuffle rules</div>
+      <div class="sl-rules-grid">
+        <label title="Don't play two entries with the same tag back to back">
+          <input id="slAvoidSameTag" type="checkbox">
+          <span>avoid same tag back-to-back</span>
+        </label>
+        <label title="Minimum number of other entries before this one can repeat">
+          <span>min gap between repeats</span>
+          <input id="slMinGap" type="number" min="0" max="32" step="1" value="0">
+        </label>
+        <label title="Energy curve across the run; uses schedulerConfig.tagEnergy">
+          <span>mood arc</span>
+          <select id="slMoodArc">
+            <option value="random">random</option>
+            <option value="rising">rising</option>
+            <option value="falling">falling</option>
+            <option value="breathing">breathing</option>
+          </select>
+        </label>
+        <label title="0 = fresh random each play. Set non-zero to reproduce a specific shuffle (same seed + library = same order).">
+          <span>seed (0 = random)</span>
+          <input id="slSeed" type="number" min="0" step="1" value="0">
+        </label>
+      </div>
+    </div>
+
+    <div id="slLog" class="seq-log"></div>
+
+  </div>
+
+  <!-- ============================================================
+       OTA FIRMWARE UPLOAD
+       ============================================================ -->
+  <div class="sect">
+    <span class="num">// 07</span>
     <span class="label">Firmware Upload</span>
     <span class="rule"></span>
     <span class="hint">browser OTA · select compiled .bin</span>
@@ -1941,12 +2120,15 @@ const SCHEMA_VERSION = 1;
 // writes are ~5-10ms each plus per-block erase, so a multi-KB bake can
 // spend 60s+ in storageWriteSlot before the HTTP response goes out. 15s
 // produced false failures even though the write landed (confirmed via
-// GET /sequences/info bytesUsed match after the timeout).
-const BAKE_TIMEOUT_MS = 90000;
-// /sequences/info is cheap, but the firmware is single-threaded — if it's
-// mid-write when the recovery probe fires, the GET queues until the write
-// finishes.
-const INFO_TIMEOUT_MS = 15000;
+// GET /sequences/info bytesUsed match after the timeout). Some boards
+// run slower than others — 90s reliably timed out on the slowest of our
+// three for a 2118B payload, so 150s leaves comfortable headroom.
+const BAKE_TIMEOUT_MS = 150000;
+// /sequences/info is cheap on a quiet board, but the firmware is
+// single-threaded — if the board is mid-write when the recovery probe
+// fires, the GET queues until the write finishes. 30s covers worst-case
+// queue depth without making genuinely-dead boards hang forever.
+const INFO_TIMEOUT_MS = 30000;
 
 const bakeFileEl    = $("#bakeFile");
 const bakeFileInfoEl = $("#bakeFileInfo");
@@ -2227,6 +2409,7 @@ function renderSequencer() {
       <td><input data-field="label" type="text" value="${escapeHtml(step.label)}" spellcheck="false"></td>
       <td class="seq-hold"><input data-field="hold" type="checkbox"${step.hold ? " checked" : ""}></td>
       <td><button class="cmd compact" data-preview="${index}">Preview</button></td>
+      <td><button class="cmd compact alert" data-step-remove="${index}" title="Remove step">x</button></td>
     </tr>`;
   }).join("");
 }
@@ -2779,6 +2962,21 @@ seqStepsEl.addEventListener("change", () => {
   if (seqDirty) saveCurrentSequence(readSequenceFromDom());
 });
 seqStepsEl.addEventListener("click", async e => {
+  const remove = e.target.dataset.stepRemove;
+  if (remove != null) {
+    const seq = readSequenceFromDom();
+    // Keep at least one step so the rest of the editor has something to
+    // render; replacing the last step with a STOP placeholder matches the
+    // Delete-sequence flow's "default empty" feel.
+    if (seq.steps.length <= 1) {
+      seq.steps = [{ cmd: "STOP", durationMs: 1000, target: "all", label: "", hold: false }];
+    } else {
+      seq.steps.splice(parseInt(remove, 10), 1);
+    }
+    saveCurrentSequence(seq);
+    setSeqStatus(`removed step ${pad2(parseInt(remove, 10) + 1)}`, "amber");
+    return;
+  }
   const preview = e.target.dataset.preview;
   if (preview == null) return;
   const seq = readSequenceFromDom();
@@ -2847,12 +3045,661 @@ seqScrubEl.addEventListener("change", async () => {
 });
 
 // ============================================================
+// SETLIST EDITOR
+// ============================================================
+const slSelectEl       = $("#slSelect");
+const slNameEl         = $("#slName");
+const slModeEl         = $("#slMode");
+const slActiveEl       = $("#slActive");
+const slTotalEl        = $("#slTotal");
+const slEntriesEl      = $("#slEntries");
+const slStatusEl       = $("#slStatus");
+const slLogEl          = $("#slLog");
+const slLoopEl         = $("#slLoop");
+const slPlayEl         = $("#slPlay");
+const slPauseEl        = $("#slPause");
+const slStopEl         = $("#slStop");
+const slDryRunEl       = $("#slDryRun");
+const slShufflePanelEl = $("#slShufflePanel");
+const slAvoidSameTagEl = $("#slAvoidSameTag");
+const slMinGapEl       = $("#slMinGap");
+const slMoodArcEl      = $("#slMoodArc");
+const slSeedEl         = $("#slSeed");
+
+let currentSetlistId = null;
+let setlistDirty = false;
+let setlistDragIndex = null;
+let setlistRunSerial = 0;
+let setlistPlayer = {
+  active: false,
+  paused: false,
+  entryIndex: 0,
+  stepIndex: 0,
+  resolvedOrder: [],
+  timer: null,
+  remainingMs: 0,
+  stepStartedAt: 0,
+  runId: 0,
+  runStartedAt: 0,
+  dryRun: false,
+  logCount: 0,
+  broadcastIp: null,
+};
+
+function uniqueSetlistId(lib, seed) {
+  const used = new Set((lib.setlists || []).map(s => s.id));
+  const base = slugifyId(seed || "setlist");
+  if (!used.has(base)) return base;
+  for (let i = 2; i < 1000; i++) {
+    const candidate = `${base}-${i}`.slice(0, 32);
+    if (!used.has(candidate)) return candidate;
+  }
+  return `set-${Date.now().toString(36)}`.slice(0, 32);
+}
+
+function defaultSetlist(lib) {
+  const id = uniqueSetlistId(lib, "new-setlist");
+  return {
+    id,
+    name: "New Setlist",
+    mode: "ordered",
+    entries: [],
+    shuffleRules: { avoidSameTag: false, minGapEntries: 0, moodArc: "random", seed: 0 },
+  };
+}
+
+function getCurrentSetlist(lib = sequenceLibrary()) {
+  if (!lib.setlists.length) {
+    const set = defaultSetlist(lib);
+    lib.setlists.push(set);
+    currentSetlistId = set.id;
+    saveLibrary(lib);
+  }
+  let set = lib.setlists.find(s => s.id === currentSetlistId);
+  if (!set) {
+    set = lib.setlists[0];
+    currentSetlistId = set?.id || null;
+  }
+  return set;
+}
+
+function saveCurrentSetlist(set) {
+  const lib = sequenceLibrary();
+  const idx = lib.setlists.findIndex(s => s.id === set.id);
+  if (idx >= 0) lib.setlists[idx] = set;
+  else lib.setlists.push(set);
+  currentSetlistId = set.id;
+  if (slActiveEl.checked) lib.activeSetlistId = set.id;
+  else if (lib.activeSetlistId === set.id && !slActiveEl.checked) lib.activeSetlistId = null;
+  saveLibrary(lib);
+  setlistDirty = false;
+  renderLibSummary();
+  renderSetlist();
+}
+
+function normalizeEntry(entry) {
+  return {
+    seqId: String(entry?.seqId || ""),
+    repeat: Math.max(1, parseInt(entry?.repeat, 10) || 1),
+    gapMs: Math.max(0, parseInt(entry?.gapMs, 10) || 0),
+    weight: Math.max(0, parseFloat(entry?.weight ?? 1) || 0),
+  };
+}
+
+function readSetlistFromDom() {
+  const lib = sequenceLibrary();
+  const existing = getCurrentSetlist(lib);
+  const rows = Array.from(slEntriesEl.querySelectorAll("tr[data-index]"));
+  const entries = rows.map(row => normalizeEntry({
+    seqId:  row.querySelector("[data-field=seqId]").value,
+    repeat: row.querySelector("[data-field=repeat]").value,
+    gapMs:  row.querySelector("[data-field=gapMs]").value,
+    weight: row.querySelector("[data-field=weight]").value,
+  })).filter(e => e.seqId);
+  return {
+    ...existing,
+    name: existing.name,
+    mode: slModeEl.value === "shuffle" ? "shuffle" : "ordered",
+    entries,
+    shuffleRules: {
+      avoidSameTag: slAvoidSameTagEl.checked,
+      minGapEntries: Math.max(0, parseInt(slMinGapEl.value, 10) || 0),
+      moodArc: slMoodArcEl.value || "random",
+      seed: Math.max(0, parseInt(slSeedEl.value, 10) || 0),
+    },
+  };
+}
+
+function markSetlistDirty() {
+  setlistDirty = true;
+  slStatusEl.textContent = "edited";
+}
+
+function sequenceOptions(selected, lib) {
+  const seqs = lib.sequences || [];
+  const opts = [`<option value=""${selected ? "" : " selected"}>—</option>`];
+  for (const s of seqs) {
+    const isSel = s.id === selected;
+    const label = `${s.id}${s.name && s.name !== s.id ? ` · ${s.name}` : ""}`;
+    opts.push(`<option value="${escapeHtml(s.id)}"${isSel ? " selected" : ""}>${escapeHtml(label)}</option>`);
+  }
+  return opts.join("");
+}
+
+function lookupSequence(lib, seqId) {
+  return (lib.sequences || []).find(s => s.id === seqId) || null;
+}
+
+function renderSetlist() {
+  const lib = sequenceLibrary();
+  const set = getCurrentSetlist(lib);
+  if (!set) return;
+  slSelectEl.innerHTML = lib.setlists.map(s =>
+    `<option value="${escapeHtml(s.id)}"${s.id === set.id ? " selected" : ""}>${escapeHtml(s.name || s.id)}</option>`
+  ).join("");
+  if (document.activeElement !== slNameEl) {
+    slNameEl.value = set.name || set.id;
+  }
+  if (document.activeElement !== slModeEl) slModeEl.value = set.mode === "shuffle" ? "shuffle" : "ordered";
+  slActiveEl.checked = lib.activeSetlistId === set.id;
+  slShufflePanelEl.hidden = set.mode !== "shuffle";
+
+  const rules = set.shuffleRules || { avoidSameTag: false, minGapEntries: 0, moodArc: "random", seed: 0 };
+  if (document.activeElement !== slAvoidSameTagEl) slAvoidSameTagEl.checked = !!rules.avoidSameTag;
+  if (document.activeElement !== slMinGapEl)       slMinGapEl.value         = rules.minGapEntries ?? 0;
+  if (document.activeElement !== slMoodArcEl)      slMoodArcEl.value        = rules.moodArc || "random";
+  if (document.activeElement !== slSeedEl)         slSeedEl.value           = rules.seed ?? 0;
+
+  slTotalEl.textContent = `${(set.entries || []).length} entr${(set.entries || []).length === 1 ? "y" : "ies"}`;
+
+  // Highlight the table row whose seqId matches the currently-playing
+  // entry from resolvedOrder — NOT the row whose table position matches
+  // entryIndex. In ordered mode those happen to agree; in shuffle they
+  // diverge, which made playback look like it was going 1→2→3 every time.
+  const playing = setlistPlayer.active ? setlistPlayer.resolvedOrder[setlistPlayer.entryIndex] : null;
+  const playingSeqId = playing ? playing.seqId : null;
+  slEntriesEl.innerHTML = (set.entries || []).map((raw, index) => {
+    const entry = normalizeEntry(raw);
+    const seq = lookupSequence(lib, entry.seqId);
+    const tags = seq ? (seq.tags || []).join(", ") : "(missing sequence)";
+    const active = playingSeqId && entry.seqId === playingSeqId;
+    return `<tr data-index="${index}" draggable="true"${active ? ' class="active"' : ''}>
+      <td class="seq-drag" title="Drag to reorder">=</td>
+      <td class="seq-index">${pad2(index + 1)}</td>
+      <td><select data-field="seqId">${sequenceOptions(entry.seqId, lib)}</select></td>
+      <td><input data-field="repeat" type="number" min="1" step="1" value="${entry.repeat}"></td>
+      <td><input data-field="gapMs"  type="number" min="0" step="100" value="${entry.gapMs}"></td>
+      <td><input data-field="weight" type="number" min="0" step="0.1" value="${entry.weight}"${set.mode === "shuffle" ? "" : " disabled"}></td>
+      <td class="sl-tags" title="${escapeHtml(tags)}">${escapeHtml(tags || "—")}</td>
+      <td><button class="cmd compact alert" data-remove="${index}" title="Remove">x</button></td>
+    </tr>`;
+  }).join("");
+}
+
+function setSetlistStatus(msg, color) {
+  slStatusEl.textContent = msg;
+  slStatusEl.style.color = color ? `var(--${color})` : "var(--ink-dim)";
+}
+
+function setlistLog(msg, tone = "") {
+  const line = document.createElement("div");
+  const elapsed = setlistPlayer.runStartedAt ? Math.round(performance.now() - setlistPlayer.runStartedAt) : 0;
+  const n = ++setlistPlayer.logCount;
+  line.innerHTML = `<span class="n">${pad2(n)}</span><span class="t">+${elapsed}ms</span><span class="${tone}">${escapeHtml(msg)}</span>`;
+  slLogEl.appendChild(line);
+  slLogEl.scrollTop = slLogEl.scrollHeight;
+  while (slLogEl.children.length > 120) slLogEl.firstElementChild.remove();
+}
+
+// mulberry32 PRNG — reproducible seed → identical shuffle order, so a
+// shuffle setlist with seed=42 always picks the same order until either
+// the entries change or the seed changes.
+function mulberry32(seed) {
+  let a = (seed >>> 0) || 0x9e3779b9;
+  return function () {
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+// Map each entry to a numeric energy (lower = calmer) based on
+// schedulerConfig.tagEnergy. Per docs/sequencer-schema.md, tagEnergy is
+// an ordered string[] from calmest → most agitated, so a tag's energy is
+// just its index in that list. Tags not in the list contribute 0.
+// Used to sort the shuffle pool when moodArc is rising/falling/breathing.
+function entryEnergy(entry, lib) {
+  const tagEnergy = (lib.schedulerConfig?.tagEnergy) || [];
+  const seq = lookupSequence(lib, entry.seqId);
+  if (!seq) return 0;
+  let sum = 0;
+  for (const tag of (seq.tags || [])) {
+    const idx = tagEnergy.indexOf(tag);
+    if (idx >= 0) sum += idx;
+  }
+  return sum;
+}
+
+// Resolve the play order for a setlist.
+//
+// ORDERED mode: literal walk; an entry's `repeat` plays it N times in a row.
+//
+// SHUFFLE mode: weighted random with REPLACEMENT. At each slot we
+// independently weighted-pick from the full entry set — so a heavy weight
+// produces a sequence that actually dominates the show (slot 1 AND 2 AND 3...
+// not just slot 1). `repeat` becomes a BURST length: when a sequence is
+// picked, it plays N slots in a row before the next weighted pick.
+// Pass length = sum(repeat) so the show feels comparable to ordered mode.
+//
+// Constraints (applied at pick time, not during a burst):
+//   - minGapEntries: exclude any seqId that appeared in the last N slots
+//   - avoidSameTag : exclude any entry sharing a tag with the slot just played
+// If exclusion empties the pool we fall back to all entries so we never
+// deadlock.
+//
+// Mood arc post-sorts the final output by tag-energy (random/rising/
+// falling/breathing). It re-orders across burst boundaries, so for clean
+// bursts pick mood=random.
+//
+// Each resolved item is { ...entry, __seq: seq, __burst: true|false } where
+// __burst flags slots that are part of a burst (vs a fresh pick).
+function resolveSetlistOrder(set, lib) {
+  const entries = (set.entries || []).map(normalizeEntry).filter(e => e.seqId);
+  if (!entries.length) return [];
+
+  if (set.mode !== "shuffle") {
+    const out = [];
+    for (const e of entries) {
+      const seq = lookupSequence(lib, e.seqId);
+      if (!seq) continue;
+      for (let i = 0; i < e.repeat; i++) out.push({ ...e, __seq: seq, __burst: i > 0 });
+    }
+    out.appliedSeed = null;
+    return out;
+  }
+
+  // Resolve entries → sequences once. Drop any whose sequence is gone.
+  const resolved = entries
+    .map(e => ({ ...e, __seq: lookupSequence(lib, e.seqId) }))
+    .filter(e => e.__seq);
+  if (!resolved.length) return [];
+
+  const rules = set.shuffleRules || {};
+  // seed=0 → fresh time-based seed each call. Non-zero is reproducible.
+  const effectiveSeed = (rules.seed | 0) || ((Date.now() & 0xffffffff) >>> 0);
+  const rand = mulberry32(effectiveSeed);
+
+  // Total pass length matches ordered-mode count, so a setlist with three
+  // repeat=1 entries plays 3 slots per pass; with one repeat=3 entry and
+  // two repeat=1, it plays 5 slots.
+  const passLength = resolved.reduce((sum, e) => sum + e.repeat, 0);
+
+  function weightedPick(candidates) {
+    let total = 0;
+    for (const c of candidates) total += Math.max(0, c.weight || 0);
+    if (total <= 0) {
+      const idx = Math.floor(rand() * candidates.length);
+      return candidates[idx];
+    }
+    let r = rand() * total;
+    for (const c of candidates) {
+      r -= Math.max(0, c.weight || 0);
+      if (r <= 0) return c;
+    }
+    return candidates[candidates.length - 1];
+  }
+
+  const out = [];
+  let burstRemaining = 0;
+  let burstEntry = null;
+  const minGap = Math.max(0, rules.minGapEntries | 0);
+
+  for (let slot = 0; slot < passLength; slot++) {
+    if (burstRemaining > 0 && burstEntry) {
+      // Continue an in-progress burst — no constraint check.
+      out.push({ ...burstEntry, __burst: true });
+      burstRemaining--;
+      continue;
+    }
+    // Fresh weighted pick. Filter by constraints; fall back to full set
+    // if everything got excluded.
+    const prev = out[out.length - 1];
+    const recentSeqIds = new Set();
+    if (minGap > 0) {
+      for (let i = Math.max(0, out.length - minGap); i < out.length; i++) {
+        recentSeqIds.add(out[i].seqId);
+      }
+    }
+    const eligible = resolved.filter(cand => {
+      if (recentSeqIds.has(cand.seqId)) return false;
+      if (rules.avoidSameTag && prev) {
+        for (const tag of (cand.__seq.tags || [])) {
+          if ((prev.__seq.tags || []).includes(tag)) return false;
+        }
+      }
+      return true;
+    });
+    const candidates = eligible.length ? eligible : resolved;
+    const pick = weightedPick(candidates);
+    out.push({ ...pick, __burst: false });
+    burstEntry = pick;
+    burstRemaining = Math.max(0, pick.repeat - 1);
+  }
+
+  // Mood arc post-sort. Note this can break bursts; pick mood=random if
+  // you care about preserving burst adjacency.
+  if (rules.moodArc === "rising") {
+    out.sort((a, b) => entryEnergy(a, lib) - entryEnergy(b, lib));
+  } else if (rules.moodArc === "falling") {
+    out.sort((a, b) => entryEnergy(b, lib) - entryEnergy(a, lib));
+  } else if (rules.moodArc === "breathing") {
+    const sorted = [...out].sort((a, b) => entryEnergy(a, lib) - entryEnergy(b, lib));
+    const calm = sorted.slice(0, Math.ceil(sorted.length / 2));
+    const loud = sorted.slice(Math.ceil(sorted.length / 2));
+    const woven = [];
+    while (calm.length || loud.length) {
+      if (calm.length) woven.push(calm.shift());
+      if (loud.length) woven.push(loud.shift());
+    }
+    out.splice(0, out.length, ...woven);
+  }
+  out.appliedSeed = effectiveSeed;
+  return out;
+}
+
+async function dispatchSetlistStep(step) {
+  if (setlistPlayer.dryRun) return { ok: true, target: "dry-run" };
+  const cmd = String(step.cmd || "").trim();
+  if (!cmd) return { ok: false, target: "none" };
+  if (String(step.target) === "all") {
+    const ip = setlistPlayer.broadcastIp || preferredBroadcastOrigin();
+    if (!ip) return { ok: false, target: "all" };
+    return { ok: await sendCommand(ip, cmd), target: `all via pinned ${ip}` };
+  }
+  const idx = Math.max(0, (parseInt(step.target, 10) || 1) - 1);
+  const ip = boards[idx];
+  if (!ip) return { ok: false, target: `board ${idx + 1}` };
+  return { ok: await sendCommand(ip, cmd), target: ip };
+}
+
+function stopSetlistPlayback(sendStop = false) {
+  if (setlistPlayer.timer) clearTimeout(setlistPlayer.timer);
+  const wasDryRun = setlistPlayer.dryRun;
+  setlistRunSerial++;
+  setlistPlayer = {
+    active: false, paused: false, entryIndex: 0, stepIndex: 0, resolvedOrder: [],
+    timer: null, remainingMs: 0, stepStartedAt: 0, runId: setlistRunSerial,
+    runStartedAt: 0, dryRun: false, logCount: setlistPlayer.logCount, broadcastIp: null,
+  };
+  slPlayEl.disabled = false;
+  slPauseEl.disabled = true;
+  slPauseEl.textContent = "Pause";
+  slStopEl.disabled = true;
+  if (sendStop && !wasDryRun) {
+    setlistLog("manual STOP requested", "warn");
+    broadcastCommand("STOP");
+  } else if (sendStop) {
+    setlistLog("manual STOP requested · dry-run", "warn");
+  }
+  setSetlistStatus("idle");
+  renderSetlist();
+}
+
+async function playSetlist(dryRun = false) {
+  const set = readSetlistFromDom();
+  saveCurrentSetlist(set);
+  const lib = sequenceLibrary();
+  const order = resolveSetlistOrder(set, lib);
+  if (!order.length) {
+    setSetlistStatus("no playable entries", "alert");
+    return;
+  }
+  if (setlistPlayer.timer) clearTimeout(setlistPlayer.timer);
+  const runId = ++setlistRunSerial;
+  setlistPlayer = {
+    active: true, paused: false, entryIndex: 0, stepIndex: 0,
+    resolvedOrder: order, timer: null, remainingMs: 0, stepStartedAt: 0,
+    runId, runStartedAt: performance.now(), dryRun,
+    logCount: 0, broadcastIp: dryRun ? null : preferredBroadcastOrigin(),
+  };
+  slLogEl.innerHTML = "";
+  const seedNote = (set.mode === "shuffle" && order.appliedSeed != null) ? ` · seed=${order.appliedSeed}` : "";
+  setlistLog(`run ${runId} start${dryRun ? " · dry-run" : ""} · ${order.length} entries · mode=${set.mode}${seedNote}`, "ok");
+  if (setlistPlayer.broadcastIp) setlistLog(`broadcast origin pinned · ${setlistPlayer.broadcastIp}`, "ok");
+  slPlayEl.disabled = true;
+  slPauseEl.disabled = false;
+  slStopEl.disabled = false;
+  await runSetlistStep(runId);
+}
+
+async function runSetlistStep(runId = setlistPlayer.runId) {
+  if (!setlistPlayer.active || setlistPlayer.runId !== runId) return;
+  const entry = setlistPlayer.resolvedOrder[setlistPlayer.entryIndex];
+  if (!entry) {
+    if (slLoopEl.checked) {
+      // Re-resolve on every loop wrap so shuffle mode actually reshuffles
+      // each pass. In ordered mode this is a no-op; in shuffle with seed=0
+      // the time-based effectiveSeed advances; with a fixed seed the order
+      // stays reproducible (same array, intentional).
+      const set = sequenceLibrary().setlists.find(s => s.id === currentSetlistId);
+      if (set) {
+        const next = resolveSetlistOrder(set, sequenceLibrary());
+        setlistPlayer.resolvedOrder = next;
+        const seedNote = (set.mode === "shuffle" && next.appliedSeed != null) ? ` · seed=${next.appliedSeed}` : "";
+        setlistLog(`loop · restarting${seedNote}`, "ok");
+      } else {
+        setlistLog(`loop · restarting`, "ok");
+      }
+      setlistPlayer.entryIndex = 0;
+      setlistPlayer.stepIndex = 0;
+      return runSetlistStep(runId);
+    }
+    setlistLog(`run ${runId} complete`, "ok");
+    stopSetlistPlayback(false);
+    return;
+  }
+  const seq = entry.__seq;
+  const steps = (seq.steps || []).filter(s => String(s.cmd || "").trim());
+  if (setlistPlayer.stepIndex === 0) {
+    setlistLog(`entry ${pad2(setlistPlayer.entryIndex + 1)}/${pad2(setlistPlayer.resolvedOrder.length)} · ${seq.name || seq.id} · ${steps.length} step${steps.length === 1 ? "" : "s"}`, "amber");
+    renderSetlist();
+  }
+  if (setlistPlayer.stepIndex >= steps.length) {
+    setlistPlayer.entryIndex++;
+    setlistPlayer.stepIndex = 0;
+    if (entry.gapMs > 0 && setlistPlayer.entryIndex < setlistPlayer.resolvedOrder.length) {
+      setSetlistStatus(`gap ${formatMs(entry.gapMs)}`, "amber");
+      setlistLog(`gap ${formatMs(entry.gapMs)}`, "warn");
+      scheduleNextSetlistTick(entry.gapMs, runId);
+      return;
+    }
+    return runSetlistStep(runId);
+  }
+  const step = normalizeStep(steps[setlistPlayer.stepIndex]);
+  setSetlistStatus(`entry ${pad2(setlistPlayer.entryIndex + 1)}/${pad2(setlistPlayer.resolvedOrder.length)} · ${seq.name || seq.id} · step ${pad2(setlistPlayer.stepIndex + 1)} · ${step.cmd}`, "amber");
+  setlistLog(`  step ${pad2(setlistPlayer.stepIndex + 1)} · ${step.cmd} · next in ${step.durationMs}ms`, "warn");
+  const sent = await dispatchSetlistStep(step);
+  if (!setlistPlayer.active || setlistPlayer.runId !== runId) return;
+  setlistLog(`  step ${pad2(setlistPlayer.stepIndex + 1)} ${sent.ok ? "accepted" : "failed"} · ${sent.target}`, sent.ok ? "ok" : "bad");
+  if (!setlistPlayer.dryRun) setTimeout(pollOnce, 200);
+  setlistPlayer.stepIndex++;
+  scheduleNextSetlistTick(step.durationMs, runId);
+}
+
+function scheduleNextSetlistTick(delayMs, runId = setlistPlayer.runId) {
+  setlistPlayer.remainingMs = Math.max(0, delayMs);
+  setlistPlayer.stepStartedAt = Date.now();
+  setlistPlayer.timer = setTimeout(() => {
+    if (!setlistPlayer.active || setlistPlayer.runId !== runId) return;
+    runSetlistStep(runId);
+  }, setlistPlayer.remainingMs);
+}
+
+function pauseOrResumeSetlist() {
+  if (!setlistPlayer.active) return;
+  if (!setlistPlayer.paused) {
+    if (setlistPlayer.timer) clearTimeout(setlistPlayer.timer);
+    setlistPlayer.remainingMs = Math.max(0, setlistPlayer.remainingMs - (Date.now() - setlistPlayer.stepStartedAt));
+    setlistPlayer.paused = true;
+    slPauseEl.textContent = "Resume";
+    setSetlistStatus(`paused · ${formatMs(setlistPlayer.remainingMs)} to next`, "amber");
+    return;
+  }
+  setlistPlayer.paused = false;
+  slPauseEl.textContent = "Pause";
+  setSetlistStatus(`resumed`, "amber");
+  scheduleNextSetlistTick(setlistPlayer.remainingMs, setlistPlayer.runId);
+}
+
+function addSetlistEntry() {
+  const lib = sequenceLibrary();
+  const firstSeq = (lib.sequences || [])[0];
+  const set = readSetlistFromDom();
+  set.entries.push({ seqId: firstSeq ? firstSeq.id : "", repeat: 1, gapMs: 0, weight: 1 });
+  saveCurrentSetlist(set);
+}
+
+// ---------- setlist DOM wiring ----------
+slSelectEl.addEventListener("change", () => {
+  if (setlistDirty) saveCurrentSetlist(readSetlistFromDom());
+  currentSetlistId = slSelectEl.value;
+  setlistDirty = false;
+  renderSetlist();
+});
+
+function commitSetlistName() {
+  const set = readSetlistFromDom();
+  const nextName = slNameEl.value.trim().slice(0, 64);
+  if (!nextName || nextName === set.name) return;
+  set.name = nextName;
+  saveCurrentSetlist(set);
+  setSetlistStatus(`renamed ${set.name}`, "phosphor");
+}
+slNameEl.addEventListener("input", () => { slStatusEl.textContent = "name edited"; });
+slNameEl.addEventListener("blur", commitSetlistName);
+slNameEl.addEventListener("keydown", e => {
+  if (e.key === "Enter") { commitSetlistName(); slNameEl.blur(); }
+});
+
+$("#slNew").addEventListener("click", () => {
+  if (setlistDirty) saveCurrentSetlist(readSetlistFromDom());
+  const lib = sequenceLibrary();
+  const set = defaultSetlist(lib);
+  lib.setlists.push(set);
+  currentSetlistId = set.id;
+  saveLibrary(lib);
+  renderLibSummary();
+  renderSetlist();
+  setSetlistStatus(`created ${set.name}`, "phosphor");
+});
+
+$("#slDuplicate").addEventListener("click", () => {
+  const lib = sequenceLibrary();
+  const set = readSetlistFromDom();
+  const copy = JSON.parse(JSON.stringify(set));
+  copy.id = uniqueSetlistId(lib, `${set.id}-copy`);
+  copy.name = `${set.name || set.id} Copy`;
+  lib.setlists.push(copy);
+  currentSetlistId = copy.id;
+  saveLibrary(lib);
+  setlistDirty = false;
+  renderLibSummary();
+  renderSetlist();
+  setSetlistStatus(`duplicated ${set.name || set.id}`, "phosphor");
+});
+
+$("#slDelete").addEventListener("click", () => {
+  const lib = sequenceLibrary();
+  const set = getCurrentSetlist(lib);
+  if (!set || !confirm(`Delete setlist "${set.name || set.id}"?`)) return;
+  lib.setlists = lib.setlists.filter(s => s.id !== set.id);
+  if (lib.activeSetlistId === set.id) lib.activeSetlistId = null;
+  if (!lib.setlists.length) lib.setlists.push(defaultSetlist(lib));
+  currentSetlistId = lib.setlists[0].id;
+  saveLibrary(lib);
+  setlistDirty = false;
+  renderLibSummary();
+  renderSetlist();
+  setSetlistStatus("setlist deleted", "amber");
+});
+
+slModeEl.addEventListener("change", () => {
+  const set = readSetlistFromDom();
+  saveCurrentSetlist(set);
+  setSetlistStatus(`mode = ${set.mode}`, "phosphor");
+});
+
+slActiveEl.addEventListener("change", () => {
+  const lib = sequenceLibrary();
+  const set = getCurrentSetlist(lib);
+  lib.activeSetlistId = slActiveEl.checked ? set.id : (lib.activeSetlistId === set.id ? null : lib.activeSetlistId);
+  saveLibrary(lib);
+  renderLibSummary();
+  setSetlistStatus(slActiveEl.checked ? `active on boot = ${set.name || set.id}` : "no active setlist", "phosphor");
+});
+
+slEntriesEl.addEventListener("input", () => {
+  markSetlistDirty();
+  const set = readSetlistFromDom();
+  slTotalEl.textContent = `${set.entries.length} entr${set.entries.length === 1 ? "y" : "ies"}`;
+});
+slEntriesEl.addEventListener("change", () => {
+  if (setlistDirty) saveCurrentSetlist(readSetlistFromDom());
+});
+slEntriesEl.addEventListener("click", e => {
+  const rm = e.target.dataset.remove;
+  if (rm == null) return;
+  const set = readSetlistFromDom();
+  set.entries.splice(parseInt(rm, 10), 1);
+  saveCurrentSetlist(set);
+  setSetlistStatus("entry removed", "amber");
+});
+slEntriesEl.addEventListener("dragstart", e => {
+  const row = e.target.closest("tr[data-index]");
+  if (!row) return;
+  setlistDragIndex = parseInt(row.dataset.index, 10);
+  e.dataTransfer.effectAllowed = "move";
+});
+slEntriesEl.addEventListener("dragover", e => {
+  if (setlistDragIndex == null) return;
+  e.preventDefault();
+});
+slEntriesEl.addEventListener("drop", e => {
+  const row = e.target.closest("tr[data-index]");
+  if (!row || setlistDragIndex == null) return;
+  e.preventDefault();
+  const to = parseInt(row.dataset.index, 10);
+  const set = readSetlistFromDom();
+  const [moved] = set.entries.splice(setlistDragIndex, 1);
+  set.entries.splice(to, 0, moved);
+  setlistDragIndex = null;
+  saveCurrentSetlist(set);
+  setSetlistStatus(`moved entry ${pad2(to + 1)}`, "phosphor");
+});
+
+for (const el of [slAvoidSameTagEl, slMinGapEl, slMoodArcEl, slSeedEl]) {
+  el.addEventListener("change", () => saveCurrentSetlist(readSetlistFromDom()));
+}
+
+$("#slAddEntry").addEventListener("click", addSetlistEntry);
+$("#slSave").addEventListener("click", () => {
+  saveCurrentSetlist(readSetlistFromDom());
+  setSetlistStatus("saved to localStorage", "phosphor");
+});
+slPlayEl.addEventListener("click", () => playSetlist(false));
+slPauseEl.addEventListener("click", pauseOrResumeSetlist);
+slStopEl.addEventListener("click", () => stopSetlistPlayback(true));
+slDryRunEl.addEventListener("click", () => playSetlist(true));
+
+// ============================================================
 // INIT
 // ============================================================
 renderBoardList();
 renderOtaBoardButtons();
 renderLibSummary();
 renderSequencer();
+renderSetlist();
 render();
 startPolling();
 </script>
