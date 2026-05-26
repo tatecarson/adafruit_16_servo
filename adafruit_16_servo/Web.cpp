@@ -3,15 +3,7 @@
 #include "Secrets.h"
 #include "Sync.h"
 #include "storage.h"
-#include "servo_calibration.h"
-#include "servo_runtime.h"
 #include "bake_validate.h"
-
-// Forward decls from servo_control.h / servo_maintenance.h. Defined inline
-// in those headers and included by the .ino translation unit, so we can
-// reach them at link time without pulling the headers into Web.cpp.
-extern Adafruit_PWMServoDriver pwm;
-extern ServoConfig servoConfig[NUM_SERVOS];
 
 // Provided by command_interface.h in the servo sketch.
 void dispatchCommand(const char* cmd, bool fromNetwork);
@@ -185,116 +177,6 @@ static void handleBoardIdPost(WiFiClient& client, String path) {
     client.println();
     if (ok) { client.print("{\"ok\":true,\"boardId\":"); client.print(storageBoardId()); client.println("}"); }
     else    { client.println("{\"ok\":false,\"error\":\"invalid-id\"}"); }
-}
-
-static void handleCalibrationGet(WiFiClient& client) {
-    client.println("HTTP/1.1 200 OK");
-    client.println("Connection: close");
-    client.println("Access-Control-Allow-Origin: *");
-    client.println("Content-Type: application/json");
-    client.println();
-    client.print("{\"ok\":true,\"boardId\":"); client.print(storageBoardId());
-    client.print(",\"servos\":[");
-    for (uint8_t ch = 0; ch < CALIB_NUM_CHANNELS; ch++) {
-        CalibrationRecord r = calibrationGet(ch);
-        if (ch > 0) client.print(",");
-        client.print("{\"ch\":"); client.print(ch);
-        client.print(",\"minUs\":"); client.print(r.minUs);
-        client.print(",\"maxUs\":"); client.print(r.maxUs);
-        client.print(",\"offsetDeg\":"); client.print(r.offsetDeg);
-        client.print(",\"calibrated\":"); client.print(r.calibrated ? "true" : "false");
-        client.print("}");
-    }
-    client.println("]}");
-}
-
-// Minimal positive-int extractor for our tightly-scoped POST shape. We
-// don't bring in a JSON library because the firmware OTA partition is
-// tight; the calibration payload is small and well-formed. Returns -1
-// if the key isn't found or doesn't parse.
-static int32_t jsonIntField(const char* body, int len, const char* key) {
-    String haystack(body, len);
-    String needle = String("\"") + key + "\"";
-    int k = haystack.indexOf(needle);
-    if (k < 0) return -1;
-    int colon = haystack.indexOf(':', k);
-    if (colon < 0) return -1;
-    int i = colon + 1;
-    while (i < (int)haystack.length() && (haystack[i] == ' ' || haystack[i] == '\t')) i++;
-    bool neg = false;
-    if (i < (int)haystack.length() && (haystack[i] == '-' || haystack[i] == '+')) {
-        if (haystack[i] == '-') neg = true;
-        i++;
-    }
-    int32_t val = 0;
-    bool any = false;
-    while (i < (int)haystack.length() && haystack[i] >= '0' && haystack[i] <= '9') {
-        val = val * 10 + (haystack[i] - '0');
-        i++;
-        any = true;
-    }
-    if (!any) return -1;
-    return neg ? -val : val;
-}
-
-// POST /calibration body: {"ch":0,"minUs":1000,"maxUs":2000,"offsetDeg":0}
-// Updates one channel and persists to EEPROM. minUs/maxUs are mandatory;
-// offsetDeg defaults to 0 if absent. Returns the updated record.
-static void handleCalibrationPost(WiFiClient& client, int contentLength) {
-    if (contentLength <= 0 || contentLength > 256) {
-        client.println("HTTP/1.1 413 Payload Too Large");
-        client.println("Connection: close");
-        client.println("Access-Control-Allow-Origin: *");
-        client.println("Content-Type: application/json");
-        client.println();
-        client.println("{\"ok\":false,\"error\":\"too-large\"}");
-        return;
-    }
-    char buf[260];
-    int received = 0;
-    unsigned long deadline = millis() + 2000;
-    while (received < contentLength && millis() < deadline && client.connected()) {
-        int avail = client.available();
-        if (avail <= 0) { delay(2); continue; }
-        int toRead = avail;
-        if (toRead > contentLength - received) toRead = contentLength - received;
-        if (received + toRead >= (int)sizeof(buf)) toRead = sizeof(buf) - received - 1;
-        if (toRead <= 0) break;
-        int n = client.read((uint8_t*)buf + received, toRead);
-        if (n > 0) { received += n; deadline = millis() + 1000; }
-    }
-    buf[received] = '\0';
-    int32_t ch        = jsonIntField(buf, received, "ch");
-    int32_t minUs     = jsonIntField(buf, received, "minUs");
-    int32_t maxUs     = jsonIntField(buf, received, "maxUs");
-    int32_t offsetDeg = jsonIntField(buf, received, "offsetDeg");
-    if (offsetDeg == -1 && String(buf).indexOf("\"offsetDeg\"") < 0) offsetDeg = 0;
-    if (ch < 0 || ch >= CALIB_NUM_CHANNELS || minUs <= 0 || maxUs <= 0 || minUs >= maxUs ||
-        minUs < 400 || maxUs > 2600 || offsetDeg < -128 || offsetDeg > 127) {
-        client.println("HTTP/1.1 400 Bad Request");
-        client.println("Connection: close");
-        client.println("Access-Control-Allow-Origin: *");
-        client.println("Content-Type: application/json");
-        client.println();
-        client.println("{\"ok\":false,\"error\":\"invalid-fields\"}");
-        return;
-    }
-    calibrationSet((uint8_t)ch, (uint16_t)minUs, (uint16_t)maxUs, (int8_t)offsetDeg);
-    // Apply live so the next S<n> command honors the new calibration without
-    // a reboot. Re-applies all channels; cheap.
-    calibrationApplyToServoConfig(servoConfig);
-    CalibrationRecord r = calibrationGet((uint8_t)ch);
-    client.println("HTTP/1.1 200 OK");
-    client.println("Connection: close");
-    client.println("Access-Control-Allow-Origin: *");
-    client.println("Content-Type: application/json");
-    client.println();
-    client.print("{\"ok\":true,\"ch\":"); client.print(r.calibrated ? (int)ch : -1);
-    client.print(",\"minUs\":"); client.print(r.minUs);
-    client.print(",\"maxUs\":"); client.print(r.maxUs);
-    client.print(",\"offsetDeg\":"); client.print(r.offsetDeg);
-    client.print(",\"calibrated\":"); client.print(r.calibrated ? "true" : "false");
-    client.println("}");
 }
 
 static void handleSequencesRestore(WiFiClient& client) {
@@ -476,26 +358,6 @@ void webPoll() {
   }
   if (method == "POST" && path.startsWith("/boardId")) {
     handleBoardIdPost(client, path); delay(5); client.stop(); return;
-  }
-  // CORS preflight + GET/POST for /calibration (servo-2n9). GET returns
-  // all three channels' records; POST updates one channel at a time so
-  // partial saves don't clobber siblings.
-  if (method == "OPTIONS" && path.startsWith("/calibration")) {
-    client.println("HTTP/1.1 204 No Content");
-    client.println("Connection: close");
-    client.println("Access-Control-Allow-Origin: *");
-    client.println("Access-Control-Allow-Methods: POST, GET, OPTIONS");
-    client.println("Access-Control-Allow-Headers: Content-Type");
-    client.println("Access-Control-Max-Age: 86400");
-    client.println();
-    delay(5); client.stop();
-    return;
-  }
-  if (method == "GET" && (path == "/calibration" || path.startsWith("/calibration?"))) {
-    handleCalibrationGet(client); delay(5); client.stop(); return;
-  }
-  if (method == "POST" && path == "/calibration") {
-    handleCalibrationPost(client, contentLength); delay(5); client.stop(); return;
   }
 
   // --- Existing GET handlers ---

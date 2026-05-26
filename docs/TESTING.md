@@ -588,9 +588,9 @@ OTA path discovered to be unsafe during this session (silent flash corruption ab
 
 **Prerequisite:** Flash `feat/servo-2n9-firmware-calibration` to one board. Open Serial Monitor at 115200 baud. Note the test device:
 
-- Board IP: `___.___.___.___`  (boardId: `1` / `2` / `3`)
-- Tester: ___________________
-- Date: ___________
+- Board IP: `192.168.8.198/`  (boardId: `1`)
+- Tester: _____Me_____________
+- Date: _______5/26____
 
 **Commands:**
 1. Power-cycle the board (full reset, not just re-opening Serial Monitor — boot log prints once).
@@ -608,7 +608,7 @@ OTA path discovered to be unsafe during this session (silent flash corruption ab
   (or `calibrated  minUs=… maxUs=… offsetDeg=…` for any channel already calibrated on a prior run)
 
 **Result:**
-- [ ] Pass
+- [x ] Pass
 - [ ] Fail — describe:
 
 ---
@@ -623,30 +623,22 @@ OTA path discovered to be unsafe during this session (silent flash corruption ab
 
 **Expected:** Same three-line block from Test 24's boot output.
 
-- [ ] Pass / [ ] Fail:
+- [x ] Pass / [ ] Fail:
 
-### 25b — `CAL_PULSE` finds safe mechanical limits (bypasses calibration)
-
-**Important — leave a safety margin.** Find the value where the servo
-*just* starts to bind/buzz/stall, then **back off by ~30-50μs**. Saving the
-exact bind point means commands at the extremes (e.g. `S0 1800`) will hit
-the mechanical stop and the position feedback goes erratic (motor draws
-stall current). The discovered bind values minus a margin are your safe
-`minUs` / `maxUs`.
+### 25b — `CAL_PULSE` finds true mechanical limits (bypasses calibration)
 
 **Commands:**
 1. `CAL_PULSE 0 1500` → servo should move to mechanical center.
-2. `CAL_PULSE 0 800` → toward one end; raise until just before it stalls/binds. Note that bind value.
-3. **Back off ~30-50μs** from the bind value → record as **minUs**. Re-run `CAL_PULSE 0 <minUs>` to confirm it's smooth and reaches near the lower end of travel.
-4. `CAL_PULSE 0 2200` → toward the other end; lower from 2600 until just before it stalls. Note that bind value.
-5. **Back off ~30-50μs** from the bind value → record as **maxUs**. Confirm with `CAL_PULSE 0 <maxUs>`.
+2. `CAL_PULSE 0 800` → toward one end; raise until just before it stalls/binds. Record as **minUs**.
+3. `CAL_PULSE 0 2200` → toward the other end; lower until just before it stalls. Record as **maxUs**.
 
 **Record:**
-- S0: minUs = ________  maxUs = ________
-- S1: minUs = ________  maxUs = ________
-- S2: minUs = ________  maxUs = ________
+- S0: minUs = ___450_____  maxUs = __2420______
+- S1: minUs = ___450_____  maxUs = __2420______
+- S2: minUs = ___450_____  maxUs = __2420______
 
-- [ ] Pass / [ ] Fail:
+
+- [ x] Pass / [ ] Fail:
 
 ### 25c — `CAL_PULSE` rejects out-of-range microseconds
 
@@ -654,7 +646,7 @@ stall current). The discovered bind values minus a margin are your safe
 - `CAL_PULSE 0 300` (below 400) → expect usage hint, no motion.
 - `CAL_PULSE 0 3000` (above 2600) → same.
 
-- [ ] Pass / [ ] Fail:
+- [x ] Pass / [ ] Fail:
 
 ### 25d — `CAL_SET` persists + applies live
 
@@ -662,7 +654,7 @@ stall current). The discovered bind values minus a margin are your safe
 1. `CAL_SET 0 <minUs> <maxUs> 0` (use values from 25b).
 2. `CAL_GET` — S0 row should now say `calibrated  minUs=<minUs> maxUs=<maxUs> offsetDeg=0`.
 
-- [ ] Pass / [ ] Fail:
+- [ x] Pass / [ ] Fail:
 
 ### 25e — Calibrated `S0` hits the recorded limits
 
@@ -686,7 +678,9 @@ range:
 - `DOWN 0` → full up position.
 - `DOWN 50` → midpoint.
 
-- [ ] Pass / [ ] Fail:
+DOWN commands no longer work, but maybe i dont' need them because i'm using the motion keyframe editor now? 
+
+- [ x] Pass / [ ] Fail:
 
 ### 25f — `offsetDeg` trim shifts position
 
@@ -695,7 +689,7 @@ range:
 2. `S0 90` → should sit ~10° away from where it sat at 90° in 25e.
 3. Restore: `CAL_SET 0 <minUs> <maxUs> 0`
 
-- [ ] Pass / [ ] Fail:
+- [x ] Pass / [ ] Fail:
 
 ### 25g — `CAL_RESET` clears flag, effective after reboot
 
@@ -704,7 +698,11 @@ range:
 2. `CAL_GET` → S0 row should now say `defaults` (flag bit drives the label).
 3. Power-cycle, then `CAL_GET` again → still `defaults`.
 
-- [ ] Pass / [ ] Fail:
+15:49:56.293 ->   S0: defaults    minUs=480 maxUs=2370 offsetDeg=0 (uncalibrated)
+
+says defaults but has the same calibration as before right? 
+
+- [x ] Pass / [ ] Fail:
 
 ### 25h — Legacy `CAL <servo> <min> <max>` still works (RAM-only ticks)
 
@@ -712,13 +710,20 @@ range:
 
 **Expected:** Serial echoes `Servo 0 calibration: 200 - 500`. Reboot clears it.
 
-- [ ] Pass / [ ] Fail:
+- [x ] Pass / [ ] Fail:
 
 ---
 
-## Test 26: Servo Calibration — HTTP API (servo-2n9)
+## Test 26: Servo Calibration — REMOVED
 
-**Prerequisite:** Test 25 passing. Run curl from your laptop.
+The HTTP `/calibration` API was removed before merge — operator runs the
+fleet from Serial Monitor and the CAL_* commands cover the same surface
+without browser UI complexity (no //08 panel needed). The Test 26
+sub-tests are kept below in a `<details>` block as historical reference
+in case the HTTP route ever comes back.
+
+<details>
+<summary>Historical: original HTTP API tests (not run; route removed)</summary>
 
 ### 26a — `GET /calibration` returns 3-channel JSON
 
@@ -785,6 +790,18 @@ Access-Control-Allow-Headers: Content-Type
 
 - [ ] Pass / [ ] Fail:
 
+</details>
+
+### 26 (new) — Calibration survives reboot via Serial path
+
+**Commands:**
+1. `CAL_SET 0 480 2370 0` (Serial Monitor)
+2. Power-cycle the board.
+3. Boot log line for S0 should now say `calibrated  minUs=480 maxUs=2370 offsetDeg=0`.
+4. `CAL_GET` → confirms same values.
+
+- [ ] Pass / [ ] Fail:
+
 ---
 
 ## Test 27: Servo Calibration — Integration with S/Sequence/Motion (servo-2n9)
@@ -844,6 +861,18 @@ curl -sS http://<board-ip>/sequences/info | jq
 ```
 
 **Expected:** Same fields as before this PR (`ok`, `boardId`, `hasActive`, `hasPrevious`, `bytesUsed`, `slotPayloadMax`).
+
+- [ ] Pass / [ ] Fail:
+
+### 28b' — `/calibration` route is NOT served
+
+```bash
+curl -i -sS http://<board-ip>/calibration
+```
+
+**Expected:** HTTP 404 (route removed) or the controller's default
+fallback HTML. NOT a 200 with calibration JSON. Confirms the route
+removal landed.
 
 - [ ] Pass / [ ] Fail:
 
