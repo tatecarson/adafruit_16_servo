@@ -599,7 +599,7 @@ OTA path discovered to be unsafe during this session (silent flash corruption ab
 **Expected:**
 - Existing `storage: boardId=N hasActive=… hasPrevious=…` line still appears.
 - Followed by a new block:
-  ```
+  ```text
   --- Servo Calibration ---
     S0: defaults    minUs=1000 maxUs=2000 offsetDeg=0 (uncalibrated)
     S1: defaults    minUs=1000 maxUs=2000 offsetDeg=0 (uncalibrated)

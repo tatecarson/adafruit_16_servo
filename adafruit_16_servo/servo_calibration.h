@@ -39,6 +39,15 @@
 #define CALIB_DEFAULT_MAX_US     2000
 #define CALIB_DEFAULT_OFFSET_DEG 0
 
+// Acceptable pulse-width envelope. RC servos universally accept pulses in
+// the 1000-2000us range; the wider 400-2600us bound here is what we'll
+// accept as user input (a few servos and continuous-rotation units use
+// wider ranges) without flagging the value as corrupt. Anything outside
+// this band is treated as garbage from a botched EEPROM read.
+#define CALIB_BOUND_MIN_US       400
+#define CALIB_BOUND_MAX_US       2600
+#define CALIB_BOUND_OFFSET_DEG   127  // int8 max; symmetric -127..127
+
 struct CalibrationRecord {
   uint16_t minUs;
   uint16_t maxUs;
@@ -80,9 +89,14 @@ inline CalibrationRecord calibrationGet(uint8_t ch) {
   r.maxUs = ((uint16_t)EEPROM.read(off + 2) << 8) | EEPROM.read(off + 3);
   r.offsetDeg = (int8_t)EEPROM.read(off + 4);
   r.calibrated = true;
-  // Defensive: if the saved bytes are nonsense (erased flash 0xFFFF), fall
-  // back to defaults so the S<n> path never produces garbage pulses.
-  if (r.minUs == 0xFFFF || r.maxUs == 0xFFFF) {
+  // Defensive: surface defaults if the saved bytes look corrupted. Catches
+  // erased-flash 0xFFFF, inverted ranges, and pulses outside the universally
+  // safe servo envelope. The flag bit may be set but the bytes wrong if
+  // the dataflash was wiped or only partially written; treat that as
+  // "uncalibrated" rather than letting bogus values drive the S<n> path.
+  if (r.minUs < CALIB_BOUND_MIN_US || r.minUs > CALIB_BOUND_MAX_US ||
+      r.maxUs < CALIB_BOUND_MIN_US || r.maxUs > CALIB_BOUND_MAX_US ||
+      r.minUs >= r.maxUs) {
     return _calibrationDefaults();
   }
   return r;

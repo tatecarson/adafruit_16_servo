@@ -7,6 +7,7 @@
 
 void showHelp() {
   Serial.println(F("Commands: S/P/CAL/SWEEP/TPULSE/STATUS"));
+  Serial.println(F("CAL_GET/CAL_SET/CAL_RESET/CAL_PULSE (persisted calibration)"));
   Serial.println(F("UP/DOWN/ROTATE"));
   Serial.println(F("MOTION/PLAY/SPLAY/RUN/STOP/TIMESCALE"));
   Serial.println(F("STORAGEINFO/BOARDID. See README for syntax."));
@@ -246,21 +247,41 @@ void processCommand(char* cmd) {
   }
   else if (startsWith(cmd, "CAL_SET ")) {
     // CAL_SET <ch> <minUs> <maxUs> [<offsetDeg>]
+    // Parse into wide signed temporaries so out-of-range inputs (negative,
+    // > uint16, > int8) don't silently wrap before we validate them.
     int s1 = findChar(cmd, ' ', 0);
     int s2 = (s1 > 0) ? findChar(cmd, ' ', s1 + 1) : -1;
     int s3 = (s2 > 0) ? findChar(cmd, ' ', s2 + 1) : -1;
     int s4 = (s3 > 0) ? findChar(cmd, ' ', s3 + 1) : -1;
     if (s1 > 0 && s2 > 0 && s3 > 0) {
-      uint8_t ch = atoi(cmd + s1 + 1);
-      uint16_t minUs = atoi(cmd + s2 + 1);
-      uint16_t maxUs = atoi(cmd + s3 + 1);
-      int8_t offset = (s4 > 0) ? (int8_t)atoi(cmd + s4 + 1) : 0;
-      calibrationSet(ch, minUs, maxUs, offset);
-      calibrationApplyToServoConfig(servoConfig);
-      Serial.print(F("CAL_SET S")); Serial.print(ch);
-      Serial.print(F(" minUs=")); Serial.print(minUs);
-      Serial.print(F(" maxUs=")); Serial.print(maxUs);
-      Serial.print(F(" offsetDeg=")); Serial.println(offset);
+      long ch     = atol(cmd + s1 + 1);
+      long minUs  = atol(cmd + s2 + 1);
+      long maxUs  = atol(cmd + s3 + 1);
+      long offset = (s4 > 0) ? atol(cmd + s4 + 1) : 0;
+      if (ch < 0 || ch >= CALIB_NUM_CHANNELS) {
+        Serial.print(F("CAL_SET rejected: ch must be 0.."));
+        Serial.println((int)(CALIB_NUM_CHANNELS - 1));
+      } else if (minUs < CALIB_BOUND_MIN_US || minUs > CALIB_BOUND_MAX_US ||
+                 maxUs < CALIB_BOUND_MIN_US || maxUs > CALIB_BOUND_MAX_US) {
+        Serial.print(F("CAL_SET rejected: minUs/maxUs must be "));
+        Serial.print((int)CALIB_BOUND_MIN_US);
+        Serial.print(F(".."));
+        Serial.println((int)CALIB_BOUND_MAX_US);
+      } else if (minUs >= maxUs) {
+        Serial.println(F("CAL_SET rejected: minUs must be < maxUs"));
+      } else if (offset < -CALIB_BOUND_OFFSET_DEG || offset > CALIB_BOUND_OFFSET_DEG) {
+        Serial.print(F("CAL_SET rejected: offsetDeg must be -"));
+        Serial.print((int)CALIB_BOUND_OFFSET_DEG);
+        Serial.print(F("..+"));
+        Serial.println((int)CALIB_BOUND_OFFSET_DEG);
+      } else {
+        calibrationSet((uint8_t)ch, (uint16_t)minUs, (uint16_t)maxUs, (int8_t)offset);
+        calibrationApplyToServoConfig(servoConfig);
+        Serial.print(F("CAL_SET S")); Serial.print((int)ch);
+        Serial.print(F(" minUs=")); Serial.print((int)minUs);
+        Serial.print(F(" maxUs=")); Serial.print((int)maxUs);
+        Serial.print(F(" offsetDeg=")); Serial.println((int)offset);
+      }
     } else {
       Serial.println(F("Use: CAL_SET <ch> <minUs> <maxUs> [<offsetDeg>]"));
     }
@@ -268,10 +289,15 @@ void processCommand(char* cmd) {
   else if (startsWith(cmd, "CAL_RESET ")) {
     int s = findChar(cmd, ' ', 0);
     if (s > 0) {
-      uint8_t ch = atoi(cmd + s + 1);
-      calibrationReset(ch);
-      Serial.print(F("CAL_RESET S")); Serial.println(ch);
-      Serial.println(F("(takes effect after reboot — flag cleared but live servoConfig unchanged)"));
+      long ch = atol(cmd + s + 1);
+      if (ch < 0 || ch >= CALIB_NUM_CHANNELS) {
+        Serial.print(F("CAL_RESET rejected: ch must be 0.."));
+        Serial.println((int)(CALIB_NUM_CHANNELS - 1));
+      } else {
+        calibrationReset((uint8_t)ch);
+        Serial.print(F("CAL_RESET S")); Serial.println((int)ch);
+        Serial.println(F("(takes effect after reboot — flag cleared but live servoConfig unchanged)"));
+      }
     }
   }
   else if (startsWith(cmd, "CAL_PULSE ")) {
