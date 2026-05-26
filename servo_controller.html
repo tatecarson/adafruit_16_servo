@@ -2627,7 +2627,10 @@ function normalizeKeyframes(track, durationMs, spec) {
   for (const raw of track?.keyframes || []) {
     const atMs = Math.max(0, Math.min(durationMs, parseInt(raw?.atMs, 10) || 0));
     const value = clampMotionValue(parseFloat(raw?.value ?? 0), spec);
-    byTime.set(atMs, { atMs, value, ...(raw?.easing ? { easing: "linear" } : {}) });
+    // Preserve raw.easing verbatim instead of overwriting to "linear" —
+    // servo-e3t will introduce non-linear segment curves (ease-in/out,
+    // S-curve, hold) that need their value to survive a normalize pass.
+    byTime.set(atMs, { atMs, value, ...(raw?.easing ? { easing: String(raw.easing) } : {}) });
   }
   if (!byTime.has(0)) byTime.set(0, { atMs: 0, value: spec.kind === "dc" ? 0 : 90 });
   if (!byTime.has(durationMs)) byTime.set(durationMs, { atMs: durationMs, value: spec.kind === "dc" ? 0 : 90 });
