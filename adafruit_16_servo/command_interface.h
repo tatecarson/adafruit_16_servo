@@ -3,6 +3,7 @@
 #include "servo_runtime.h"
 #include "dc_motor.h"
 #include "Sync.h"
+#include "servo_calibration.h"
 
 void showHelp() {
   Serial.println(F("Commands: S/P/CAL/SWEEP/TPULSE/STATUS"));
@@ -235,6 +236,63 @@ void processCommand(char* cmd) {
       uint8_t servo = atoi(cmd + 1);
       uint16_t pulse = atoi(cmd + space + 1);
       setServoPulse(servo, pulse);
+    }
+  }
+  // Persisted calibration commands (servo-2n9). Distinct from the legacy
+  // CAL <servo> <min> <max> path below which operates on PCA9685 ticks
+  // and writes only to RAM. These take microseconds and persist to EEPROM.
+  else if (strcmp(cmd, "CAL_GET") == 0) {
+    calibrationPrintBootStatus();
+  }
+  else if (startsWith(cmd, "CAL_SET ")) {
+    // CAL_SET <ch> <minUs> <maxUs> [<offsetDeg>]
+    int s1 = findChar(cmd, ' ', 0);
+    int s2 = (s1 > 0) ? findChar(cmd, ' ', s1 + 1) : -1;
+    int s3 = (s2 > 0) ? findChar(cmd, ' ', s2 + 1) : -1;
+    int s4 = (s3 > 0) ? findChar(cmd, ' ', s3 + 1) : -1;
+    if (s1 > 0 && s2 > 0 && s3 > 0) {
+      uint8_t ch = atoi(cmd + s1 + 1);
+      uint16_t minUs = atoi(cmd + s2 + 1);
+      uint16_t maxUs = atoi(cmd + s3 + 1);
+      int8_t offset = (s4 > 0) ? (int8_t)atoi(cmd + s4 + 1) : 0;
+      calibrationSet(ch, minUs, maxUs, offset);
+      calibrationApplyToServoConfig(servoConfig);
+      Serial.print(F("CAL_SET S")); Serial.print(ch);
+      Serial.print(F(" minUs=")); Serial.print(minUs);
+      Serial.print(F(" maxUs=")); Serial.print(maxUs);
+      Serial.print(F(" offsetDeg=")); Serial.println(offset);
+    } else {
+      Serial.println(F("Use: CAL_SET <ch> <minUs> <maxUs> [<offsetDeg>]"));
+    }
+  }
+  else if (startsWith(cmd, "CAL_RESET ")) {
+    int s = findChar(cmd, ' ', 0);
+    if (s > 0) {
+      uint8_t ch = atoi(cmd + s + 1);
+      calibrationReset(ch);
+      Serial.print(F("CAL_RESET S")); Serial.println(ch);
+      Serial.println(F("(takes effect after reboot — flag cleared but live servoConfig unchanged)"));
+    }
+  }
+  else if (startsWith(cmd, "CAL_PULSE ")) {
+    // CAL_PULSE <ch> <us>  — raw microseconds, bypasses calibration.
+    // Used by the // 08 UI to find each servo's true min/max pulse before
+    // saving via CAL_SET. Not used by sequences or motion playback.
+    // setPWM() takes 12-bit ticks; convert via calibUsToTicks so we don't
+    // depend on Adafruit_PWMServoDriver::writeMicroseconds (which isn't
+    // in the host-test mock).
+    int s1 = findChar(cmd, ' ', 0);
+    int s2 = (s1 > 0) ? findChar(cmd, ' ', s1 + 1) : -1;
+    if (s1 > 0 && s2 > 0) {
+      uint8_t ch = atoi(cmd + s1 + 1);
+      uint16_t us = atoi(cmd + s2 + 1);
+      if (ch < NUM_SERVOS && us >= 400 && us <= 2600) {
+        pwm.setPWM(ch, 0, calibUsToTicks(us));
+        Serial.print(F("CAL_PULSE S")); Serial.print(ch);
+        Serial.print(F(" -> ")); Serial.print(us); Serial.println(F("us"));
+      } else {
+        Serial.println(F("Use: CAL_PULSE <ch> <us 400..2600>"));
+      }
     }
   }
   else if (startsWith(cmd, "CAL")) {

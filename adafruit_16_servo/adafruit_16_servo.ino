@@ -44,6 +44,7 @@
 #include "servo_runtime.h"
 #include "dc_motor.h"
 #include "storage.h"
+#include "servo_calibration.h"
 #include "servo_setup.h"
 #include "sequence_setup.h"
 
@@ -319,6 +320,7 @@ void initServoDefaults() {
     servoConfig[i].upDegrees = 0;
     servoConfig[i].downDegrees = 0;
     servoConfig[i].reverseDir = false;
+    servoConfig[i].offsetDeg = 0;
 
     servoState[i].posPulse = defaultCenter;
     servoState[i].targetPulse = defaultCenter;
@@ -355,6 +357,12 @@ void setup() {
 
   initServoDefaults();
   applyCustomServoSetup(servoConfig, servoState);
+  // Servo calibration overrides for any channel the operator has saved
+  // via POST /calibration. Channels still on defaults keep the values
+  // from applyCustomServoSetup (which are hand-tuned per sculpture).
+  calibrationInit();
+  calibrationApplyToServoConfig(servoConfig);
+  calibrationPrintBootStatus();
   motorInit();
 
   pwm.begin();

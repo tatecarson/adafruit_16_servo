@@ -5,11 +5,19 @@
 
 /**
  * @brief Convert a servo angle to the calibrated PWM pulse for a specific servo.
+ *
+ * Applies the calibrated offsetDeg trim before mapping into the pulse range.
+ * A positive offsetDeg shifts the commanded angle UP, so if the physical
+ * horn reads 3 degrees below the commanded value, set offsetDeg=+3 in the
+ * // 08 calibration UI and "S0 90" will drive to whatever pulse corresponds
+ * to 93 internal, producing 90 physical.
  */
 uint16_t degreesToPulse(uint8_t servo, uint16_t degrees) {
   uint16_t maxDeg = servoConfig[servo].totalDegrees;
-  degrees = constrain(degrees, 0, maxDeg);
-  return map(degrees, 0, maxDeg, servoConfig[servo].minPulse, servoConfig[servo].maxPulse);
+  int32_t adjusted = (int32_t)degrees + (int32_t)servoConfig[servo].offsetDeg;
+  if (adjusted < 0) adjusted = 0;
+  if (adjusted > (int32_t)maxDeg) adjusted = (int32_t)maxDeg;
+  return map((uint16_t)adjusted, 0, maxDeg, servoConfig[servo].minPulse, servoConfig[servo].maxPulse);
 }
 
 uint16_t sequenceDegreesToPulse(uint8_t servo, uint16_t degrees) {
