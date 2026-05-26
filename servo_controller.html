@@ -2768,6 +2768,22 @@ function findTrack(motion, spec) {
   return motion.tracks.find(t => motionTrackKey(t) === trackSpecKey(spec));
 }
 
+// Keyframe interpolation policy is per-kind because the hardware behaves
+// differently:
+//
+//   SERVO tracks ramp linearly between keyframes. A servo has a target
+//   POSITION and the interval between keyframes is the budget to traverse
+//   from prev to next. The browser interpolates and streams DOWN commands
+//   so the servo follows a smooth trajectory.
+//
+//   DC tracks step (hold previous value until reaching the keyframe, then
+//   jump to the new value). A DC motor doesn't have a target position — it
+//   has a running SPEED setpoint. Each keyframe is a "from this moment on,
+//   go at this speed" event, and the motor doesn't gradually accelerate
+//   between them.
+//
+// Servo-e3t will generalize this to per-segment easing (linear / ease /
+// hold). For now the per-kind default is the right behavior.
 function valueAtTrackTime(track, spec, atMs) {
   const frames = normalizeKeyframes(track, Math.max(atMs, track.keyframes.at(-1)?.atMs || 0), spec);
   let prev = frames[0], next = frames[frames.length - 1];
@@ -2776,8 +2792,9 @@ function valueAtTrackTime(track, spec, atMs) {
     if (frames[i].atMs >= atMs) { next = frames[i]; break; }
   }
   if (!prev || !next || prev.atMs === next.atMs) return prev?.value ?? next?.value ?? 0;
+  if (spec.kind === "dc") return prev.value;  // step
   const u = (atMs - prev.atMs) / (next.atMs - prev.atMs);
-  return prev.value + (next.value - prev.value) * u;
+  return prev.value + (next.value - prev.value) * u;  // ramp
 }
 
 function previousKeyframe(track, atMs) {
