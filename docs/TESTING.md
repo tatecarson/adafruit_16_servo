@@ -657,10 +657,25 @@ OTA path discovered to be unsafe during this session (silent flash corruption ab
 
 ### 25e — Calibrated `S0` hits the recorded limits
 
+**Note on command magnitude:** channels 0/1/2 are 5-turn winches configured
+in `applyCustomServoSetup()` with `totalDegrees=1800`. So `S<n> <deg>` sweeps
+the full calibrated pulse range only when `<deg>` reaches `totalDegrees` —
+**not** at 180. Send `1800` for the upper limit. (Standard 0-180 servos
+would use the smaller numbers; if you ever change a channel to
+`totalDegrees=180`, use those commands instead.) The motion editor's
+percentage UX is tracked separately as `servo-6oa`.
+
 **Commands (right after 25d, no reboot):**
 - `S0 0` → moves to the lower mechanical limit you found, NOT the original default range.
-- `S0 180` → moves to upper limit.
-- `S0 90` → physically centered.
+- `S0 1800` → moves to upper limit (full sweep across the winch's 5-turn range).
+- `S0 900` → physically centered (half of `totalDegrees=1800`).
+
+Alternative for winches — use the existing percentage commands that already
+go through `percentToDegrees()` against each servo's calibrated up/down
+range:
+- `DOWN 100` → full down position.
+- `DOWN 0` → full up position.
+- `DOWN 50` → midpoint.
 
 - [ ] Pass / [ ] Fail:
 
@@ -769,10 +784,10 @@ Access-Control-Allow-Headers: Content-Type
 
 ### 27a — Calibrated `S<n>` hits true mechanical limits silently
 
-**Commands:**
+**Commands** (use `totalDegrees` value for full sweep — 1800 for 5-turn winches in this project; see Test 25e note):
 - `S0 0` → servo travels to lower limit, no stall sounds.
-- `S0 180` → upper limit, no stall sounds.
-- Compare: `S1 0` / `S1 180` on an uncalibrated channel. Should overshoot or stall (audible).
+- `S0 1800` → upper limit, no stall sounds.
+- Compare: `S1 0` / `S1 1800` on an uncalibrated channel. Should overshoot or stall (audible).
 
 - [ ] Pass / [ ] Fail:
 
@@ -786,9 +801,20 @@ Pick a sequence already in your library (e.g. PLAY 7). Play it via // 04 Sequenc
 
 ### 27c — Motion editor playback honors calibration
 
-In // 06 Motion editor, author a tiny motion: B<this-board>.S0 keyframes at `atMs=0 value=0` and `atMs=2000 value=180`. Click Play Live.
+**Caveat:** until `servo-6oa` ships, the motion editor uses 0-180° on the
+value axis, so on a 5-turn winch (`totalDegrees=1800`) a keyframe at value
+180 only sweeps ~10% of the calibrated pulse range. This sub-test still
+verifies the calibration **IS** being applied at the firmware layer — just
+to a small visible range. Once `servo-6oa` switches the editor to
+percentage values, this test should be rewritten to use 0-100%.
 
-**Expected:** Servo sweeps 0→180 over 2s, hitting calibrated limits cleanly. An uncalibrated channel in the same motion overshoots/undershoots.
+In // 06 Motion editor, author a tiny motion: B<this-board>.S0 keyframes
+at `atMs=0 value=0` and `atMs=2000 value=180`. Click Play Live.
+
+**Expected:** Servo sweeps the lower ~10% of its calibrated range over 2s
+(NOT the full sweep — see caveat above). An uncalibrated channel using
+the same motion still produces noticeably different physical position
+than the calibrated one — that's the signal calibration is plumbed in.
 
 - [ ] Pass / [ ] Fail:
 
