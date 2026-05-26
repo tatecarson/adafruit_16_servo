@@ -1678,7 +1678,7 @@
     <span class="num">// 06</span>
     <span class="label">Motion</span>
     <span class="rule"></span>
-    <span class="hint">12-track cluster keyframes · live scrub · local library</span>
+    <span class="hint">12-track cluster keyframes · servo % down (0=up, 100=down) · dc -100..100 spd · live scrub · local library</span>
   </div>
 
   <div class="panel motion-editor">
@@ -2550,10 +2550,16 @@ const motionPlayEl       = $("#motionPlay");
 const motionStopEl       = $("#motionStop");
 const motionLoopEl       = $("#motionLoop");
 
+// Servo tracks use "percent down" semantics (servo-6oa). 0% = fully up
+// (track row top), 100% = fully down (track row bottom). The browser
+// dispatches via the firmware's existing DOWN <ch> <pct> command which
+// uses percentToDegrees() against each channel's calibrated up/downDegrees
+// range, so live playback uses the full mechanical travel regardless of
+// totalDegrees. DC tracks are unchanged: -100..100 speed.
 const MOTION_TRACK_SPECS = [1, 2, 3].flatMap(boardId => ([
-  { kind: "servo", boardId, channel: 0, label: `B${boardId}.S0`, min: 0, max: 180, unit: "deg" },
-  { kind: "servo", boardId, channel: 1, label: `B${boardId}.S1`, min: 0, max: 180, unit: "deg" },
-  { kind: "servo", boardId, channel: 2, label: `B${boardId}.S2`, min: 0, max: 180, unit: "deg" },
+  { kind: "servo", boardId, channel: 0, label: `B${boardId}.S0`, min: 0, max: 100, unit: "%" },
+  { kind: "servo", boardId, channel: 1, label: `B${boardId}.S1`, min: 0, max: 100, unit: "%" },
+  { kind: "servo", boardId, channel: 2, label: `B${boardId}.S2`, min: 0, max: 100, unit: "%" },
   { kind: "dc",    boardId, channel: 0, label: `B${boardId}.DC`, min: -100, max: 100, unit: "spd" },
 ]));
 
@@ -2614,17 +2620,41 @@ function defaultMotion(lib) {
       boardId: spec.boardId,
       channel: spec.channel,
       label: spec.label,
+      // Safe rest: 0% (fully up) for servos, 0 (stopped) for DC.
       keyframes: [
-        { atMs: 0, value: spec.kind === "dc" ? 0 : 90 },
-        { atMs: durationMs, value: spec.kind === "dc" ? 0 : 90 },
+        { atMs: 0, value: 0 },
+        { atMs: durationMs, value: 0 },
       ],
     })),
   };
 }
 
+// Detects legacy servo tracks stored as degrees (0..180) by any keyframe
+// value strictly above 100, the upper bound of the percent semantic. One-
+// way migrate: rescale linearly 0..180 → 0..100 so a 90° centered keyframe
+// becomes 50%. Authors who actually wanted 50%-rest specific motions
+// should re-author after migration; the rescale preserves visible motion
+// shape but the absolute physical position changes (live playback now
+// hits the full mechanical sweep via DOWN <ch> <pct>).
+function _migrateServoLegacyDegrees(rawKeyframes) {
+  let needsMigration = false;
+  for (const raw of rawKeyframes || []) {
+    const v = parseFloat(raw?.value ?? 0);
+    if (Number.isFinite(v) && v > 100) { needsMigration = true; break; }
+  }
+  if (!needsMigration) return rawKeyframes;
+  return (rawKeyframes || []).map(raw => ({
+    ...raw,
+    value: Math.max(0, Math.min(100, (parseFloat(raw?.value ?? 0) / 180) * 100)),
+  }));
+}
+
 function normalizeKeyframes(track, durationMs, spec) {
   const byTime = new Map();
-  for (const raw of track?.keyframes || []) {
+  const sourceKeyframes = spec.kind === "servo"
+    ? _migrateServoLegacyDegrees(track?.keyframes)
+    : (track?.keyframes || []);
+  for (const raw of sourceKeyframes) {
     const atMs = Math.max(0, Math.min(durationMs, parseInt(raw?.atMs, 10) || 0));
     const value = clampMotionValue(parseFloat(raw?.value ?? 0), spec);
     // Preserve raw.easing verbatim instead of overwriting to "linear" —
@@ -2632,8 +2662,11 @@ function normalizeKeyframes(track, durationMs, spec) {
     // S-curve, hold) that need their value to survive a normalize pass.
     byTime.set(atMs, { atMs, value, ...(raw?.easing ? { easing: String(raw.easing) } : {}) });
   }
-  if (!byTime.has(0)) byTime.set(0, { atMs: 0, value: spec.kind === "dc" ? 0 : 90 });
-  if (!byTime.has(durationMs)) byTime.set(durationMs, { atMs: durationMs, value: spec.kind === "dc" ? 0 : 90 });
+  // Boundary defaults: 0% for servo (fully up rest) and 0 speed for DC.
+  // Both collapse to value=0 since servo's "safe rest" is now 0% by
+  // construction (servo-6oa).
+  if (!byTime.has(0)) byTime.set(0, { atMs: 0, value: 0 });
+  if (!byTime.has(durationMs)) byTime.set(durationMs, { atMs: durationMs, value: 0 });
   return Array.from(byTime.values()).sort((a, b) => a.atMs - b.atMs);
 }
 
@@ -2715,11 +2748,19 @@ function motionTimeToPct(ms, durationMs) {
   return durationMs > 0 ? Math.max(0, Math.min(100, (ms / durationMs) * 100)) : 0;
 }
 
+// Map a track value to a vertical CSS top-percentage (0 = top of row,
+// 100 = bottom). Inverted for servo tracks so 0% (fully UP) sits at the
+// top of the row and 100% (fully DOWN) sits at the bottom — matches the
+// physical mental model of a winch. DC tracks keep the original "high
+// value at top" convention so +100 speed reads as positive/forward.
 function motionValueToPct(value, spec) {
-  return 100 - ((value - spec.min) / (spec.max - spec.min)) * 100;
+  const linear = ((value - spec.min) / (spec.max - spec.min)) * 100;
+  if (spec.kind === "servo") return linear;
+  return 100 - linear;
 }
 
 function pctToMotionValue(pct, spec) {
+  if (spec.kind === "servo") return spec.min + (pct / 100) * (spec.max - spec.min);
   return spec.min + (1 - pct / 100) * (spec.max - spec.min);
 }
 
@@ -2932,7 +2973,14 @@ async function sendMotionFrame(motion, atMs, force = false) {
     // that — most ticks the interpolated value rounds to the same int.
     if (!force && lastSent[key] === value) continue;
     lastSent[key] = value;
-    const cmd = spec.kind === "servo" ? `S${spec.channel} ${value}` : `ROTATE ${value}`;
+    // Servo tracks dispatch via DOWN <ch> <pct> so live playback uses
+    // the firmware's percentToDegrees mapping against the calibrated
+    // up/downDegrees range (full mechanical sweep), not the broken
+    // S<n> 0..180 path that only exercises ~10% of travel on the
+    // 5-turn winches. DC tracks keep ROTATE <speed>.
+    const cmd = spec.kind === "servo"
+      ? `DOWN ${spec.channel} ${value}`
+      : `ROTATE ${value}`;
     sendMotionCommand(ip, cmd, signal);
   }
   motionPlayer.lastSent = lastSent;
