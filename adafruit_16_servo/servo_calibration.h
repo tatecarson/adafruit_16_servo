@@ -64,17 +64,26 @@ inline CalibrationRecord calibrationGet(uint8_t ch) {
   if (ch >= CALIB_NUM_CHANNELS) return _calibrationDefaults();
   if (!_calibInitialized()) return _calibrationDefaults();
   uint8_t flags = _calibFlags();
+  bool calibrated = (flags & (1 << ch)) != 0;
+  // CAL_RESET clears the flag bit but leaves the byte values in EEPROM
+  // (cheap undo if the operator changes their mind). For the public-facing
+  // read we surface DEFAULTS when the flag is clear so the boot log and
+  // GET /calibration don't show stale "uncalibrated" values that look
+  // exactly like the previously-saved calibration.
+  if (!calibrated) {
+    CalibrationRecord d = _calibrationDefaults();
+    return d;
+  }
   CalibrationRecord r;
   int off = CALIB_OFF_CHANNELS + ch * CALIB_BYTES_PER_CH;
   r.minUs = ((uint16_t)EEPROM.read(off + 0) << 8) | EEPROM.read(off + 1);
   r.maxUs = ((uint16_t)EEPROM.read(off + 2) << 8) | EEPROM.read(off + 3);
   r.offsetDeg = (int8_t)EEPROM.read(off + 4);
-  r.calibrated = (flags & (1 << ch)) != 0;
-  // Treat erased-flash 0xFFFF as defaults so a stale flags byte never
-  // produces nonsense values on the wire or in the S<n> path.
+  r.calibrated = true;
+  // Defensive: if the saved bytes are nonsense (erased flash 0xFFFF), fall
+  // back to defaults so the S<n> path never produces garbage pulses.
   if (r.minUs == 0xFFFF || r.maxUs == 0xFFFF) {
-    CalibrationRecord d = _calibrationDefaults();
-    return d;
+    return _calibrationDefaults();
   }
   return r;
 }
