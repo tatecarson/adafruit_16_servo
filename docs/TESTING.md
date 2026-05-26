@@ -625,12 +625,21 @@ OTA path discovered to be unsafe during this session (silent flash corruption ab
 
 - [ ] Pass / [ ] Fail:
 
-### 25b — `CAL_PULSE` finds true mechanical limits (bypasses calibration)
+### 25b — `CAL_PULSE` finds safe mechanical limits (bypasses calibration)
+
+**Important — leave a safety margin.** Find the value where the servo
+*just* starts to bind/buzz/stall, then **back off by ~30-50μs**. Saving the
+exact bind point means commands at the extremes (e.g. `S0 1800`) will hit
+the mechanical stop and the position feedback goes erratic (motor draws
+stall current). The discovered bind values minus a margin are your safe
+`minUs` / `maxUs`.
 
 **Commands:**
 1. `CAL_PULSE 0 1500` → servo should move to mechanical center.
-2. `CAL_PULSE 0 800` → toward one end; raise until just before it stalls/binds. Record as **minUs**.
-3. `CAL_PULSE 0 2200` → toward the other end; lower until just before it stalls. Record as **maxUs**.
+2. `CAL_PULSE 0 800` → toward one end; raise until just before it stalls/binds. Note that bind value.
+3. **Back off ~30-50μs** from the bind value → record as **minUs**. Re-run `CAL_PULSE 0 <minUs>` to confirm it's smooth and reaches near the lower end of travel.
+4. `CAL_PULSE 0 2200` → toward the other end; lower from 2600 until just before it stalls. Note that bind value.
+5. **Back off ~30-50μs** from the bind value → record as **maxUs**. Confirm with `CAL_PULSE 0 <maxUs>`.
 
 **Record:**
 - S0: minUs = ________  maxUs = ________
