@@ -2582,7 +2582,16 @@ let motionDraftOverride = null;
 // motion fetch in flight, then send fresh STOP requests (not bound
 // to the aborted controller) so STOP lands at the head of each
 // board's queue rather than behind a wall of pending ROTATEs.
-let motionPlayer = { active: false, raf: 0, startedAt: 0, lastSendAt: 0, lastSent: {}, fetchAbort: null };
+let motionPlayer = { active: false, raf: 0, startedAt: 0, lastSendAt: 0, lastSent: {}, fetchAbort: null, preRoll: null };
+
+// Module-level: what the firmware currently thinks each track is at,
+// surviving across stop/play cycles. Updated every time sendMotionFrame
+// (or the pre-roll path) actually pushes a value to the wire. Used by
+// _planMotionPreRoll to compute a gentle glide from the current physical
+// position to the next motion's start value when the operator clicks
+// Play a second time — otherwise a servo left at 100% gets slammed back
+// to 0% instantly and 5-turn winches can't physically traverse that fast.
+const motionLastDispatched = new Map();
 const motionCollapsedBoards = new Set();
 const motionMutedTracks = new Set();
 let motionSoloTracks = new Set();
@@ -3005,6 +3014,7 @@ async function sendMotionFrame(motion, atMs, force = false) {
     // that — most ticks the interpolated value rounds to the same int.
     if (!force && lastSent[key] === value) continue;
     lastSent[key] = value;
+    motionLastDispatched.set(key, value);
     // Servo tracks dispatch via DOWN <ch> <pct> so live playback uses
     // the firmware's percentToDegrees mapping against the calibrated
     // up/downDegrees range (full mechanical sweep), not the broken
@@ -3041,9 +3051,81 @@ function stopMotionPlayback(sendStop = false) {
   setMotionStatus("idle");
 }
 
+// Compute the warm-up glide for the next play. If any servo's
+// last-dispatched position differs meaningfully from the motion's
+// first-keyframe value, we pre-roll for a duration scaled to the
+// max delta (so a small adjustment is quick and a 100% slam is gentle).
+// DC tracks are skipped — they step semantically and have no slew
+// constraint that benefits from glide.
+function _planMotionPreRoll(motion) {
+  const fromValues = new Map();
+  const toValues = new Map();
+  let maxDelta = 0;
+  for (const spec of MOTION_TRACK_SPECS) {
+    if (spec.kind !== "servo") continue;
+    const key = trackSpecKey(spec);
+    const track = findTrack(motion, spec);
+    if (!track) continue;
+    const startValue = Math.round(clampMotionValue(valueAtTrackTime(track, spec, 0), spec));
+    const currentValue = motionLastDispatched.get(key);
+    if (currentValue == null) continue;       // no history → already at start
+    if (currentValue === startValue) continue;
+    fromValues.set(key, currentValue);
+    toValues.set(key, startValue);
+    maxDelta = Math.max(maxDelta, Math.abs(startValue - currentValue));
+  }
+  if (maxDelta < 5) return null;              // trivial drift, skip
+  // 30ms per 1% of delta → 100% glide = 3s, 50% glide = 1.5s. Floor at
+  // 800ms so even small deltas have a perceptible "settling" beat, cap
+  // at 4s so the operator isn't waiting forever.
+  const durationMs = Math.max(800, Math.min(4000, maxDelta * 30));
+  return { active: true, startedAt: performance.now(), durationMs, fromValues, toValues };
+}
+
+function _sendPreRollFrame(preRoll, progress) {
+  const signal = motionPlayer.fetchAbort?.signal;
+  const lastSent = motionPlayer.lastSent || {};
+  for (const [key, fromValue] of preRoll.fromValues) {
+    const toValue = preRoll.toValues.get(key);
+    if (toValue == null) continue;
+    const value = Math.round(fromValue + (toValue - fromValue) * progress);
+    if (lastSent[key] === value) continue;
+    lastSent[key] = value;
+    motionLastDispatched.set(key, value);
+    const [boardIdStr, , channelStr] = key.split(":");
+    const ip = boards[parseInt(boardIdStr, 10) - 1];
+    if (!ip) continue;
+    sendMotionCommand(ip, `DOWN ${parseInt(channelStr, 10)} ${value}`, signal);
+  }
+  motionPlayer.lastSent = lastSent;
+}
+
 function tickMotionPlayback() {
   if (!motionPlayer.active) return;
   const motion = readMotionFromDom();
+
+  // Pre-roll phase: glide servos from their previous resting position
+  // to this motion's start value. Playhead clock doesn't advance until
+  // the glide completes. Sub-2-second case is typical; a full 0->100
+  // mismatch buys ~3s of settling.
+  if (motionPlayer.preRoll && motionPlayer.preRoll.active) {
+    const elapsed = performance.now() - motionPlayer.preRoll.startedAt;
+    const preDone = elapsed >= motionPlayer.preRoll.durationMs;
+    if (performance.now() - motionPlayer.lastSendAt >= 200 || preDone) {
+      motionPlayer.lastSendAt = performance.now();
+      _sendPreRollFrame(motionPlayer.preRoll, preDone ? 1 : (elapsed / motionPlayer.preRoll.durationMs));
+    }
+    if (preDone) {
+      motionPlayer.preRoll.active = false;
+      motionPlayer.startedAt = performance.now();
+      motionPlayer.lastSendAt = 0;
+      motionPlayer.lastSent = {};
+      setMotionStatus(`playing live · ${motion.name || motion.id}`, "amber");
+    }
+    motionPlayer.raf = requestAnimationFrame(tickMotionPlayback);
+    return;
+  }
+
   const elapsed = performance.now() - motionPlayer.startedAt;
   const atMs = Math.min(motion.durationMs, elapsed);
   const atEnd = atMs >= motion.durationMs;
@@ -3096,6 +3178,7 @@ function playMotionLive() {
   const motion = readMotionFromDom();
   saveCurrentMotion(motion);
   stopMotionPlayback(false);
+  const preRoll = _planMotionPreRoll(motion);
   motionPlayer = {
     active: true, raf: 0,
     startedAt: performance.now(), lastSendAt: 0,
@@ -3104,10 +3187,15 @@ function playMotionLive() {
     // wrap can cancel any in-flight ROTATE/S0 commands instead of
     // letting them drain on their own schedule.
     fetchAbort: new AbortController(),
+    preRoll,
   };
   motionPlayEl.disabled = true;
   motionStopEl.disabled = false;
-  setMotionStatus(`playing live · ${motion.name || motion.id}`, "amber");
+  if (preRoll) {
+    setMotionStatus(`warming up · ${(preRoll.durationMs / 1000).toFixed(1)}s glide to start`, "amber");
+  } else {
+    setMotionStatus(`playing live · ${motion.name || motion.id}`, "amber");
+  }
   tickMotionPlayback();
 }
 
