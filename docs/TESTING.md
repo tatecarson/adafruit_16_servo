@@ -584,6 +584,348 @@ OTA path discovered to be unsafe during this session (silent flash corruption ab
 
 ---
 
+## Test 24: Servo Calibration — Boot Visibility (servo-2n9)
+
+**Prerequisite:** Flash `feat/servo-2n9-firmware-calibration` to one board. Open Serial Monitor at 115200 baud. Note the test device:
+
+- Board IP: `192.168.8.198/`  (boardId: `1`)
+- Tester: _____Me_____________
+- Date: _______5/26____
+
+**Commands:**
+1. Power-cycle the board (full reset, not just re-opening Serial Monitor — boot log prints once).
+2. Watch Serial output during boot.
+
+**Expected:**
+- Existing `storage: boardId=N hasActive=… hasPrevious=…` line still appears.
+- Followed by a new block:
+  ```text
+  --- Servo Calibration ---
+    S0: defaults    minUs=1000 maxUs=2000 offsetDeg=0 (uncalibrated)
+    S1: defaults    minUs=1000 maxUs=2000 offsetDeg=0 (uncalibrated)
+    S2: defaults    minUs=1000 maxUs=2000 offsetDeg=0 (uncalibrated)
+  ```
+  (or `calibrated  minUs=… maxUs=… offsetDeg=…` for any channel already calibrated on a prior run)
+
+**Result:**
+- [x ] Pass
+- [ ] Fail — describe:
+
+---
+
+## Test 25: Servo Calibration — Serial Commands (servo-2n9)
+
+**Prerequisite:** Test 24 passing.
+
+### 25a — `CAL_GET` reports current state
+
+**Command:** `CAL_GET`
+
+**Expected:** Same three-line block from Test 24's boot output.
+
+- [x ] Pass / [ ] Fail:
+
+### 25b — `CAL_PULSE` finds true mechanical limits (bypasses calibration)
+
+**Commands:**
+1. `CAL_PULSE 0 1500` → servo should move to mechanical center.
+2. `CAL_PULSE 0 800` → toward one end; raise until just before it stalls/binds. Record as **minUs**.
+3. `CAL_PULSE 0 2200` → toward the other end; lower until just before it stalls. Record as **maxUs**.
+
+**Record:**
+- S0: minUs = ___450_____  maxUs = __2420______
+- S1: minUs = ___450_____  maxUs = __2420______
+- S2: minUs = ___450_____  maxUs = __2420______
+
+
+- [ x] Pass / [ ] Fail:
+
+### 25c — `CAL_PULSE` rejects out-of-range microseconds
+
+**Commands:**
+- `CAL_PULSE 0 300` (below 400) → expect usage hint, no motion.
+- `CAL_PULSE 0 3000` (above 2600) → same.
+
+- [x ] Pass / [ ] Fail:
+
+### 25d — `CAL_SET` persists + applies live
+
+**Commands:**
+1. `CAL_SET 0 <minUs> <maxUs> 0` (use values from 25b).
+2. `CAL_GET` — S0 row should now say `calibrated  minUs=<minUs> maxUs=<maxUs> offsetDeg=0`.
+
+- [ x] Pass / [ ] Fail:
+
+### 25e — Calibrated `S0` hits the recorded limits
+
+**Note on command magnitude:** channels 0/1/2 are 5-turn winches configured
+in `applyCustomServoSetup()` with `totalDegrees=1800`. So `S<n> <deg>` sweeps
+the full calibrated pulse range only when `<deg>` reaches `totalDegrees` —
+**not** at 180. Send `1800` for the upper limit. (Standard 0-180 servos
+would use the smaller numbers; if you ever change a channel to
+`totalDegrees=180`, use those commands instead.) The motion editor's
+percentage UX is tracked separately as `servo-6oa`.
+
+**Commands (right after 25d, no reboot):**
+- `S0 0` → moves to the lower mechanical limit you found, NOT the original default range.
+- `S0 1800` → moves to upper limit (full sweep across the winch's 5-turn range).
+- `S0 900` → physically centered (half of `totalDegrees=1800`).
+
+Alternative for winches — use the existing percentage commands that already
+go through `percentToDegrees()` against each servo's calibrated up/down
+range:
+- `DOWN 100` → full down position.
+- `DOWN 0` → full up position.
+- `DOWN 50` → midpoint.
+
+DOWN commands no longer work, but maybe i dont' need them because i'm using the motion keyframe editor now? 
+
+- [ x] Pass / [ ] Fail:
+
+### 25f — `offsetDeg` trim shifts position
+
+**Commands:**
+1. `CAL_SET 0 <minUs> <maxUs> -10`
+2. `S0 90` → should sit ~10° away from where it sat at 90° in 25e.
+3. Restore: `CAL_SET 0 <minUs> <maxUs> 0`
+
+- [x ] Pass / [ ] Fail:
+
+### 25g — `CAL_RESET` clears flag, effective after reboot
+
+**Commands:**
+1. `CAL_RESET 0` → Serial says `(takes effect after reboot — flag cleared but live servoConfig unchanged)`.
+2. `CAL_GET` → S0 row should now say `defaults` (flag bit drives the label).
+3. Power-cycle, then `CAL_GET` again → still `defaults`.
+
+15:49:56.293 ->   S0: defaults    minUs=480 maxUs=2370 offsetDeg=0 (uncalibrated)
+
+says defaults but has the same calibration as before right? 
+
+- [x ] Pass / [ ] Fail:
+
+### 25h — Legacy `CAL <servo> <min> <max>` still works (RAM-only ticks)
+
+**Command:** `CAL 0 200 500`
+
+**Expected:** Serial echoes `Servo 0 calibration: 200 - 500`. Reboot clears it.
+
+- [x ] Pass / [ ] Fail:
+
+---
+
+## Test 26: Servo Calibration — REMOVED
+
+The HTTP `/calibration` API was removed before merge — operator runs the
+fleet from Serial Monitor and the CAL_* commands cover the same surface
+without browser UI complexity (no //08 panel needed). The Test 26
+sub-tests are kept below in a `<details>` block as historical reference
+in case the HTTP route ever comes back.
+
+<details>
+<summary>Historical: original HTTP API tests (not run; route removed)</summary>
+
+### 26a — `GET /calibration` returns 3-channel JSON
+
+**Command:**
+```bash
+curl -sS http://<board-ip>/calibration | jq
+```
+
+**Expected:** `{"ok":true,"boardId":N,"servos":[{ch:0,minUs:…,maxUs:…,offsetDeg:…,calibrated:…}, {ch:1,…}, {ch:2,…}]}` — exactly 3 channels, fields match the boot log.
+
+- [ ] Pass / [ ] Fail:
+
+### 26b — `POST /calibration` persists and applies live
+
+**Command:**
+```bash
+curl -X POST http://<board-ip>/calibration \
+  -H 'Content-Type: application/json' \
+  -d '{"ch":0,"minUs":950,"maxUs":2050,"offsetDeg":-2}'
+```
+
+**Expected:** `{"ok":true,"ch":0,"minUs":950,"maxUs":2050,"offsetDeg":-2,"calibrated":true}`.
+Then send `S0 90` via the controller UI's free-text terminal to that board → servo moves to a position ~2° offset from before.
+
+- [ ] Pass / [ ] Fail:
+
+### 26c — Calibration survives reboot
+
+**Commands:**
+1. Power-cycle the board.
+2. Boot log line for S0 should now say `calibrated  minUs=950 maxUs=2050 offsetDeg=-2`.
+3. `curl -sS http://<board-ip>/calibration | jq '.servos[0]'` → same values.
+
+- [ ] Pass / [ ] Fail:
+
+### 26d — POST validation rejects bad payloads
+
+**Each of these should return HTTP 400 with `{"ok":false,"error":"invalid-fields"}`:**
+
+- [ ] `'{"ch":5,"minUs":1000,"maxUs":2000}'` (ch out of range)
+- [ ] `'{"ch":0,"minUs":2000,"maxUs":1000}'` (min ≥ max)
+- [ ] `'{"ch":0,"minUs":300,"maxUs":2000}'` (min < 400)
+- [ ] `'{"ch":0,"minUs":1000,"maxUs":3000}'` (max > 2600)
+- [ ] `'{"ch":0,"minUs":1000,"maxUs":2000,"offsetDeg":200}'` (offset > int8)
+
+Fail describe:
+
+### 26e — OPTIONS preflight returns CORS headers
+
+**Command:**
+```bash
+curl -i -X OPTIONS http://<board-ip>/calibration \
+  -H 'Origin: http://localhost' \
+  -H 'Access-Control-Request-Method: POST'
+```
+
+**Expected:**
+```
+HTTP/1.1 204 No Content
+Access-Control-Allow-Origin: *
+Access-Control-Allow-Methods: POST, GET, OPTIONS
+Access-Control-Allow-Headers: Content-Type
+```
+
+- [ ] Pass / [ ] Fail:
+
+</details>
+
+### 26 (new) — Calibration survives reboot via Serial path
+
+**Commands:**
+1. `CAL_SET 0 480 2370 0` (Serial Monitor)
+2. Power-cycle the board.
+3. Boot log line for S0 should now say `calibrated  minUs=480 maxUs=2370 offsetDeg=0`.
+4. `CAL_GET` → confirms same values.
+
+- [ ] Pass / [ ] Fail:
+
+---
+
+## Test 27: Servo Calibration — Integration with S/Sequence/Motion (servo-2n9)
+
+**Prerequisite:** S0 calibrated via Tests 25-26.
+
+### 27a — Calibrated `S<n>` hits true mechanical limits silently
+
+**Commands** (use `totalDegrees` value for full sweep — 1800 for 5-turn winches in this project; see Test 25e note):
+- `S0 0` → servo travels to lower limit, no stall sounds.
+- `S0 1800` → upper limit, no stall sounds.
+- Compare: `S1 0` / `S1 1800` on an uncalibrated channel. Should overshoot or stall (audible).
+
+- [ ] Pass / [ ] Fail:
+
+### 27b — Existing baked sequence still plays
+
+Pick a sequence already in your library (e.g. PLAY 7). Play it via // 04 Sequencer against this board.
+
+**Expected:** Sequence runs as before. Any inner `S<n>` commands now respect calibration.
+
+- [ ] Pass / [ ] Fail:
+
+### 27c — Motion editor playback honors calibration
+
+**Caveat:** until `servo-6oa` ships, the motion editor uses 0-180° on the
+value axis, so on a 5-turn winch (`totalDegrees=1800`) a keyframe at value
+180 only sweeps ~10% of the calibrated pulse range. This sub-test still
+verifies the calibration **IS** being applied at the firmware layer — just
+to a small visible range. Once `servo-6oa` switches the editor to
+percentage values, this test should be rewritten to use 0-100%.
+
+In // 06 Motion editor, author a tiny motion: B<this-board>.S0 keyframes
+at `atMs=0 value=0` and `atMs=2000 value=180`. Click Play Live.
+
+**Expected:** Servo sweeps the lower ~10% of its calibrated range over 2s
+(NOT the full sweep — see caveat above). An uncalibrated channel using
+the same motion still produces noticeably different physical position
+than the calibrated one — that's the signal calibration is plumbed in.
+
+- [ ] Pass / [ ] Fail:
+
+---
+
+## Test 28: Servo Calibration — Regression (servo-2n9)
+
+### 28a — Bake to all boards still succeeds
+
+In // 03 Sequencer Bake, hit "Bake to boards". Should land in ≤30s per board (no slot layout change).
+
+- [ ] Pass / [ ] Fail:
+
+### 28b — `GET /sequences/info` shape unchanged
+
+```bash
+curl -sS http://<board-ip>/sequences/info | jq
+```
+
+**Expected:** Same fields as before this PR (`ok`, `boardId`, `hasActive`, `hasPrevious`, `bytesUsed`, `slotPayloadMax`).
+
+- [ ] Pass / [ ] Fail:
+
+### 28b' — `/calibration` route is NOT served
+
+```bash
+curl -i -sS http://<board-ip>/calibration
+```
+
+**Expected:** HTTP 404 (route removed) or the controller's default
+fallback HTML. NOT a 200 with calibration JSON. Confirms the route
+removal landed.
+
+- [ ] Pass / [ ] Fail:
+
+### 28c — No JavaScript errors in controller HTML console
+
+Open DevTools console, reload `servo_controller.html`, navigate through // 01..// 07.
+
+**Expected:** Console clean throughout.
+
+- [ ] Pass / [ ] Fail:
+
+### 28d — Calibration survives unrelated power-cycle
+
+Calibrate S0, do unrelated operations (bake, play a motion), then power-cycle. Confirm calibration persists.
+
+- [ ] Pass / [ ] Fail:
+
+---
+
+## Test 29: Servo Calibration — Stress / Sanity (servo-2n9)
+
+### 29a — Rapid alternating `CAL_SET` doesn't lock dataflash
+
+Send 10 alternating `CAL_SET 0 1000 2000 0` and `CAL_SET 0 950 2050 -3` back-to-back via Serial.
+
+**Expected:** All succeed; no EEPROM errors; `CAL_GET` reports the last write.
+
+- [ ] Pass / [ ] Fail:
+
+### 29b — OTA budget intact
+
+```bash
+make -C test size
+```
+
+**Expected:** Headroom remains > +1500 bytes (PR baseline was +2584).
+
+Recorded headroom: `__________` bytes  → [ ] OK  /  [ ] Concerning
+
+---
+
+## Test 30: Servo Calibration — Per-board Replication (servo-2n9)
+
+Once Tests 24-29 pass on the first board, run them in abbreviated form on the others.
+
+| Board IP / boardId | Calibration done | Notes |
+|--------------------|------------------|-------|
+| 192.168.8.____ / `1` | [ ] | |
+| 192.168.8.____ / `2` | [ ] | |
+| 192.168.8.____ / `3` | [ ] | |
+
+---
+
 ## Host Regression Tests
 
 **2026-05-23:**

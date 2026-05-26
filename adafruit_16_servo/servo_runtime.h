@@ -15,6 +15,11 @@ struct ServoConfig {
   uint16_t upDegrees;
   uint16_t downDegrees;
   bool reverseDir;
+  // Signed degree offset applied by degreesToPulse so a horn installed
+  // N degrees off-center can be trimmed without re-shimming the
+  // hardware. Populated from EEPROM at boot via servo_calibration.h;
+  // 0 = no trim (default). Whole degrees to match totalDegrees.
+  int16_t offsetDeg;
 };
 
 struct ServoState {
