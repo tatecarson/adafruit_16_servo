@@ -14,7 +14,7 @@ inline void applyCustomServoSetup(ServoConfig servoConfig[], ServoState servoSta
   servoConfig[0].maxPulse = 480;
   servoConfig[0].totalDegrees = 1800;
   servoConfig[0].allowRelease = false;
-  servoConfig[0].downDegrees = 1500;  // TODO: calibrate actual winch travel
+  servoConfig[0].downDegrees = 1800;  // full 5-turn travel (servo-xus)
   servoConfig[0].reverseDir = true;
 
   // Servo 1: goBILDA 2000 Series 5-Turn Dual Mode (25-2 Torque) - standard
@@ -22,7 +22,7 @@ inline void applyCustomServoSetup(ServoConfig servoConfig[], ServoState servoSta
   servoConfig[1].maxPulse = 480;
   servoConfig[1].totalDegrees = 1800;
   servoConfig[1].allowRelease = false;
-  servoConfig[1].downDegrees = 1500;  // TODO: calibrate actual winch travel
+  servoConfig[1].downDegrees = 1800;  // full 5-turn travel (servo-xus)
   servoConfig[1].reverseDir = true;
 
   // Servo 2: goBILDA 2000 Series 5-Turn Dual Mode (25-2 Torque) - standard
@@ -30,7 +30,7 @@ inline void applyCustomServoSetup(ServoConfig servoConfig[], ServoState servoSta
   servoConfig[2].maxPulse = 480;
   servoConfig[2].totalDegrees = 1800;
   servoConfig[2].allowRelease = false;
-  servoConfig[2].downDegrees = 1500;  // TODO: calibrate actual winch travel
+  servoConfig[2].downDegrees = 1800;  // full 5-turn travel (servo-xus)
   servoConfig[2].reverseDir = true;
 
   // Servo 3: (channel freed — rotation now handled by DC motor via IBT-2)
