@@ -364,8 +364,8 @@ inline void cancelMotionPlayback() {
 
 static void motionApplyServo(uint8_t channel, int16_t value) {
   if (channel >= NUM_SERVOS || servoState[channel].stopped) return;
-  uint16_t degrees = (uint16_t)constrain(value, 0, 180);
-  uint16_t pulse = sequenceDegreesToPulse(channel, degrees);
+  uint8_t percent = (uint8_t)constrain(value, 0, 100);
+  uint16_t pulse = degreesToPulse(channel, percentToDegrees(channel, percent));
   if (servoState[channel].posPulse == pulse && !servoState[channel].moving) return;
   servoState[channel].moving = false;
   servoState[channel].stopped = false;
