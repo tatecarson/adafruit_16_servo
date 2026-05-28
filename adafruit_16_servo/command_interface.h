@@ -8,7 +8,7 @@
 void showHelp() {
   Serial.println(F("Commands: S/P/CAL/SWEEP/TPULSE/STATUS"));
   Serial.println(F("CAL_GET/CAL_SET/CAL_RESET/CAL_PULSE (persisted calibration)"));
-  Serial.println(F("UP/DOWN/ROTATE"));
+  Serial.println(F("UP/DOWN/UMOVE/DMOVE/ROTATE"));
   Serial.println(F("MOTION/PLAY/SPLAY/RUN/STOP/TIMESCALE"));
   Serial.println(F("STORAGEINFO/BOARDID. See README for syntax."));
 }
@@ -141,6 +141,52 @@ void processCommand(char* cmd) {
       Serial.print(F("Servo ")); Serial.print(servo);
       Serial.print(F(" -> ")); Serial.print(percent);
       Serial.println(F("% up"));
+    }
+  }
+  else if (startsWith(cmd, "DMOVE ")) {
+    // DMOVE <ch> <pct> <duration_ms> — animated DOWN. Browser motion
+    // editor uses this for smooth per-segment playback so the servo
+    // glides between keyframes locally (firmware interpolates pulse)
+    // instead of being slammed to each commanded position by per-tick
+    // DOWN commands and then sitting idle between them (servo-79q).
+    int s1 = findChar(cmd, ' ', 0);
+    int s2 = (s1 > 0) ? findChar(cmd, ' ', s1 + 1) : -1;
+    int s3 = (s2 > 0) ? findChar(cmd, ' ', s2 + 1) : -1;
+    if (s1 > 0 && s2 > 0 && s3 > 0) {
+      long ch = atol(cmd + s1 + 1);
+      long pct = atol(cmd + s2 + 1);
+      long dur = atol(cmd + s3 + 1);
+      if (ch >= 0 && ch < NUM_SERVOS && pct >= 0 && pct <= 100 && dur > 0 && dur <= 60000) {
+        moveServoPercent((uint8_t)ch, (uint8_t)pct, (uint32_t)dur);
+        Serial.print(F("Servo ")); Serial.print((int)ch);
+        Serial.print(F(" -> ")); Serial.print((int)pct);
+        Serial.print(F("% down over ")); Serial.print((long)dur); Serial.println(F("ms"));
+      } else {
+        Serial.println(F("DMOVE rejected: 0<=ch<NUM_SERVOS, 0<=pct<=100, 0<dur<=60000"));
+      }
+    } else {
+      Serial.println(F("Use: DMOVE <ch> <pct> <duration_ms>"));
+    }
+  }
+  else if (startsWith(cmd, "UMOVE ")) {
+    // UMOVE <ch> <pct> <duration_ms> — animated UP (mirror of DMOVE).
+    int s1 = findChar(cmd, ' ', 0);
+    int s2 = (s1 > 0) ? findChar(cmd, ' ', s1 + 1) : -1;
+    int s3 = (s2 > 0) ? findChar(cmd, ' ', s2 + 1) : -1;
+    if (s1 > 0 && s2 > 0 && s3 > 0) {
+      long ch = atol(cmd + s1 + 1);
+      long pct = atol(cmd + s2 + 1);
+      long dur = atol(cmd + s3 + 1);
+      if (ch >= 0 && ch < NUM_SERVOS && pct >= 0 && pct <= 100 && dur > 0 && dur <= 60000) {
+        moveServoPercentUp((uint8_t)ch, (uint8_t)pct, (uint32_t)dur);
+        Serial.print(F("Servo ")); Serial.print((int)ch);
+        Serial.print(F(" -> ")); Serial.print((int)pct);
+        Serial.print(F("% up over ")); Serial.print((long)dur); Serial.println(F("ms"));
+      } else {
+        Serial.println(F("UMOVE rejected: 0<=ch<NUM_SERVOS, 0<=pct<=100, 0<dur<=60000"));
+      }
+    } else {
+      Serial.println(F("Use: UMOVE <ch> <pct> <duration_ms>"));
     }
   }
   else if (startsWith(cmd, "DOWN")) {

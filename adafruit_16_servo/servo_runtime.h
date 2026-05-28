@@ -31,6 +31,13 @@ struct ServoState {
   unsigned long moveStartMs;
   uint32_t moveDurationMs;
   bool moving;
+  // false (default): easeInOutCubic — slow→fast→slow, right shape for SWEEP
+  //                  / sequence playback / one-off gestures.
+  // true: linear progress — constant velocity within the segment, the
+  //       shape DMOVE / UMOVE / motion-editor playback need so multi-
+  //       segment motions don't look like they're accelerating then
+  //       decelerating at every keyframe (servo-79q).
+  bool linearMove;
 };
 
 struct Keyframe {
@@ -162,7 +169,7 @@ uint16_t lerpEased(uint16_t start, uint16_t end, float progress);
 
 void setServoPulse(uint8_t servo, uint16_t pulse);
 void setServoDegrees(uint8_t servo, uint16_t degrees);
-void moveServoAnimated(uint8_t servo, uint16_t targetPulse, uint32_t duration);
+void moveServoAnimated(uint8_t servo, uint16_t targetPulse, uint32_t duration, bool linear = false);
 void moveServoDegrees(uint8_t servo, uint16_t degrees, uint32_t duration);
 void moveSequenceDegrees(uint8_t servo, uint16_t degrees, uint32_t duration);
 void stopActivePatterns();
