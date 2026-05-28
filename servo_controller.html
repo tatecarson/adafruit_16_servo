@@ -1678,7 +1678,7 @@
     <span class="num">// 06</span>
     <span class="label">Motion</span>
     <span class="rule"></span>
-    <span class="hint">12-track cluster keyframes · live scrub · local library</span>
+    <span class="hint">12-track cluster keyframes · servo % down (0=up, 100=down) · dc -100..100 spd · live scrub · local library</span>
   </div>
 
   <div class="panel motion-editor">
@@ -2550,10 +2550,16 @@ const motionPlayEl       = $("#motionPlay");
 const motionStopEl       = $("#motionStop");
 const motionLoopEl       = $("#motionLoop");
 
+// Servo tracks use "percent down" semantics (servo-6oa). 0% = fully up
+// (track row top), 100% = fully down (track row bottom). The browser
+// dispatches via the firmware's existing DOWN <ch> <pct> command which
+// uses percentToDegrees() against each channel's calibrated up/downDegrees
+// range, so live playback uses the full mechanical travel regardless of
+// totalDegrees. DC tracks are unchanged: -100..100 speed.
 const MOTION_TRACK_SPECS = [1, 2, 3].flatMap(boardId => ([
-  { kind: "servo", boardId, channel: 0, label: `B${boardId}.S0`, min: 0, max: 180, unit: "deg" },
-  { kind: "servo", boardId, channel: 1, label: `B${boardId}.S1`, min: 0, max: 180, unit: "deg" },
-  { kind: "servo", boardId, channel: 2, label: `B${boardId}.S2`, min: 0, max: 180, unit: "deg" },
+  { kind: "servo", boardId, channel: 0, label: `B${boardId}.S0`, min: 0, max: 100, unit: "%" },
+  { kind: "servo", boardId, channel: 1, label: `B${boardId}.S1`, min: 0, max: 100, unit: "%" },
+  { kind: "servo", boardId, channel: 2, label: `B${boardId}.S2`, min: 0, max: 100, unit: "%" },
   { kind: "dc",    boardId, channel: 0, label: `B${boardId}.DC`, min: -100, max: 100, unit: "spd" },
 ]));
 
@@ -2576,7 +2582,16 @@ let motionDraftOverride = null;
 // motion fetch in flight, then send fresh STOP requests (not bound
 // to the aborted controller) so STOP lands at the head of each
 // board's queue rather than behind a wall of pending ROTATEs.
-let motionPlayer = { active: false, raf: 0, startedAt: 0, lastSendAt: 0, lastSent: {}, fetchAbort: null };
+let motionPlayer = { active: false, raf: 0, startedAt: 0, lastSendAt: 0, lastSent: {}, fetchAbort: null, preRoll: null };
+
+// Module-level: what the firmware currently thinks each track is at,
+// surviving across stop/play cycles. Updated every time sendMotionFrame
+// (or the pre-roll path) actually pushes a value to the wire. Used by
+// _planMotionPreRoll to compute a gentle glide from the current physical
+// position to the next motion's start value when the operator clicks
+// Play a second time — otherwise a servo left at 100% gets slammed back
+// to 0% instantly and 5-turn winches can't physically traverse that fast.
+const motionLastDispatched = new Map();
 const motionCollapsedBoards = new Set();
 const motionMutedTracks = new Set();
 let motionSoloTracks = new Set();
@@ -2614,17 +2629,41 @@ function defaultMotion(lib) {
       boardId: spec.boardId,
       channel: spec.channel,
       label: spec.label,
+      // Safe rest: 0% (fully up) for servos, 0 (stopped) for DC.
       keyframes: [
-        { atMs: 0, value: spec.kind === "dc" ? 0 : 90 },
-        { atMs: durationMs, value: spec.kind === "dc" ? 0 : 90 },
+        { atMs: 0, value: 0 },
+        { atMs: durationMs, value: 0 },
       ],
     })),
   };
 }
 
+// Detects legacy servo tracks stored as degrees (0..180) by any keyframe
+// value strictly above 100, the upper bound of the percent semantic. One-
+// way migrate: rescale linearly 0..180 → 0..100 so a 90° centered keyframe
+// becomes 50%. Authors who actually wanted 50%-rest specific motions
+// should re-author after migration; the rescale preserves visible motion
+// shape but the absolute physical position changes (live playback now
+// hits the full mechanical sweep via DOWN <ch> <pct>).
+function _migrateServoLegacyDegrees(rawKeyframes) {
+  let needsMigration = false;
+  for (const raw of rawKeyframes || []) {
+    const v = parseFloat(raw?.value ?? 0);
+    if (Number.isFinite(v) && v > 100) { needsMigration = true; break; }
+  }
+  if (!needsMigration) return rawKeyframes;
+  return (rawKeyframes || []).map(raw => ({
+    ...raw,
+    value: Math.max(0, Math.min(100, (parseFloat(raw?.value ?? 0) / 180) * 100)),
+  }));
+}
+
 function normalizeKeyframes(track, durationMs, spec) {
   const byTime = new Map();
-  for (const raw of track?.keyframes || []) {
+  const sourceKeyframes = spec.kind === "servo"
+    ? _migrateServoLegacyDegrees(track?.keyframes)
+    : (track?.keyframes || []);
+  for (const raw of sourceKeyframes) {
     const atMs = Math.max(0, Math.min(durationMs, parseInt(raw?.atMs, 10) || 0));
     const value = clampMotionValue(parseFloat(raw?.value ?? 0), spec);
     // Preserve raw.easing verbatim instead of overwriting to "linear" —
@@ -2632,8 +2671,11 @@ function normalizeKeyframes(track, durationMs, spec) {
     // S-curve, hold) that need their value to survive a normalize pass.
     byTime.set(atMs, { atMs, value, ...(raw?.easing ? { easing: String(raw.easing) } : {}) });
   }
-  if (!byTime.has(0)) byTime.set(0, { atMs: 0, value: spec.kind === "dc" ? 0 : 90 });
-  if (!byTime.has(durationMs)) byTime.set(durationMs, { atMs: durationMs, value: spec.kind === "dc" ? 0 : 90 });
+  // Boundary defaults: 0% for servo (fully up rest) and 0 speed for DC.
+  // Both collapse to value=0 since servo's "safe rest" is now 0% by
+  // construction (servo-6oa).
+  if (!byTime.has(0)) byTime.set(0, { atMs: 0, value: 0 });
+  if (!byTime.has(durationMs)) byTime.set(durationMs, { atMs: durationMs, value: 0 });
   return Array.from(byTime.values()).sort((a, b) => a.atMs - b.atMs);
 }
 
@@ -2715,18 +2757,57 @@ function motionTimeToPct(ms, durationMs) {
   return durationMs > 0 ? Math.max(0, Math.min(100, (ms / durationMs) * 100)) : 0;
 }
 
+// Map a track value to a vertical CSS top-percentage (0 = top of row,
+// 100 = bottom). Inverted for servo tracks so 0% (fully UP) sits at the
+// top of the row and 100% (fully DOWN) sits at the bottom — matches the
+// physical mental model of a winch. DC tracks keep the original "high
+// value at top" convention so +100 speed reads as positive/forward.
+//
+// Inset of 15% top and bottom: keyframes at the extremes (value=min or
+// value=max) sit visibly INSIDE the row rather than flush with the row
+// boundary, so the 13px diamond markers from adjacent tracks don't
+// overlap when both rows have boundary keyframes. Clicks and drags into
+// the inset zones still produce extreme values via pctToMotionValue +
+// clampMotionValue, so authoring at min/max is still natural.
+const MOTION_AXIS_INSET_PCT = 15;
 function motionValueToPct(value, spec) {
-  return 100 - ((value - spec.min) / (spec.max - spec.min)) * 100;
+  const linear = ((value - spec.min) / (spec.max - spec.min)) * 100;
+  const inset = MOTION_AXIS_INSET_PCT + linear * (100 - 2 * MOTION_AXIS_INSET_PCT) / 100;
+  if (spec.kind === "servo") return inset;
+  return 100 - inset;
 }
 
 function pctToMotionValue(pct, spec) {
-  return spec.min + (1 - pct / 100) * (spec.max - spec.min);
+  // Invert the inset so clicks in the visible playable strip (between
+  // 15% and 85% of row height) map to the full value range. Clicks
+  // inside the inset margins produce out-of-range values that
+  // clampMotionValue will pin to spec.min / spec.max — so dragging a
+  // keyframe to the very top or bottom of a row still works.
+  const screen = spec.kind === "servo" ? pct : (100 - pct);
+  const linear = (screen - MOTION_AXIS_INSET_PCT) * 100 / (100 - 2 * MOTION_AXIS_INSET_PCT);
+  return spec.min + linear * (spec.max - spec.min) / 100;
 }
 
 function findTrack(motion, spec) {
   return motion.tracks.find(t => motionTrackKey(t) === trackSpecKey(spec));
 }
 
+// Keyframe interpolation policy is per-kind because the hardware behaves
+// differently:
+//
+//   SERVO tracks ramp linearly between keyframes. A servo has a target
+//   POSITION and the interval between keyframes is the budget to traverse
+//   from prev to next. The browser interpolates and streams DOWN commands
+//   so the servo follows a smooth trajectory.
+//
+//   DC tracks step (hold previous value until reaching the keyframe, then
+//   jump to the new value). A DC motor doesn't have a target position — it
+//   has a running SPEED setpoint. Each keyframe is a "from this moment on,
+//   go at this speed" event, and the motor doesn't gradually accelerate
+//   between them.
+//
+// Servo-e3t will generalize this to per-segment easing (linear / ease /
+// hold). For now the per-kind default is the right behavior.
 function valueAtTrackTime(track, spec, atMs) {
   const frames = normalizeKeyframes(track, Math.max(atMs, track.keyframes.at(-1)?.atMs || 0), spec);
   let prev = frames[0], next = frames[frames.length - 1];
@@ -2735,8 +2816,9 @@ function valueAtTrackTime(track, spec, atMs) {
     if (frames[i].atMs >= atMs) { next = frames[i]; break; }
   }
   if (!prev || !next || prev.atMs === next.atMs) return prev?.value ?? next?.value ?? 0;
+  if (spec.kind === "dc") return prev.value;  // step
   const u = (atMs - prev.atMs) / (next.atMs - prev.atMs);
-  return prev.value + (next.value - prev.value) * u;
+  return prev.value + (next.value - prev.value) * u;  // ramp
 }
 
 function previousKeyframe(track, atMs) {
@@ -2932,7 +3014,15 @@ async function sendMotionFrame(motion, atMs, force = false) {
     // that — most ticks the interpolated value rounds to the same int.
     if (!force && lastSent[key] === value) continue;
     lastSent[key] = value;
-    const cmd = spec.kind === "servo" ? `S${spec.channel} ${value}` : `ROTATE ${value}`;
+    motionLastDispatched.set(key, value);
+    // Servo tracks dispatch via DOWN <ch> <pct> so live playback uses
+    // the firmware's percentToDegrees mapping against the calibrated
+    // up/downDegrees range (full mechanical sweep), not the broken
+    // S<n> 0..180 path that only exercises ~10% of travel on the
+    // 5-turn winches. DC tracks keep ROTATE <speed>.
+    const cmd = spec.kind === "servo"
+      ? `DOWN ${spec.channel} ${value}`
+      : `ROTATE ${value}`;
     sendMotionCommand(ip, cmd, signal);
   }
   motionPlayer.lastSent = lastSent;
@@ -2961,9 +3051,99 @@ function stopMotionPlayback(sendStop = false) {
   setMotionStatus("idle");
 }
 
+// Compute the warm-up glide for the next play. If any servo's
+// last-dispatched position differs meaningfully from the motion's
+// first-keyframe value, we pre-roll for a duration scaled to the
+// max delta (so a small adjustment is quick and a 100% slam is gentle).
+// DC tracks are skipped — they step semantically and have no slew
+// constraint that benefits from glide.
+function _planMotionPreRoll(motion) {
+  const fromValues = new Map();
+  const toValues = new Map();
+  let maxDelta = 0;
+  for (const spec of MOTION_TRACK_SPECS) {
+    if (spec.kind !== "servo") continue;
+    const key = trackSpecKey(spec);
+    const track = findTrack(motion, spec);
+    if (!track) continue;
+    const startValue = Math.round(clampMotionValue(valueAtTrackTime(track, spec, 0), spec));
+    const currentValue = motionLastDispatched.get(key);
+    if (currentValue == null) continue;       // no history → already at start
+    if (currentValue === startValue) continue;
+    fromValues.set(key, currentValue);
+    toValues.set(key, startValue);
+    maxDelta = Math.max(maxDelta, Math.abs(startValue - currentValue));
+  }
+  if (maxDelta < 5) return null;              // trivial drift, skip
+  // 30ms per 1% of delta → 100% glide = 3s, 50% glide = 1.5s. Floor at
+  // 800ms so even small deltas have a perceptible "settling" beat, cap
+  // at 4s so the operator isn't waiting forever.
+  const durationMs = Math.max(800, Math.min(4000, maxDelta * 30));
+  return { active: true, startedAt: performance.now(), durationMs, fromValues, toValues };
+}
+
+function _sendPreRollFrame(preRoll, progress) {
+  const signal = motionPlayer.fetchAbort?.signal;
+  const lastSent = motionPlayer.lastSent || {};
+  for (const [key, fromValue] of preRoll.fromValues) {
+    const toValue = preRoll.toValues.get(key);
+    if (toValue == null) continue;
+    const value = Math.round(fromValue + (toValue - fromValue) * progress);
+    if (lastSent[key] === value) continue;
+    lastSent[key] = value;
+    motionLastDispatched.set(key, value);
+    const [boardIdStr, , channelStr] = key.split(":");
+    const ip = boards[parseInt(boardIdStr, 10) - 1];
+    if (!ip) continue;
+    sendMotionCommand(ip, `DOWN ${parseInt(channelStr, 10)} ${value}`, signal);
+  }
+  motionPlayer.lastSent = lastSent;
+}
+
 function tickMotionPlayback() {
   if (!motionPlayer.active) return;
   const motion = readMotionFromDom();
+
+  // Pre-roll phase: glide servos from their previous resting position
+  // to this motion's start value. Playhead clock doesn't advance until
+  // each servo has actually been commanded to its target value.
+  //
+  // Exit condition is dispatch-based, not wall-clock: we wait until every
+  // servo in the pre-roll set has had its target value pushed onto the
+  // wire (motionLastDispatched matches preRoll.toValues). The wall-clock
+  // durationMs governs the GLIDE shape (how fast the progress curve
+  // advances) but not when we stop. Without this, HTTP/1.1 head-of-line
+  // blocking on a slow Arduino response can stall the glide partway and
+  // the wall-clock would expire with the servo only halfway moved —
+  // causing a visible jerk when the main timeline starts commanding
+  // values from a different anchor.
+  //
+  // Safety ceiling at 2x durationMs (or 8s absolute) so a totally
+  // unresponsive board doesn't hang the editor forever — the timeline
+  // proceeds with whatever the servo could reach.
+  if (motionPlayer.preRoll && motionPlayer.preRoll.active) {
+    const elapsed = performance.now() - motionPlayer.preRoll.startedAt;
+    const progress = Math.min(1, elapsed / motionPlayer.preRoll.durationMs);
+    const allReached = Array.from(motionPlayer.preRoll.toValues.entries())
+      .every(([key, toValue]) => motionLastDispatched.get(key) === toValue);
+    const safetyCap = elapsed >= Math.max(motionPlayer.preRoll.durationMs * 2, 8000);
+    const preDone = allReached || safetyCap;
+    if (performance.now() - motionPlayer.lastSendAt >= 200 || preDone) {
+      motionPlayer.lastSendAt = performance.now();
+      _sendPreRollFrame(motionPlayer.preRoll, preDone ? 1 : progress);
+    }
+    if (preDone) {
+      motionPlayer.preRoll.active = false;
+      motionPlayer.startedAt = performance.now();
+      motionPlayer.lastSendAt = 0;
+      motionPlayer.lastSent = {};
+      const exitReason = allReached ? "" : " (timed out — board slow)";
+      setMotionStatus(`playing live · ${motion.name || motion.id}${exitReason}`, "amber");
+    }
+    motionPlayer.raf = requestAnimationFrame(tickMotionPlayback);
+    return;
+  }
+
   const elapsed = performance.now() - motionPlayer.startedAt;
   const atMs = Math.min(motion.durationMs, elapsed);
   const atEnd = atMs >= motion.durationMs;
@@ -3016,6 +3196,7 @@ function playMotionLive() {
   const motion = readMotionFromDom();
   saveCurrentMotion(motion);
   stopMotionPlayback(false);
+  const preRoll = _planMotionPreRoll(motion);
   motionPlayer = {
     active: true, raf: 0,
     startedAt: performance.now(), lastSendAt: 0,
@@ -3024,10 +3205,15 @@ function playMotionLive() {
     // wrap can cancel any in-flight ROTATE/S0 commands instead of
     // letting them drain on their own schedule.
     fetchAbort: new AbortController(),
+    preRoll,
   };
   motionPlayEl.disabled = true;
   motionStopEl.disabled = false;
-  setMotionStatus(`playing live · ${motion.name || motion.id}`, "amber");
+  if (preRoll) {
+    setMotionStatus(`warming up · ${(preRoll.durationMs / 1000).toFixed(1)}s glide to start`, "amber");
+  } else {
+    setMotionStatus(`playing live · ${motion.name || motion.id}`, "amber");
+  }
   tickMotionPlayback();
 }
 
