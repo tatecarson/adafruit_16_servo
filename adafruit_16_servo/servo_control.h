@@ -111,6 +111,29 @@ void moveSequenceDegrees(uint8_t servo, uint16_t degrees, uint32_t duration) {
   moveServoAnimated(servo, pulse, duration);
 }
 
+void moveServoDegrees(uint8_t servo, uint16_t degrees, uint32_t duration) {
+  if (servo >= NUM_SERVOS) return;
+  moveServoAnimated(servo, degreesToPulse(servo, degrees), duration);
+}
+
+// Animated DMOVE: ramp to <percent>% of down range over <duration>ms.
+// Used by the browser motion editor for per-segment dispatch (servo-79q)
+// so the firmware interpolates pulse smoothly between keyframes locally
+// instead of being slammed to each commanded position by per-tick DOWN.
+void moveServoPercent(uint8_t servo, uint8_t percent, uint32_t duration) {
+  if (servo >= NUM_SERVOS) return;
+  stopActivePatterns();
+  clearServoStop(servo);
+  moveServoDegrees(servo, percentToDegrees(servo, percent), duration);
+}
+
+void moveServoPercentUp(uint8_t servo, uint8_t percentUp, uint32_t duration) {
+  if (servo >= NUM_SERVOS) return;
+  stopActivePatterns();
+  clearServoStop(servo);
+  moveServoDegrees(servo, upPercentToDegrees(servo, percentUp), duration);
+}
+
 void stopActivePatterns() {
   sequenceActive = false;
   speedSeqActive = false;

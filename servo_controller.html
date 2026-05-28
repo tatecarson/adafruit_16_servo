@@ -2582,7 +2582,7 @@ let motionDraftOverride = null;
 // motion fetch in flight, then send fresh STOP requests (not bound
 // to the aborted controller) so STOP lands at the head of each
 // board's queue rather than behind a wall of pending ROTATEs.
-let motionPlayer = { active: false, raf: 0, startedAt: 0, lastSendAt: 0, lastSent: {}, fetchAbort: null, preRoll: null };
+let motionPlayer = { active: false, raf: 0, startedAt: 0, lastSendAt: 0, lastSent: {}, segmentDispatched: new Map(), fetchAbort: null, preRoll: null };
 
 // Module-level: what the firmware currently thinks each track is at,
 // surviving across stop/play cycles. Updated every time sendMotionFrame
@@ -2942,7 +2942,9 @@ function scrubMotionTo(atMs, live = true) {
   const t = Math.max(0, Math.min(motion.durationMs, atMs));
   motionScrubEl.value = t;
   motionScrubLabelEl.textContent = `${Math.round(t)}ms`;
-  if (live) sendMotionFrame(motion, t);
+  // force=true so servo scrub uses instant DOWN positioning instead of a
+  // DMOVE ramp the operator didn't ask for (servo-79q).
+  if (live) sendMotionFrame(motion, t, true);
   renderMotionEditor();
 }
 
@@ -2995,9 +2997,21 @@ function sendMotionCommand(ip, cmd, signal) {
 // force=true: bypass the delta gate (boundary frames, scrub jumps, loop
 // wraps) so the receiving board can't "remember" a stale value across
 // a discontinuity.
+// Returns the index of the keyframe whose atMs is the greatest value <= atMs.
+// For atMs past the last keyframe, returns the last index.
+function _motionSegmentIndex(keyframes, atMs) {
+  let idx = 0;
+  for (let i = 0; i < keyframes.length; i++) {
+    if (keyframes[i].atMs <= atMs) idx = i;
+    else break;
+  }
+  return idx;
+}
+
 async function sendMotionFrame(motion, atMs, force = false) {
   const soloActive = motionSoloTracks.size > 0;
   const lastSent = motionPlayer.lastSent || {};
+  const segmentDispatched = motionPlayer.segmentDispatched || new Map();
   const signal = motionPlayer.fetchAbort?.signal;
   for (const spec of MOTION_TRACK_SPECS) {
     const key = trackSpecKey(spec);
@@ -3006,26 +3020,47 @@ async function sendMotionFrame(motion, atMs, force = false) {
     const ip = boards[spec.boardId - 1];
     if (!ip) continue;
     const track = findTrack(motion, spec);
+    if (!track) continue;
+
+    // Per-segment DMOVE dispatch for servo tracks (servo-79q): fire one
+    // DMOVE per keyframe segment with duration equal to the time until
+    // the next keyframe. The firmware interpolates pulse internally via
+    // moveServoPercent, producing smooth motion without the start/stop
+    // jitter that per-tick DOWN dispatch caused on instant pulse writes.
+    // Scrub passes force=true so the operator gets instant positioning
+    // via DOWN below.
+    if (spec.kind === "servo" && !force) {
+      const segIdx = _motionSegmentIndex(track.keyframes, atMs);
+      if (segmentDispatched.get(key) !== segIdx) {
+        segmentDispatched.set(key, segIdx);
+        const nextKf = track.keyframes[segIdx + 1];
+        if (nextKf) {
+          const targetValue = Math.round(clampMotionValue(nextKf.value, spec));
+          const durationMs = Math.max(1, Math.round(nextKf.atMs - atMs));
+          lastSent[key] = targetValue;
+          motionLastDispatched.set(key, targetValue);
+          sendMotionCommand(ip, `DMOVE ${spec.channel} ${targetValue} ${durationMs}`, signal);
+        }
+      }
+      continue;
+    }
+
+    // DC tracks (and force-scrub on servos): instant dispatch with the
+    // existing step + delta-gate logic. DC keyframes are setpoint events;
+    // the value the firmware needs is the previous keyframe's value held
+    // forward, which valueAtTrackTime already returns for kind==="dc".
     const rawValue = valueAtTrackTime(track, spec, atMs);
     const value = Math.round(clampMotionValue(rawValue, spec));
-    // Skip fetches when the integer-rounded value is unchanged. The
-    // Renesas HTTP server can only sustain a few requests/sec per board
-    // before queueing, and a 12-track playback at 10 Hz quickly exceeds
-    // that — most ticks the interpolated value rounds to the same int.
     if (!force && lastSent[key] === value) continue;
     lastSent[key] = value;
     motionLastDispatched.set(key, value);
-    // Servo tracks dispatch via DOWN <ch> <pct> so live playback uses
-    // the firmware's percentToDegrees mapping against the calibrated
-    // up/downDegrees range (full mechanical sweep), not the broken
-    // S<n> 0..180 path that only exercises ~10% of travel on the
-    // 5-turn winches. DC tracks keep ROTATE <speed>.
     const cmd = spec.kind === "servo"
       ? `DOWN ${spec.channel} ${value}`
       : `ROTATE ${value}`;
     sendMotionCommand(ip, cmd, signal);
   }
   motionPlayer.lastSent = lastSent;
+  motionPlayer.segmentDispatched = segmentDispatched;
 }
 
 function stopMotionPlayback(sendStop = false) {
@@ -3037,7 +3072,7 @@ function stopMotionPlayback(sendStop = false) {
   // fetches will reject from the abort signal and their .finally()
   // handlers will find nothing pending, so no re-trigger.
   clearMotionSendQueues();
-  motionPlayer = { active: false, raf: 0, startedAt: 0, lastSendAt: 0, lastSent: {}, fetchAbort: null };
+  motionPlayer = { active: false, raf: 0, startedAt: 0, lastSendAt: 0, lastSent: {}, segmentDispatched: new Map(), fetchAbort: null };
   motionPlayEl.disabled = false;
   motionStopEl.disabled = true;
   if (sendStop) {
@@ -3137,6 +3172,7 @@ function tickMotionPlayback() {
       motionPlayer.startedAt = performance.now();
       motionPlayer.lastSendAt = 0;
       motionPlayer.lastSent = {};
+      motionPlayer.segmentDispatched = new Map();
       const exitReason = allReached ? "" : " (timed out — board slow)";
       setMotionStatus(`playing live · ${motion.name || motion.id}${exitReason}`, "amber");
     }
@@ -3176,6 +3212,7 @@ function tickMotionPlayback() {
       motionPlayer.startedAt = performance.now();
       motionPlayer.lastSendAt = 0;
       motionPlayer.lastSent = {};
+      motionPlayer.segmentDispatched = new Map();
       setMotionStatus(`looping · ${motion.name || motion.id}`, "amber");
       motionPlayer.raf = requestAnimationFrame(tickMotionPlayback);
       return;
@@ -3201,6 +3238,11 @@ function playMotionLive() {
     active: true, raf: 0,
     startedAt: performance.now(), lastSendAt: 0,
     lastSent: {},
+    // Per-track segment index map (servo-79q). sendMotionFrame dispatches
+    // one DMOVE per segment for servo tracks instead of streaming DOWN at
+    // 5Hz; this tracks which segment we've already fired so we only emit
+    // a new DMOVE when atMs crosses into the next segment.
+    segmentDispatched: new Map(),
     // Fresh AbortController for this run's motion fetches so STOP/loop
     // wrap can cancel any in-flight ROTATE/S0 commands instead of
     // letting them drain on their own schedule.
