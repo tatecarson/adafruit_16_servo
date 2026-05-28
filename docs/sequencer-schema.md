@@ -112,6 +112,22 @@ A `(boardId, kind, channel)` triple must be unique within a Motion (no two track
 - DC values are written **directly** to the motor outputs (bypassing the `motorState.ramping` smoothing used by `ROTATE`). The keyframe curve is the only smoothing applied during `MOTION` playback — author smooth DC ramps as additional keyframes rather than relying on the ramp path. `STOP` and any cancelling command also cut DC to 0 abruptly via the same direct path.
 - Motion playback ends exactly at `durationMs`; the final keyframe's value is the resting state.
 
+### Servo slew-rate authoring notes
+
+The firmware's interpolation clock and the servo's physical travel speed are separate. Firmware can finish a requested pulse ramp before the servo has mechanically arrived, or it can send pulse changes so small that the servo ignores several ticks before correcting.
+
+Measured on the current goBILDA 5-turn winches on channels 0-2:
+
+- Calibration: `minPulse=98`, `maxPulse=485` in PCA9685 ticks, equivalent to approximately `480-2370us` on board `192.168.8.198`.
+- Full-range `DMOVE` requests below the mechanical floor still take about `7.7-7.8s` physically. Example: `DMOVE 0 0 1000`, `DMOVE 0 100 1000`, `DMOVE 0 0 6000`, and `DMOVE 0 100 6000` all measured near that floor.
+- Full-range requests above the floor are honored by firmware, but long durations such as `DMOVE 0 0 15000` produce visible staccato motion. Each tick's pulse delta is below the servo's dead band, so the servo accumulates error and then jumps in a small max-speed correction.
+
+Practical guidance for Motion authoring:
+
+- Use roughly `4-7s` full-range segments when you want smooth max-speed winch travel.
+- Treat `~7.7s` as the physical full-range floor for these winches; shorter full-range segment durations will not make the physical travel complete faster.
+- Use durations above `12s` only when the stepped / staccato texture is acceptable for the piece.
+
 ---
 
 ## 3. Sequence (Layer 1: timed command list)

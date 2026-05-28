@@ -169,6 +169,7 @@ STOP
 - DC tracks interpolate signed speed values from `-100` to `100`
 - Each board executes only its local sliced tracks; if a baked track still has `boardId`, mismatched boards skip it
 - Manual servo/DC commands, `PLAY`, `SPLAY`, `RUN`, or `STOP` cancel the active Motion cleanly
+- For the current goBILDA 5-turn winches, see `docs/sequencer-schema.md` for measured slew-rate limits: full-range moves physically bottom out around `7.7s`, while very slow full-range moves can become visibly staccato.
 
 ### Browser Sequence Editor
 

@@ -555,6 +555,7 @@ This test is the main check for the current `UP` / `DOWN` concern.
 
 **Result:**
 - [x] **2026-05-23 — PASS on board 192.168.8.198 (USB-flashed `5a8f4f6` + doc commit `7b11f5d`, boardId=1).** `STORAGEINFO` reported active+previous slots. `MOTION tidal-drift` started cleanly with both servo and DC tracks (initial servo wiring was loose — reseated and the servo sweep matched the keyframes). Manual servo commands (`S0 90`) and `STOP` cancelled the active Motion as expected. DC steps were instant (per the documented v1 bypass-ramp behavior). No regressions in the existing PLAY/SPLAY/ROTATE commands.
+- [x] **2026-05-28 — Hardware observation for servo-ao9 on board 192.168.8.198.** Full-range `DMOVE` tests on channel 0 measured a physical travel floor of about `7.7-7.8s` even when command durations were `1000ms` or `6000ms`. `15000ms` requests took about `15s` but moved visibly staccato. `STATUS` captures during these tests showed firmware position progressing through the requested duration, so the behavior is attributed to the servo's mechanical max slew rate and dead band rather than a firmware timing bug.
 
 OTA path discovered to be unsafe during this session (silent flash corruption above 120 KB partition limit); tracked in `servo-8zb` and fixed in commit `1180518`. Hardware re-test against `1180518` deferred — fix is host-test-covered behavior and the change to `Web.cpp` is a pre-body 413 short-circuit that does not affect MOTION playback.
 
