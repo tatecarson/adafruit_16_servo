@@ -328,6 +328,7 @@ void initServoDefaults() {
     servoState[i].moveStartMs = 0;
     servoState[i].moveDurationMs = 0;
     servoState[i].moving = false;
+    servoState[i].linearMove = false;
   }
 }
 

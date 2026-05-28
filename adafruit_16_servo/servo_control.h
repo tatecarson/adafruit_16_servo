@@ -62,6 +62,12 @@ uint16_t lerpEased(uint16_t start, uint16_t end, float progress) {
   return (uint16_t)((float)start + (delta * easedProgress));
 }
 
+// Plain linear interpolation — constant velocity over the segment.
+uint16_t lerpLinear(uint16_t start, uint16_t end, float progress) {
+  float delta = (float)((int32_t)end - (int32_t)start);
+  return (uint16_t)((float)start + (delta * progress));
+}
+
 void setServoPulse(uint8_t servo, uint16_t pulse) {
   if (servo >= NUM_SERVOS) {
     Serial.println(F("Invalid servo"));
@@ -92,7 +98,7 @@ void rampServoSpeed(uint8_t servo, int8_t targetSpeed, uint32_t rampMs) {
   rampMotorSpeed(targetSpeed, rampMs);
 }
 
-void moveServoAnimated(uint8_t servo, uint16_t targetPulse, uint32_t duration) {
+void moveServoAnimated(uint8_t servo, uint16_t targetPulse, uint32_t duration, bool linear) {
   if (servo >= NUM_SERVOS) return;
   cancelMotionPlayback();
   cancelSequencePlayback();
@@ -104,6 +110,7 @@ void moveServoAnimated(uint8_t servo, uint16_t targetPulse, uint32_t duration) {
   servoState[servo].moveDurationMs = duration;
   servoState[servo].moveStartMs = millis();
   servoState[servo].moving = true;
+  servoState[servo].linearMove = linear;
 }
 
 void moveSequenceDegrees(uint8_t servo, uint16_t degrees, uint32_t duration) {
@@ -116,22 +123,33 @@ void moveServoDegrees(uint8_t servo, uint16_t degrees, uint32_t duration) {
   moveServoAnimated(servo, degreesToPulse(servo, degrees), duration);
 }
 
+// Same as moveServoDegrees but forces linear (constant-velocity) progress
+// instead of the default ease-in-out — used by DMOVE / UMOVE so motion
+// editor segments connect smoothly without per-keyframe accel/decel.
+void moveServoDegreesLinear(uint8_t servo, uint16_t degrees, uint32_t duration) {
+  if (servo >= NUM_SERVOS) return;
+  moveServoAnimated(servo, degreesToPulse(servo, degrees), duration, /*linear=*/true);
+}
+
 // Animated DMOVE: ramp to <percent>% of down range over <duration>ms.
 // Used by the browser motion editor for per-segment dispatch (servo-79q)
 // so the firmware interpolates pulse smoothly between keyframes locally
 // instead of being slammed to each commanded position by per-tick DOWN.
+// Uses LINEAR easing so the velocity is constant across the segment —
+// multi-keyframe motions don't get an accel/decel hiccup at every
+// keyframe boundary that the eased curve would otherwise add.
 void moveServoPercent(uint8_t servo, uint8_t percent, uint32_t duration) {
   if (servo >= NUM_SERVOS) return;
   stopActivePatterns();
   clearServoStop(servo);
-  moveServoDegrees(servo, percentToDegrees(servo, percent), duration);
+  moveServoDegreesLinear(servo, percentToDegrees(servo, percent), duration);
 }
 
 void moveServoPercentUp(uint8_t servo, uint8_t percentUp, uint32_t duration) {
   if (servo >= NUM_SERVOS) return;
   stopActivePatterns();
   clearServoStop(servo);
-  moveServoDegrees(servo, upPercentToDegrees(servo, percentUp), duration);
+  moveServoDegreesLinear(servo, upPercentToDegrees(servo, percentUp), duration);
 }
 
 void stopActivePatterns() {

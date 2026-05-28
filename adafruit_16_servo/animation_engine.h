@@ -17,7 +17,12 @@ void updateAnimations() {
       servoState[i].moving = false;
     } else {
       float progress = (float)elapsed / (float)servoState[i].moveDurationMs;
-      uint16_t newPos = lerpEased(servoState[i].startPulse, servoState[i].targetPulse, progress);
+      // DMOVE/UMOVE set linearMove=true so segments connect at constant
+      // velocity. SWEEP / sequence animations leave linearMove=false so
+      // they get the gentler ease-in-out shape.
+      uint16_t newPos = servoState[i].linearMove
+        ? lerpLinear(servoState[i].startPulse, servoState[i].targetPulse, progress)
+        : lerpEased (servoState[i].startPulse, servoState[i].targetPulse, progress);
       if (newPos != servoState[i].posPulse) {
         servoState[i].posPulse = newPos;
         pwm.setPWM(i, 0, newPos);
