@@ -3106,21 +3106,39 @@ function tickMotionPlayback() {
 
   // Pre-roll phase: glide servos from their previous resting position
   // to this motion's start value. Playhead clock doesn't advance until
-  // the glide completes. Sub-2-second case is typical; a full 0->100
-  // mismatch buys ~3s of settling.
+  // each servo has actually been commanded to its target value.
+  //
+  // Exit condition is dispatch-based, not wall-clock: we wait until every
+  // servo in the pre-roll set has had its target value pushed onto the
+  // wire (motionLastDispatched matches preRoll.toValues). The wall-clock
+  // durationMs governs the GLIDE shape (how fast the progress curve
+  // advances) but not when we stop. Without this, HTTP/1.1 head-of-line
+  // blocking on a slow Arduino response can stall the glide partway and
+  // the wall-clock would expire with the servo only halfway moved —
+  // causing a visible jerk when the main timeline starts commanding
+  // values from a different anchor.
+  //
+  // Safety ceiling at 2x durationMs (or 8s absolute) so a totally
+  // unresponsive board doesn't hang the editor forever — the timeline
+  // proceeds with whatever the servo could reach.
   if (motionPlayer.preRoll && motionPlayer.preRoll.active) {
     const elapsed = performance.now() - motionPlayer.preRoll.startedAt;
-    const preDone = elapsed >= motionPlayer.preRoll.durationMs;
+    const progress = Math.min(1, elapsed / motionPlayer.preRoll.durationMs);
+    const allReached = Array.from(motionPlayer.preRoll.toValues.entries())
+      .every(([key, toValue]) => motionLastDispatched.get(key) === toValue);
+    const safetyCap = elapsed >= Math.max(motionPlayer.preRoll.durationMs * 2, 8000);
+    const preDone = allReached || safetyCap;
     if (performance.now() - motionPlayer.lastSendAt >= 200 || preDone) {
       motionPlayer.lastSendAt = performance.now();
-      _sendPreRollFrame(motionPlayer.preRoll, preDone ? 1 : (elapsed / motionPlayer.preRoll.durationMs));
+      _sendPreRollFrame(motionPlayer.preRoll, preDone ? 1 : progress);
     }
     if (preDone) {
       motionPlayer.preRoll.active = false;
       motionPlayer.startedAt = performance.now();
       motionPlayer.lastSendAt = 0;
       motionPlayer.lastSent = {};
-      setMotionStatus(`playing live · ${motion.name || motion.id}`, "amber");
+      const exitReason = allReached ? "" : " (timed out — board slow)";
+      setMotionStatus(`playing live · ${motion.name || motion.id}${exitReason}`, "amber");
     }
     motionPlayer.raf = requestAnimationFrame(tickMotionPlayback);
     return;
