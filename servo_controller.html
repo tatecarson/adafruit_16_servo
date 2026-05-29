@@ -1834,6 +1834,7 @@ let boards = JSON.parse(localStorage.getItem(LS_KEY) || "null") || DEFAULT_BOARD
 let pollHandle = null;
 const lastSeen = new Map();
 const lastStatus = new Map();
+const boardIdByIp = new Map();
 // Track the most recent command we sent to each board, for the audit tail at
 // the bottom of each instrument panel. Value: { cmd, ts }. "broadcast" target
 // records on whichever board actually accepted it (the one returned by
@@ -1880,6 +1881,36 @@ async function sendCommand(ip, cmd) {
     lastCmd.set(ip, { cmd, ts: Date.now() });
     return true;
   } catch (e) { console.warn("send failed", ip, e); return false; }
+}
+
+function ipForBoardId(boardId) {
+  for (const ip of boards) {
+    if (boardIdByIp.get(ip) === boardId) return ip;
+  }
+  return boards[boardId - 1] || null;
+}
+
+let refreshBoardIdsInFlight = null;
+async function refreshBoardIdMap() {
+  if (refreshBoardIdsInFlight) return refreshBoardIdsInFlight;
+  refreshBoardIdsInFlight = (async () => {
+    const next = new Map();
+    await Promise.all(boards.map(async ip => {
+      try {
+        const id = await fetchBoardId(ip);
+        next.set(ip, id);
+      } catch {
+        // Keep the old mapping if a board is temporarily unreachable.
+        if (boardIdByIp.has(ip)) next.set(ip, boardIdByIp.get(ip));
+      }
+    }));
+    boardIdByIp.clear();
+    next.forEach((id, ip) => boardIdByIp.set(ip, id));
+    renderMotionEditor();
+    renderSequencer();
+    renderSetlist();
+  })().finally(() => { refreshBoardIdsInFlight = null; });
+  return refreshBoardIdsInFlight;
 }
 
 async function broadcastCommand(cmd) {
@@ -2265,11 +2296,13 @@ async function pollOnce() {
     try { await fetchStatus(ip); }
     catch (e) { /* lastStatus untouched; render() detects staleness */ }
   }));
+  refreshBoardIdMap();
   render();
 }
 
 function startPolling() {
   stopPolling();
+  refreshBoardIdMap();
   if (!autoPollEl.checked) { render(); return; }
   const interval = Math.max(200, parseInt(pollMsEl.value, 10) || 800);
   pollOnce();
@@ -2322,6 +2355,7 @@ $("#saveBoards").addEventListener("click", () => {
   renderSequencer();
   renderSetlist();
   renderLibSummary();
+  refreshBoardIdMap();
   startPolling();
 });
 autoPollEl.addEventListener("change", startPolling);
@@ -2988,17 +3022,16 @@ function renderMotionEditor() {
   let html = `<div class="motion-scale"><div>track</div><div>mode</div><div class="motion-axis">${ticks.join("")}</div></div>`;
   for (const boardId of [1, 2, 3]) {
     const collapsed = motionCollapsedBoards.has(boardId);
-    // Surface the IP that this boardId resolves to in the configured
-    // boards list so authors can tell which physical sculpture maps to
-    // B1/B2/B3 without leaving the // 06 panel. boards is indexed 0..N
-    // and the bake uses /boardId resolution = idx+1, so boardId N → boards[N-1].
-    const ip = boards[boardId - 1];
+    // Surface the actual IP currently advertising this boardId instead
+    // of assuming boards[0]=B1, boards[1]=B2, boards[2]=B3. The bake path
+    // already resolves /boardId; the editor/runtime must use the same map.
+    const ip = ipForBoardId(boardId);
     const ipHtml = ip
       ? `<span class="ip">${escapeHtml(ip)}</span>`
       : `<span class="ip missing">not configured</span>`;
     const titleAttr = ip
-      ? `Maps to ${ip} (boards[${boardId - 1}])`
-      : "No IP at this slot — configure boards in // 01";
+      ? `Resolved via /boardId to ${ip}`
+      : "No responding board currently reports this boardId";
     html += `<div class="motion-board"><button data-motion-collapse="${boardId}" title="${escapeHtml(titleAttr)}">${collapsed ? "+" : "-"} board ${boardId} ${ipHtml}</button></div>`;
     for (const spec of MOTION_TRACK_SPECS.filter(s => s.boardId === boardId)) {
       const track = findTrack(motion, spec);
@@ -3212,7 +3245,7 @@ async function sendMotionFrame(motion, atMs, force = false) {
     const key = trackSpecKey(spec);
     if (motionMutedTracks.has(key)) continue;
     if (soloActive && !motionSoloTracks.has(key)) continue;
-    const ip = boards[spec.boardId - 1];
+    const ip = ipForBoardId(spec.boardId);
     if (!ip) continue;
     const track = findTrack(motion, spec);
     if (!track) continue;
@@ -3319,7 +3352,7 @@ function _dispatchPreRoll(preRoll) {
     if (toValue == null) continue;
     motionLastDispatched.set(key, toValue);
     const [boardIdStr, , channelStr] = key.split(":");
-    const ip = boards[parseInt(boardIdStr, 10) - 1];
+    const ip = ipForBoardId(parseInt(boardIdStr, 10));
     if (!ip) continue;
     sendMotionCommand(ip, `DMOVE ${parseInt(channelStr, 10)} ${toValue} ${preRoll.durationMs}`, signal);
   }
@@ -5166,6 +5199,7 @@ renderSequencer();
 renderSetlist();
 renderLibSummary();
 render();
+refreshBoardIdMap();
 startPolling();
 </script>
 </body>
