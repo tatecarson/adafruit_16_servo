@@ -2660,10 +2660,10 @@ function defaultMotion(lib) {
       boardId: spec.boardId,
       channel: spec.channel,
       label: spec.label,
-      // Safe rest: 0% (fully up) for servos, 0 (stopped) for DC.
+      // Default start state only. The motion now holds its final explicit
+      // keyframe instead of forcing every track to return to 0 at the end.
       keyframes: [
         { atMs: 0, value: 0 },
-        { atMs: durationMs, value: 0 },
       ],
     })),
   };
@@ -2697,6 +2697,11 @@ function normalizeKeyframes(track, durationMs, spec) {
   for (const raw of sourceKeyframes) {
     const atMs = Math.max(0, Math.min(durationMs, parseInt(raw?.atMs, 10) || 0));
     const value = clampMotionValue(parseFloat(raw?.value ?? 0), spec);
+    // Older builds auto-generated a trailing "return to 0" boundary and
+    // tagged it with autoBoundary. Strip those here so motions now end on
+    // the author's last explicit keyframe. Explicit end keyframes survive
+    // because they were never tagged autoBoundary.
+    if (raw?.autoBoundary && atMs > 0 && value === 0) continue;
     // Preserve raw.easing verbatim instead of overwriting to "linear" —
     // servo-e3t will introduce non-linear segment curves (ease-in/out,
     // S-curve, hold) that need their value to survive a normalize pass.
@@ -2704,37 +2709,11 @@ function normalizeKeyframes(track, durationMs, spec) {
       atMs,
       value,
       ...(raw?.easing ? { easing: String(raw.easing) } : {}),
-      ...(raw?.autoBoundary ? { autoBoundary: true } : {}),
     });
   }
-  if (!byTime.has(durationMs)) {
-    const boundarySource = [...(track?.keyframes || [])]
-      .sort((a, b) => (parseInt(a?.atMs, 10) || 0) - (parseInt(b?.atMs, 10) || 0))
-      .reverse()
-      .find(raw =>
-        raw?.autoBoundary ||
-        ((parseInt(raw?.atMs, 10) || 0) > 0 && clampMotionValue(parseFloat(raw?.value ?? 0), spec) === 0)
-      );
-    if (boundarySource) {
-      const oldAtMs = Math.max(0, Math.min(durationMs, parseInt(boundarySource?.atMs, 10) || 0));
-      byTime.delete(oldAtMs);
-      byTime.set(durationMs, {
-        atMs: durationMs,
-        value: 0,
-        ...(boundarySource?.easing ? { easing: String(boundarySource.easing) } : {}),
-        autoBoundary: true,
-      });
-    }
-  }
-  // Boundary defaults: 0% for servo (fully up rest) and 0 speed for DC.
-  // Both collapse to value=0 since servo's "safe rest" is now 0% by
-  // construction (servo-6oa).
-  if (!byTime.has(0)) byTime.set(0, { atMs: 0, value: 0, autoBoundary: true });
-  if (!byTime.has(durationMs)) byTime.set(durationMs, { atMs: durationMs, value: 0, autoBoundary: true });
-  else {
-    const boundary = byTime.get(durationMs);
-    if (boundary && boundary.value === 0) boundary.autoBoundary = true;
-  }
+  // Only synthesize a start boundary. End position is now defined by the
+  // last explicit keyframe on the track.
+  if (!byTime.has(0)) byTime.set(0, { atMs: 0, value: 0 });
   return Array.from(byTime.values()).sort((a, b) => a.atMs - b.atMs);
 }
 
