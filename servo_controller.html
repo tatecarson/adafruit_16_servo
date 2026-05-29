@@ -3305,10 +3305,10 @@ function _planMotionPreRoll(motion) {
     maxDelta = Math.max(maxDelta, Math.abs(startValue - currentValue));
   }
   if (maxDelta < 5) return null;              // trivial drift, skip
-  // 30ms per 1% of delta → 100% glide = 3s, 50% glide = 1.5s. Floor at
-  // 800ms so even small deltas have a perceptible "settling" beat, cap
-  // at 4s so the operator isn't waiting forever.
-  const durationMs = Math.max(800, Math.min(4000, maxDelta * 30));
+  // Use the same measured physical floor as keyframe feasibility so the
+  // warm-up doesn't release the playhead before the servo could plausibly
+  // have reached the motion's start pose.
+  const durationMs = Math.max(800, Math.ceil(maxDelta * SERVO_FEASIBILITY_MS_PER_PERCENT));
   return { active: true, startedAt: performance.now(), durationMs, fromValues, toValues };
 }
 
@@ -3338,26 +3338,24 @@ function tickMotionPlayback() {
   // to this motion's start value. Playhead clock doesn't advance until
   // each servo has actually been commanded to its target value.
   //
-  // Exit condition is dispatch-based, not wall-clock: we wait until every
-  // servo in the pre-roll set has had its target value pushed onto the
-  // wire (motionLastDispatched matches preRoll.toValues). The wall-clock
-  // durationMs governs the GLIDE shape (how fast the progress curve
-  // advances) but not when we stop. Without this, HTTP/1.1 head-of-line
-  // blocking on a slow Arduino response can stall the glide partway and
-  // the wall-clock would expire with the servo only halfway moved —
-  // causing a visible jerk when the main timeline starts commanding
-  // values from a different anchor.
+  // Exit condition needs BOTH:
+  //   1. enough wall-clock time for the physical servo to plausibly reach
+  //      the start pose, based on the measured 77ms/% floor, and
+  //   2. the target value actually having been pushed to the wire.
+  //
+  // Command-dispatch alone is too optimistic: the browser can enqueue a
+  // DOWN 0 while the winch is still physically seconds away from 0, and
+  // starting the playhead at that moment desynchronizes the whole motion.
   //
   // Safety ceiling at 2x durationMs (or 8s absolute) so a totally
-  // unresponsive board doesn't hang the editor forever — the timeline
-  // proceeds with whatever the servo could reach.
+  // unresponsive board doesn't hang the editor forever.
   if (motionPlayer.preRoll && motionPlayer.preRoll.active) {
     const elapsed = performance.now() - motionPlayer.preRoll.startedAt;
     const progress = Math.min(1, elapsed / motionPlayer.preRoll.durationMs);
     const allReached = Array.from(motionPlayer.preRoll.toValues.entries())
       .every(([key, toValue]) => motionLastDispatched.get(key) === toValue);
     const safetyCap = elapsed >= Math.max(motionPlayer.preRoll.durationMs * 2, 8000);
-    const preDone = allReached || safetyCap;
+    const preDone = (elapsed >= motionPlayer.preRoll.durationMs && allReached) || safetyCap;
     if (performance.now() - motionPlayer.lastSendAt >= 200 || preDone) {
       motionPlayer.lastSendAt = performance.now();
       _sendPreRollFrame(motionPlayer.preRoll, preDone ? 1 : progress);
