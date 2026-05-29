@@ -4774,14 +4774,19 @@ bakeRetryEl.addEventListener("click", () => {
 bakeRestoreEl.addEventListener("click", restorePreviousBake);
 
 // Play a baked motion directly on the board it was baked to (servo-67d).
-bakedPanelEl.addEventListener("click", (e) => {
+// Await the send and color the log by delivery so the panel's confirmation
+// stays honest — a failed fire to an offline board must not look successful.
+bakedPanelEl.addEventListener("click", async (e) => {
   const btn = e.target.closest("[data-baked-play]");
   if (!btn) return;
   const ip = btn.dataset.ip;
   const id = btn.dataset.id;
   if (!ip || !id) return;
-  sendCommand(ip, `MOTION ${id}`);
-  bakeLog(`${ip}: MOTION ${id}`, "phosphor");
+  btn.disabled = true;
+  bakeLog(`${ip}: MOTION ${id}...`, "amber");
+  const ok = await sendCommand(ip, `MOTION ${id}`);
+  bakeLog(ok ? `${ip}: MOTION ${id} sent` : `${ip}: MOTION ${id} failed — board unreachable`, ok ? "phosphor" : "alert");
+  btn.disabled = false;
 });
 
 seqSelectEl.addEventListener("change", () => {
