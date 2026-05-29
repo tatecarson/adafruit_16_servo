@@ -1260,14 +1260,9 @@
     border-color: rgba(255,104,107,.34);
   }
   .motion-segment.hold {
-    background:
-      repeating-linear-gradient(90deg,
-        rgba(157,149,130,.18) 0,
-        rgba(157,149,130,.18) 5px,
-        transparent 5px,
-        transparent 9px);
-    border-color: rgba(157,149,130,.22);
-    opacity: .8;
+    background: rgba(157,149,130,.08);
+    border-color: rgba(157,149,130,.14);
+    opacity: .45;
   }
   .motion-key {
     position: absolute;
@@ -2705,13 +2700,41 @@ function normalizeKeyframes(track, durationMs, spec) {
     // Preserve raw.easing verbatim instead of overwriting to "linear" —
     // servo-e3t will introduce non-linear segment curves (ease-in/out,
     // S-curve, hold) that need their value to survive a normalize pass.
-    byTime.set(atMs, { atMs, value, ...(raw?.easing ? { easing: String(raw.easing) } : {}) });
+    byTime.set(atMs, {
+      atMs,
+      value,
+      ...(raw?.easing ? { easing: String(raw.easing) } : {}),
+      ...(raw?.autoBoundary ? { autoBoundary: true } : {}),
+    });
+  }
+  if (!byTime.has(durationMs)) {
+    const boundarySource = [...(track?.keyframes || [])]
+      .sort((a, b) => (parseInt(a?.atMs, 10) || 0) - (parseInt(b?.atMs, 10) || 0))
+      .reverse()
+      .find(raw =>
+        raw?.autoBoundary ||
+        ((parseInt(raw?.atMs, 10) || 0) > 0 && clampMotionValue(parseFloat(raw?.value ?? 0), spec) === 0)
+      );
+    if (boundarySource) {
+      const oldAtMs = Math.max(0, Math.min(durationMs, parseInt(boundarySource?.atMs, 10) || 0));
+      byTime.delete(oldAtMs);
+      byTime.set(durationMs, {
+        atMs: durationMs,
+        value: 0,
+        ...(boundarySource?.easing ? { easing: String(boundarySource.easing) } : {}),
+        autoBoundary: true,
+      });
+    }
   }
   // Boundary defaults: 0% for servo (fully up rest) and 0 speed for DC.
   // Both collapse to value=0 since servo's "safe rest" is now 0% by
   // construction (servo-6oa).
-  if (!byTime.has(0)) byTime.set(0, { atMs: 0, value: 0 });
-  if (!byTime.has(durationMs)) byTime.set(durationMs, { atMs: durationMs, value: 0 });
+  if (!byTime.has(0)) byTime.set(0, { atMs: 0, value: 0, autoBoundary: true });
+  if (!byTime.has(durationMs)) byTime.set(durationMs, { atMs: durationMs, value: 0, autoBoundary: true });
+  else {
+    const boundary = byTime.get(durationMs);
+    if (boundary && boundary.value === 0) boundary.autoBoundary = true;
+  }
   return Array.from(byTime.values()).sort((a, b) => a.atMs - b.atMs);
 }
 
@@ -3066,7 +3089,7 @@ function addMotionKeyframe(spec, atMs, value) {
       value: clampMotionValue(value, spec),
     };
     const constrained = constrainServoKeyframePoint(track, spec, motion.durationMs, candidate);
-    if (!constrained) return;
+    if (!constrained?.point) return;
     applied = true;
     clamped = constrained.clamped;
     appliedAtMs = constrained.point.atMs;
@@ -3076,7 +3099,7 @@ function addMotionKeyframe(spec, atMs, value) {
     track.keyframes = normalizeKeyframes(track, motion.durationMs, spec);
   });
   if (!applied) {
-    setMotionStatus(`blocked · ${spec.label} has no feasible timing at ${atMs}ms`, "alert");
+    setMotionStatus(`blocked · ${spec.label} needs more time for ${Math.round(value)}%`, "alert");
     return;
   }
   setMotionStatus(
@@ -3096,7 +3119,7 @@ function motionPointFromEvent(trackEl, spec, event) {
 }
 
 function constrainServoKeyframePoint(track, spec, motionDurationMs, draftPoint, movingIndex = -1) {
-  if (spec.kind !== "servo") return { point: draftPoint, clamped: false };
+  if (spec.kind !== "servo") return { point: draftPoint, clamped: false, lowerBound: 0, upperBound: motionDurationMs, impossible: false };
   const frames = (track.keyframes || [])
     .filter((_, idx) => idx !== movingIndex)
     .map(k => ({ atMs: k.atMs, value: k.value }))
@@ -3118,11 +3141,16 @@ function constrainServoKeyframePoint(track, spec, motionDurationMs, draftPoint, 
   const upperBound = next
     ? next.atMs - Math.ceil(Math.abs(next.value - draftPoint.value) * SERVO_FEASIBILITY_MS_PER_PERCENT)
     : motionDurationMs;
-  if (lowerBound > upperBound) return null;
+  if (lowerBound > upperBound) {
+    return { point: null, clamped: false, lowerBound, upperBound, impossible: true };
+  }
   const atMs = Math.max(lowerBound, Math.min(upperBound, draftPoint.atMs));
   return {
     point: { atMs, value: draftPoint.value },
     clamped: atMs !== draftPoint.atMs,
+    lowerBound,
+    upperBound,
+    impossible: false,
   };
 }
 
@@ -3621,7 +3649,10 @@ window.addEventListener("pointermove", e => {
   const track = motion.tracks.find(t => motionTrackKey(t) === motionDrag.trackKey);
   if (!track || !track.keyframes[motionDrag.keyIndex]) return;
   const constrained = constrainServoKeyframePoint(track, spec, motion.durationMs, point, motionDrag.keyIndex);
-  if (!constrained) return;
+  if (!constrained?.point) {
+    setMotionStatus(`blocked · ${spec.label} needs more time for ${Math.round(point.value)}%`, "alert");
+    return;
+  }
   track.keyframes[motionDrag.keyIndex] = {
     ...track.keyframes[motionDrag.keyIndex],
     atMs: constrained.point.atMs,
@@ -3635,6 +3666,9 @@ window.addEventListener("pointermove", e => {
   const movedIdx = track.keyframes.findIndex(k => k.atMs === constrained.point.atMs && k.value === constrained.point.value);
   if (movedIdx >= 0) motionDrag.keyIndex = movedIdx;
   motionDirty = true;
+  if (constrained.clamped) {
+    setMotionStatus(`clamped · ${spec.label} ${Math.round(constrained.point.value)}% needs ${constrained.point.atMs}ms here`, "amber");
+  }
   renderMotionEditor();
 });
 window.addEventListener("pointerup", () => {
