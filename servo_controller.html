@@ -2655,7 +2655,6 @@ const SERVO_TINY_DELTA_PERCENT = 2;
 // MOTION/bake path is intentionally not gated by them.
 const DC_LIVE_WARN_SPACING_MS = 2000;
 const DC_LIVE_MIN_SPACING_MS = 1200;
-const DC_TINY_DELTA_SPEED = 1;
 
 let currentMotionId = null;
 let motionDirty = false;
@@ -2890,18 +2889,21 @@ function analyzeLibraryServoFeasibility(lib) {
   return report;
 }
 
-// DC live-playback throughput analysis (servo-a1e). Each value-changing DC
-// keyframe emits one ROTATE during Play Live; the spacing to the next
-// keyframe is the runway the board has to process it. A segment whose value
-// doesn't move emits no ROTATE (the live dispatch delta-gates on lastSent),
-// so it costs nothing and is reported as a hold. This is an approximation:
-// when a no-change hold sits between two changes the true inter-event gap
-// spans the hold, but the dense back-to-back-change case this guards against
-// is modelled exactly. Coalescing dense events into a scheduled queue is
-// deliberately out of scope here (model + warn only).
-function analyzeDcLiveSegmentFeasibility(track, spec, fromKf, toKf, motion) {
-  const deltaSpeed = Math.abs((toKf?.value ?? 0) - (fromKf?.value ?? 0));
-  const spacingMs = Math.max(0, (toKf?.atMs ?? 0) - (fromKf?.atMs ?? 0));
+// DC live-playback throughput analysis (servo-a1e). Each DC keyframe that
+// CHANGES the dispatched speed emits one ROTATE during Play Live; a keyframe
+// whose (rounded) value matches the previous one emits nothing, because the
+// live dispatch delta-gates on the rounded value (lastSent). So we first
+// reduce the keyframes to the actual ROTATE *event* stream — using the same
+// Math.round the dispatcher uses — and then measure the spacing between
+// consecutive events. The gap between two events is the runway the board has
+// to process the first before the second arrives; if it is below MIN the
+// second lands late (block), below WARN it may lag (warn). Measuring events
+// rather than adjacent keyframes avoids falsely flagging a fast change that
+// merely follows a long hold. Coalescing dense events into a scheduled queue
+// is deliberately out of scope here (model + warn only).
+function analyzeDcLiveEventPair(track, spec, fromEvt, toEvt, motion) {
+  const deltaSpeed = Math.abs(toEvt.value - fromEvt.value);
+  const spacingMs = Math.max(0, toEvt.atMs - fromEvt.atMs);
   const finding = {
     kind: "dc",
     motionId: motion.id,
@@ -2910,28 +2912,36 @@ function analyzeDcLiveSegmentFeasibility(track, spec, fromKf, toKf, motion) {
     label: spec.label,
     boardId: spec.boardId,
     channel: spec.channel,
-    fromAtMs: fromKf.atMs,
-    toAtMs: toKf.atMs,
-    fromValue: fromKf.value,
-    toValue: toKf.value,
+    fromAtMs: fromEvt.atMs,
+    toAtMs: toEvt.atMs,
+    fromValue: fromEvt.value,
+    toValue: toEvt.value,
     deltaSpeed,
     spacingMs,
     minSpacingMs: DC_LIVE_MIN_SPACING_MS,
     warnSpacingMs: DC_LIVE_WARN_SPACING_MS,
     level: "ok",
   };
-  if (deltaSpeed < DC_TINY_DELTA_SPEED) {
-    finding.level = "hold";
-    return finding;
-  }
-  if (spacingMs < DC_LIVE_MIN_SPACING_MS) {
-    finding.level = "invalid";
-    return finding;
-  }
-  if (spacingMs < DC_LIVE_WARN_SPACING_MS) {
-    finding.level = "warning";
-  }
+  if (spacingMs < DC_LIVE_MIN_SPACING_MS) finding.level = "invalid";
+  else if (spacingMs < DC_LIVE_WARN_SPACING_MS) finding.level = "warning";
   return finding;
+}
+
+// Reduce normalized keyframes to the ROTATE events the live dispatcher would
+// actually emit: the first frame, then every frame whose rounded value
+// differs from the previously emitted one. Values are rounded to mirror
+// sendMotionFrame's `Math.round(clampMotionValue(...))` + lastSent gate.
+function _dcRotateEvents(frames) {
+  const events = [];
+  let last = null;
+  for (const f of frames) {
+    const v = Math.round(f.value);
+    if (last === null || v !== last) {
+      events.push({ atMs: f.atMs, value: v });
+      last = v;
+    }
+  }
+  return events;
 }
 
 function analyzeMotionDcLiveFeasibility(motion) {
@@ -2939,13 +2949,12 @@ function analyzeMotionDcLiveFeasibility(motion) {
   for (const spec of MOTION_TRACK_SPECS.filter(s => s.kind === "dc")) {
     const track = findTrack(motion, spec);
     if (!track) continue;
-    const frames = normalizeKeyframes(track, motion.durationMs, spec);
-    for (let i = 0; i + 1 < frames.length; i++) {
-      const finding = analyzeDcLiveSegmentFeasibility(track, spec, frames[i], frames[i + 1], motion);
+    const events = _dcRotateEvents(normalizeKeyframes(track, motion.durationMs, spec));
+    for (let i = 0; i + 1 < events.length; i++) {
+      const finding = analyzeDcLiveEventPair(track, spec, events[i], events[i + 1], motion);
       report.all.push(finding);
       if (finding.level === "invalid") report.invalid.push(finding);
       else if (finding.level === "warning") report.warnings.push(finding);
-      else if (finding.level === "hold") report.holds.push(finding);
       else report.ok.push(finding);
     }
   }
@@ -2959,9 +2968,6 @@ function formatDcLiveFeasibilityFinding(finding) {
   }
   if (finding.level === "warning") {
     return `${motionPrefix}${finding.label} ${finding.fromValue}→${finding.toValue} spd ${finding.spacingMs}ms apart may lag live (>=${finding.warnSpacingMs}ms recommended; baked MOTION ok)`;
-  }
-  if (finding.level === "hold") {
-    return `${motionPrefix}${finding.label} holds ${finding.fromValue} spd over ${finding.spacingMs}ms (no ROTATE emitted)`;
   }
   return `${motionPrefix}${finding.label} ok`;
 }
