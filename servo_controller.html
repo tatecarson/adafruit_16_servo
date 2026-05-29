@@ -1045,11 +1045,23 @@
   }
   .motion-picker {
     display: grid;
-    grid-template-columns: minmax(180px, 280px) minmax(220px, 1fr) minmax(130px, 180px) auto;
+    grid-template-columns: minmax(180px, 280px) minmax(200px, 1fr) auto minmax(130px, 180px) auto;
     gap: 12px;
     align-items: center;
     padding-bottom: 14px;
     border-bottom: 1px dashed var(--rule);
+  }
+  .motion-id {
+    font: 600 10px/1 var(--mono);
+    color: var(--ink-dim);
+    background: var(--bg-deep);
+    border: 1px solid var(--rule);
+    padding: 6px 8px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 110px;
+    max-width: 220px;
   }
   .motion-picker select,
   .motion-picker input,
@@ -1715,6 +1727,7 @@
     <div class="motion-picker">
       <select id="motionSelect" title="Motion"></select>
       <input id="motionName" type="text" placeholder="motion name" autocomplete="off" spellcheck="false">
+      <code id="motionIdLabel" class="motion-id" title="Motion id — what you type after MOTION and what Sequence steps reference. Use Rename ID to change it."></code>
       <label class="motion-time" title="Total Motion duration">
         <span>duration</span>
         <input id="motionDuration" type="number" min="100" max="120000" step="100" value="8000">
@@ -1722,7 +1735,7 @@
       <div class="motion-actions">
         <button class="cmd compact" id="motionNew">New</button>
         <button class="cmd compact" id="motionDuplicate">Duplicate</button>
-        <button class="cmd compact" id="motionRename">Rename</button>
+        <button class="cmd compact" id="motionRename" title="Change this motion's id (updates Sequence references; re-bake after)">Rename ID</button>
         <button class="cmd compact alert" id="motionDelete">Delete</button>
       </div>
     </div>
@@ -2601,6 +2614,7 @@ function slugifyId(name) {
 // ============================================================
 const motionSelectEl     = $("#motionSelect");
 const motionNameEl       = $("#motionName");
+const motionIdLabelEl    = $("#motionIdLabel");
 const motionDurationEl   = $("#motionDuration");
 const motionTagsEl       = $("#motionTags");
 const motionTagInputEl   = $("#motionTagInput");
@@ -2680,12 +2694,34 @@ function uniqueMotionId(lib, seed) {
   return `mot-${Date.now().toString(36)}`.slice(0, 32);
 }
 
+// Rewrite every Sequence step that fires `MOTION <oldId>` so it points at
+// <newId> (servo-sqx). The cmd is free text like "MOTION my-id"; we match
+// on the MOTION verb + exact id token so "MOTION my-id-2" isn't clobbered.
+// Mutates lib in place and returns the count of rewritten steps.
+function rewriteMotionIdReferences(lib, oldId, newId) {
+  let count = 0;
+  for (const seq of lib.sequences || []) {
+    for (const step of seq.steps || []) {
+      const parts = String(step.cmd || "").trim().split(/\s+/);
+      if (parts[0]?.toUpperCase() === "MOTION" && parts[1] === oldId) {
+        parts[1] = newId;
+        step.cmd = parts.join(" ");
+        count++;
+      }
+    }
+  }
+  return count;
+}
+
 function defaultMotion(lib) {
-  const id = uniqueMotionId(lib, "new-motion");
+  const name = "New Motion";
+  // Derive the id from the name so motions are descriptive by default
+  // (servo-sqx). slugifyId dedupes against the library.
+  const id = uniqueMotionId(lib, name);
   const durationMs = 8000;
   return {
     id,
-    name: "New Motion",
+    name,
     tags: [],
     scope: "cluster",
     durationMs,
@@ -3007,6 +3043,7 @@ function renderMotionEditor() {
     `<option value="${escapeHtml(m.id)}"${m.id === motion.id ? " selected" : ""}>${escapeHtml(m.name || m.id)}</option>`
   ).join("");
   if (document.activeElement !== motionNameEl) motionNameEl.value = motion.name || motion.id;
+  if (motionIdLabelEl) motionIdLabelEl.textContent = `id: ${motion.id}`;
   if (document.activeElement !== motionDurationEl) motionDurationEl.value = motion.durationMs;
   motionScrubEl.max = motion.durationMs;
   motionScrubEl.value = playheadMs;
@@ -3519,9 +3556,32 @@ $("#motionDuplicate").addEventListener("click", () => {
   renderMotionEditor();
   setMotionStatus(`duplicated ${motion.name || motion.id}`, "phosphor");
 });
+// Rename ID (servo-sqx): the id is the key used by localStorage, the
+// dropdown, and the `MOTION <id>` play command, so changing it must also
+// rewrite any Sequence steps that reference it and remind the operator to
+// re-bake (boards still hold the old baked id until then).
 $("#motionRename").addEventListener("click", () => {
-  saveCurrentMotion(readMotionFromDom());
-  setMotionStatus("renamed", "phosphor");
+  if (motionDirty) saveCurrentMotion(readMotionFromDom());
+  const lib = sequenceLibrary();
+  const motion = getCurrentMotion(lib);
+  if (!motion) return;
+  const oldId = motion.id;
+  const suggested = slugifyId(motion.name || oldId) || oldId;
+  const raw = prompt(`Rename ID for "${motion.name || oldId}"\nUsed by the MOTION command and Sequence steps.`, suggested);
+  if (raw == null) return;                       // cancelled
+  const newId = uniqueMotionId(lib, raw);        // slugify + dedupe
+  if (newId === oldId) { setMotionStatus("id unchanged", "amber"); return; }
+  const target = lib.motions.find(m => m.id === oldId);
+  if (!target) return;
+  target.id = newId;
+  const refs = rewriteMotionIdReferences(lib, oldId, newId);
+  currentMotionId = newId;
+  saveLibrary(lib);
+  motionDirty = false;
+  renderLibSummary();
+  renderMotionEditor();
+  const refNote = refs ? ` · ${refs} sequence ref${refs === 1 ? "" : "s"} updated` : "";
+  setMotionStatus(`id → ${newId}${refNote} · re-bake boards to update them`, "phosphor");
 });
 $("#motionDelete").addEventListener("click", () => {
   const lib = sequenceLibrary();
