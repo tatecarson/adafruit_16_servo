@@ -2642,6 +2642,21 @@ const SERVO_FEASIBILITY_MS_PER_PERCENT = 77;
 const SERVO_STACCATO_MS_PER_PERCENT = 120;
 const SERVO_TINY_DELTA_PERCENT = 2;
 
+// DC live-playback throughput floor (servo-a1e). Unlike servos, DC tracks
+// have no slew constraint — the motor steps to a new speed instantly. Their
+// limit is transport-side: each value-changing DC keyframe emits one ROTATE
+// over the browser→board HTTP path during Play Live, and the Chrome
+// connection pool plus per-board processing rate can only push so many in a
+// window. Operator test matrix (docs/TESTING.md, servo-a1e.1) found ~2000ms
+// spacing (8s/4kf) plays cleanly while 1000ms (8s/8kf and 4s/4kf) already
+// drops roughly half the setpoints. So below WARN we flag "may lag" and
+// below MIN we block Play Live. These limits are LIVE-ONLY: baked MOTION
+// playback runs natively on the firmware with no HTTP throttle, so the
+// MOTION/bake path is intentionally not gated by them.
+const DC_LIVE_WARN_SPACING_MS = 2000;
+const DC_LIVE_MIN_SPACING_MS = 1200;
+const DC_TINY_DELTA_SPEED = 1;
+
 let currentMotionId = null;
 let motionDirty = false;
 let motionDrag = null;
@@ -2814,6 +2829,7 @@ function analyzeServoSegmentFeasibility(track, spec, fromKf, toKf, motion) {
   const minDurationMs = Math.ceil(deltaPercent * SERVO_FEASIBILITY_MS_PER_PERCENT);
   const staccatoDurationMs = Math.ceil(deltaPercent * SERVO_STACCATO_MS_PER_PERCENT);
   const finding = {
+    kind: "servo",
     motionId: motion.id,
     motionName: motion.name || motion.id,
     trackKey: motionTrackKey(track),
@@ -2872,6 +2888,96 @@ function analyzeLibraryServoFeasibility(lib) {
     report.holds.push(...motionReport.holds);
   }
   return report;
+}
+
+// DC live-playback throughput analysis (servo-a1e). Each value-changing DC
+// keyframe emits one ROTATE during Play Live; the spacing to the next
+// keyframe is the runway the board has to process it. A segment whose value
+// doesn't move emits no ROTATE (the live dispatch delta-gates on lastSent),
+// so it costs nothing and is reported as a hold. This is an approximation:
+// when a no-change hold sits between two changes the true inter-event gap
+// spans the hold, but the dense back-to-back-change case this guards against
+// is modelled exactly. Coalescing dense events into a scheduled queue is
+// deliberately out of scope here (model + warn only).
+function analyzeDcLiveSegmentFeasibility(track, spec, fromKf, toKf, motion) {
+  const deltaSpeed = Math.abs((toKf?.value ?? 0) - (fromKf?.value ?? 0));
+  const spacingMs = Math.max(0, (toKf?.atMs ?? 0) - (fromKf?.atMs ?? 0));
+  const finding = {
+    kind: "dc",
+    motionId: motion.id,
+    motionName: motion.name || motion.id,
+    trackKey: motionTrackKey(track),
+    label: spec.label,
+    boardId: spec.boardId,
+    channel: spec.channel,
+    fromAtMs: fromKf.atMs,
+    toAtMs: toKf.atMs,
+    fromValue: fromKf.value,
+    toValue: toKf.value,
+    deltaSpeed,
+    spacingMs,
+    minSpacingMs: DC_LIVE_MIN_SPACING_MS,
+    warnSpacingMs: DC_LIVE_WARN_SPACING_MS,
+    level: "ok",
+  };
+  if (deltaSpeed < DC_TINY_DELTA_SPEED) {
+    finding.level = "hold";
+    return finding;
+  }
+  if (spacingMs < DC_LIVE_MIN_SPACING_MS) {
+    finding.level = "invalid";
+    return finding;
+  }
+  if (spacingMs < DC_LIVE_WARN_SPACING_MS) {
+    finding.level = "warning";
+  }
+  return finding;
+}
+
+function analyzeMotionDcLiveFeasibility(motion) {
+  const report = { motionId: motion.id, motionName: motion.name || motion.id, all: [], invalid: [], warnings: [], holds: [], ok: [] };
+  for (const spec of MOTION_TRACK_SPECS.filter(s => s.kind === "dc")) {
+    const track = findTrack(motion, spec);
+    if (!track) continue;
+    const frames = normalizeKeyframes(track, motion.durationMs, spec);
+    for (let i = 0; i + 1 < frames.length; i++) {
+      const finding = analyzeDcLiveSegmentFeasibility(track, spec, frames[i], frames[i + 1], motion);
+      report.all.push(finding);
+      if (finding.level === "invalid") report.invalid.push(finding);
+      else if (finding.level === "warning") report.warnings.push(finding);
+      else if (finding.level === "hold") report.holds.push(finding);
+      else report.ok.push(finding);
+    }
+  }
+  return report;
+}
+
+function formatDcLiveFeasibilityFinding(finding) {
+  const motionPrefix = finding.motionName ? `${finding.motionName} · ` : "";
+  if (finding.level === "invalid") {
+    return `${motionPrefix}${finding.label} ${finding.fromValue}→${finding.toValue} spd ${finding.spacingMs}ms apart — Play Live needs >=${finding.minSpacingMs}ms between DC events (baked MOTION ok)`;
+  }
+  if (finding.level === "warning") {
+    return `${motionPrefix}${finding.label} ${finding.fromValue}→${finding.toValue} spd ${finding.spacingMs}ms apart may lag live (>=${finding.warnSpacingMs}ms recommended; baked MOTION ok)`;
+  }
+  if (finding.level === "hold") {
+    return `${motionPrefix}${finding.label} holds ${finding.fromValue} spd over ${finding.spacingMs}ms (no ROTATE emitted)`;
+  }
+  return `${motionPrefix}${finding.label} ok`;
+}
+
+// Dispatch tooltip formatting by track kind so servo (slew) and DC
+// (throughput) findings can share the timeline rendering path.
+function formatFeasibilityFinding(finding) {
+  return finding?.kind === "dc"
+    ? formatDcLiveFeasibilityFinding(finding)
+    : formatServoFeasibilityFinding(finding);
+}
+
+function dcLiveFeasibilityWarningSuffix(report) {
+  if (!report?.warnings?.length) return "";
+  const noun = report.warnings.length === 1 ? "DC segment" : "DC segments";
+  return ` · ${report.warnings.length} dense ${noun} may lag live`;
 }
 
 function formatServoFeasibilityFinding(finding) {
@@ -3023,7 +3129,7 @@ function renderMotionFeasibilitySegments(findings, durationMs) {
     const left = motionTimeToPct(finding.fromAtMs, durationMs);
     const right = motionTimeToPct(finding.toAtMs, durationMs);
     const width = Math.max(0.6, right - left);
-    return `<span class="motion-segment ${finding.level}" title="${escapeHtml(formatServoFeasibilityFinding(finding))}" style="left:${left}%; width:${width}%"></span>`;
+    return `<span class="motion-segment ${finding.level}" title="${escapeHtml(formatFeasibilityFinding(finding))}" style="left:${left}%; width:${width}%"></span>`;
   }).join("");
 }
 
@@ -3032,8 +3138,12 @@ function renderMotionEditor() {
   const motion = getCurrentMotion(lib);
   if (!motion) return;
   const feasibilityReport = analyzeMotionServoFeasibility(motion);
+  // DC live-throughput findings render on DC rows alongside servo slew
+  // findings on servo rows (servo-a1e). Both are LIVE-playback advisories;
+  // baked MOTION is not throttled the same way.
+  const dcLiveReport = analyzeMotionDcLiveFeasibility(motion);
   const feasibilityByTrack = new Map();
-  for (const finding of feasibilityReport.all) {
+  for (const finding of [...feasibilityReport.all, ...dcLiveReport.all]) {
     if (!feasibilityByTrack.has(finding.trackKey)) feasibilityByTrack.set(finding.trackKey, []);
     feasibilityByTrack.get(finding.trackKey).push(finding);
   }
@@ -3075,9 +3185,9 @@ function renderMotionEditor() {
       const muted = motionMutedTracks.has(key);
       const solo = motionSoloTracks.has(key);
       const prev = previousKeyframe(track, playheadMs);
-      const segmentHtml = spec.kind === "servo"
-        ? renderMotionFeasibilitySegments(feasibilityByTrack.get(key), motion.durationMs)
-        : "";
+      // Both servo (slew) and DC (live throughput) tracks now surface
+      // feasibility markers (servo-a1e).
+      const segmentHtml = renderMotionFeasibilitySegments(feasibilityByTrack.get(key), motion.durationMs);
       html += `<div class="motion-row ${spec.kind}${collapsed ? " hidden" : ""}${muted ? " muted" : ""}" data-track="${escapeHtml(key)}">
         <div class="motion-label">
           <span class="id">${escapeHtml(spec.label)}</span>
@@ -3479,14 +3589,22 @@ function tickMotionPlayback() {
 function playMotionLive() {
   const motion = readMotionFromDom();
   const feasibility = analyzeMotionServoFeasibility(motion);
+  // DC live-throughput floor applies to Play Live only (servo-a1e): the
+  // browser→board HTTP path can't stream over-dense ROTATEs in time. Baked
+  // MOTION playback (#motionFire) is intentionally NOT gated by this.
+  const dcLive = analyzeMotionDcLiveFeasibility(motion);
   if (feasibility.invalid.length) {
     setMotionStatus(`blocked · ${formatServoFeasibilityFinding(feasibility.invalid[0])}`, "alert");
+    return;
+  }
+  if (dcLive.invalid.length) {
+    setMotionStatus(`blocked · ${formatDcLiveFeasibilityFinding(dcLive.invalid[0])}`, "alert");
     return;
   }
   saveCurrentMotion(motion);
   stopMotionPlayback(false);
   const preRoll = _planMotionPreRoll(motion);
-  const warningSuffix = servoFeasibilityWarningSuffix(feasibility);
+  const warningSuffix = `${servoFeasibilityWarningSuffix(feasibility)}${dcLiveFeasibilityWarningSuffix(dcLive)}`;
   motionPlayer = {
     active: true, raf: 0,
     startedAt: performance.now(), lastSendAt: 0,

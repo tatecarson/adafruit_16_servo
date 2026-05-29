@@ -927,6 +927,77 @@ Once Tests 24-29 pass on the first board, run them in abbreviated form on the ot
 
 ---
 
+## Test 31: DC Live-Playback Throughput Limit (servo-a1e / servo-a1e.1)
+
+**Why:** Dense DC keyframes outrun the browser→board HTTP command budget
+during **Play Live**. Each value-changing DC keyframe emits one `ROTATE`
+over HTTP; when they fall too close together the Chrome connection pool
+plus per-board processing rate can't deliver them in time, so the motor
+state lags behind the playhead and only a fraction of the authored speed
+changes land. Servo tracks don't have this problem since servo-79q (they
+dispatch one `DMOVE` per segment and the firmware interpolates). This test
+measures the practical minimum spacing between `ROTATE` events for Play
+Live and confirms whether baked `MOTION` playback shares the limit.
+
+**Setup:**
+- Serve `servo_controller.html` locally; open // 06 Motion editor.
+- One board online with a configured continuous (DC) channel — record IP/boardId.
+- For each cell, author a single DC track with N evenly-spaced keyframes
+  over the stated duration, alternating between the delta family's endpoints
+  (e.g. small = `0,15,0,15,…`). Keyframe spacing = duration / (N−1)... in
+  practice operators authored N events across the window, so spacing ≈
+  duration / N; both are recorded below.
+
+**Delta families:**
+- **small** — `0 → 15 → 0` (gentle speed nudges)
+- **medium** — `0 → 50 → -50` (mid-range, includes a direction reversal)
+- **large** — `100 → -100` (full-scale reversal; also a mechanical concern)
+
+**Matrix (run each cell for Play Live, then compare to baked `MOTION`):**
+
+| Duration | Keyframes | Approx spacing | Play Live result (operator) |
+|----------|-----------|----------------|------------------------------|
+| 8s | 4  | ~2000ms | Acceptable. Large/fast jumps toward 100 should likely still be guarded. |
+| 8s | 8  | ~1000ms | Very laggy — only ~2 of 8 speed changes realized. |
+| 8s | 12 | ~667ms  | Not completed (worse than 8). |
+| 8s | 16 | ~500ms  | Not completed. |
+| 4s | 4  | ~1000ms | Only ~2 of 4 changes realized. |
+| 4s | 8  | ~500ms  | ~4 of 8 changes realized. |
+| 4s | 12 | ~333ms  | Not completed. |
+| 4s | 16 | ~250ms  | Not completed. |
+
+**Findings / derived limits (encoded in `servo_controller.html`):**
+- **~2000ms** spacing is the only density rated clean → treat as the safe
+  floor. Constant: `DC_LIVE_WARN_SPACING_MS = 2000`.
+- **~1000ms** spacing already drops roughly half the setpoints (true in both
+  the 8s/8kf and 4s/4kf cells) → block. Constant:
+  `DC_LIVE_MIN_SPACING_MS = 1200` (just above the demonstrably-broken 1000ms,
+  so 1000ms and tighter are invalid; 1200–2000ms warns "may lag").
+- The editor now flags `warning` segments on DC rows in the [1200, 2000)ms
+  band and blocks **Play Live** when any DC segment is below 1200ms, with a
+  status message that names the offending segment.
+- **Baked `MOTION` is intentionally NOT gated** by these limits: it runs
+  natively on the firmware with no HTTP throttle. The editor's bake path
+  (`bakeToAllBoards`) and the `MOTION <id>` fire button only enforce the
+  servo slew model, not DC throughput. This is the live-vs-baked distinction
+  the acceptance criteria call for.
+
+**Baked MOTION comparison — still open:** the operator run could not
+confidently invoke the baked motion as a playable option to A/B against
+Play Live (the baked motion wasn't surfacing usefully in the UI). That gap
+is tracked separately as **servo-67d** (baked motions should surface clearly
+as playable browser/sequence options). The live-vs-baked *model* distinction
+is implemented and documented above; the side-by-side hardware confirmation
+that a dense DC motion which is blocked for Play Live still plays cleanly
+when baked should be run once servo-67d lands.
+
+**Result:**
+- [x] Matrix recorded from operator Play Live testing (2026-05-29).
+- [x] Minimum safe spacing derived (~2000ms clean / 1200ms block floor).
+- [ ] Baked-vs-live hardware A/B — blocked on servo-67d.
+
+---
+
 ## Host Regression Tests
 
 **2026-05-23:**
