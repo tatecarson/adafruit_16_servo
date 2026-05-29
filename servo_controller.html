@@ -3309,25 +3309,21 @@ function _planMotionPreRoll(motion) {
   // warm-up doesn't release the playhead before the servo could plausibly
   // have reached the motion's start pose.
   const durationMs = Math.max(800, Math.ceil(maxDelta * SERVO_FEASIBILITY_MS_PER_PERCENT));
-  return { active: true, startedAt: performance.now(), durationMs, fromValues, toValues };
+  return { active: true, startedAt: performance.now(), durationMs, fromValues, toValues, dispatched: false };
 }
 
-function _sendPreRollFrame(preRoll, progress) {
+function _dispatchPreRoll(preRoll) {
   const signal = motionPlayer.fetchAbort?.signal;
-  const lastSent = motionPlayer.lastSent || {};
   for (const [key, fromValue] of preRoll.fromValues) {
     const toValue = preRoll.toValues.get(key);
     if (toValue == null) continue;
-    const value = Math.round(fromValue + (toValue - fromValue) * progress);
-    if (lastSent[key] === value) continue;
-    lastSent[key] = value;
-    motionLastDispatched.set(key, value);
+    motionLastDispatched.set(key, toValue);
     const [boardIdStr, , channelStr] = key.split(":");
     const ip = boards[parseInt(boardIdStr, 10) - 1];
     if (!ip) continue;
-    sendMotionCommand(ip, `DOWN ${parseInt(channelStr, 10)} ${value}`, signal);
+    sendMotionCommand(ip, `DMOVE ${parseInt(channelStr, 10)} ${toValue} ${preRoll.durationMs}`, signal);
   }
-  motionPlayer.lastSent = lastSent;
+  preRoll.dispatched = true;
 }
 
 function tickMotionPlayback() {
@@ -3338,35 +3334,24 @@ function tickMotionPlayback() {
   // to this motion's start value. Playhead clock doesn't advance until
   // each servo has actually been commanded to its target value.
   //
-  // Exit condition needs BOTH:
-  //   1. enough wall-clock time for the physical servo to plausibly reach
-  //      the start pose, based on the measured 77ms/% floor, and
-  //   2. the target value actually having been pushed to the wire.
-  //
-  // Command-dispatch alone is too optimistic: the browser can enqueue a
-  // DOWN 0 while the winch is still physically seconds away from 0, and
-  // starting the playhead at that moment desynchronizes the whole motion.
-  //
-  // Safety ceiling at 2x durationMs (or 8s absolute) so a totally
-  // unresponsive board doesn't hang the editor forever.
+  // Pre-roll is a single timed DMOVE to each start pose. The playhead
+  // stays parked until that move's duration has elapsed, with a safety
+  // ceiling in case a board stops responding.
   if (motionPlayer.preRoll && motionPlayer.preRoll.active) {
     const elapsed = performance.now() - motionPlayer.preRoll.startedAt;
-    const progress = Math.min(1, elapsed / motionPlayer.preRoll.durationMs);
-    const allReached = Array.from(motionPlayer.preRoll.toValues.entries())
-      .every(([key, toValue]) => motionLastDispatched.get(key) === toValue);
-    const safetyCap = elapsed >= Math.max(motionPlayer.preRoll.durationMs * 2, 8000);
-    const preDone = (elapsed >= motionPlayer.preRoll.durationMs && allReached) || safetyCap;
-    if (performance.now() - motionPlayer.lastSendAt >= 200 || preDone) {
+    if (!motionPlayer.preRoll.dispatched) {
+      _dispatchPreRoll(motionPlayer.preRoll);
       motionPlayer.lastSendAt = performance.now();
-      _sendPreRollFrame(motionPlayer.preRoll, preDone ? 1 : progress);
     }
+    const safetyCap = elapsed >= Math.max(motionPlayer.preRoll.durationMs * 2, 8000);
+    const preDone = elapsed >= motionPlayer.preRoll.durationMs || safetyCap;
     if (preDone) {
       motionPlayer.preRoll.active = false;
       motionPlayer.startedAt = performance.now();
       motionPlayer.lastSendAt = 0;
       motionPlayer.lastSent = {};
       motionPlayer.segmentDispatched = new Map();
-      const exitReason = allReached ? "" : " (timed out — board slow)";
+      const exitReason = safetyCap ? " (timed out — board slow)" : "";
       setMotionStatus(`playing live · ${motion.name || motion.id}${exitReason}`, "amber");
     }
     motionPlayer.raf = requestAnimationFrame(tickMotionPlayback);
