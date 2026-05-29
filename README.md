@@ -165,7 +165,7 @@ STOP
 ```
 
 - Motion ids come from `docs/sequencer-schema.md` / `servo_controller.html`
-- Servo tracks interpolate linearly between keyframes and write calibrated PCA9685 pulses every loop tick
+- Servo tracks interpolate linearly between absolute percent-down keyframes and map through each channel's calibrated travel before writing PCA9685 pulses every loop tick
 - DC tracks interpolate signed speed values from `-100` to `100`
 - Each board executes only its local sliced tracks; if a baked track still has `boardId`, mismatched boards skip it
 - Manual servo/DC commands, `PLAY`, `SPLAY`, `RUN`, or `STOP` cancel the active Motion cleanly

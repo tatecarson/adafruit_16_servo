@@ -83,7 +83,11 @@ Servo calibration and control system for the Adafruit PCA9685 16-channel PWM dri
 
 ## In Progress
 
-(None)
+### Motion Feasibility Guardrails
+- Baked `MOTION` servo playback now uses the same 0..100% down semantic as the browser Motion editor instead of the older 0..180 degree path
+- The browser now analyzes each servo keyframe segment against the measured winch floor (`77ms` per percent of travel), blocks impossible Play/Bake/Export sends, and warns on slow staccato-prone segments
+- Servo lanes render per-segment feasibility overlays and first-pass drag/click clamping keeps new keyframes inside physically possible timing windows
+- Remaining gap: no dedicated typed per-keyframe editor yet, and the browser-side feasibility helper does not have its own standalone test harness
 
 ## File Structure
 

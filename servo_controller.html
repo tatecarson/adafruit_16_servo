@@ -1169,7 +1169,7 @@
     min-height: 48px;
     border-bottom: 1px solid var(--rule);
   }
-  /* DC tracks span -100..100 (200 units) vs servo 0..180 (180 units) but
+  /* DC tracks span -100..100 (200 units) vs servo 0..100 (100 units) but
      also need a useful zero crossing visible, so give them more vertical
      room than servo rows. Same horizontal grid — only the height changes. */
   .motion-row.dc {
@@ -1237,6 +1237,33 @@
     letter-spacing: 0.2em;
     pointer-events: none;
   }
+  .motion-segment {
+    position: absolute;
+    top: 8%;
+    bottom: 8%;
+    min-width: 2px;
+    border-left: 1px solid transparent;
+    border-right: 1px solid transparent;
+    opacity: .6;
+    z-index: 1;
+  }
+  .motion-segment.ok {
+    background: rgba(75,227,193,.08);
+    border-color: rgba(75,227,193,.18);
+  }
+  .motion-segment.warning {
+    background: rgba(255,182,39,.12);
+    border-color: rgba(255,182,39,.3);
+  }
+  .motion-segment.invalid {
+    background: rgba(255,104,107,.18);
+    border-color: rgba(255,104,107,.34);
+  }
+  .motion-segment.hold {
+    background: rgba(157,149,130,.08);
+    border-color: rgba(157,149,130,.14);
+    opacity: .45;
+  }
   .motion-key {
     position: absolute;
     width: 13px;
@@ -1246,6 +1273,7 @@
     transform: translate(-50%, -50%) rotate(45deg);
     cursor: grab;
     box-shadow: 0 0 0 2px rgba(14,14,12,.85);
+    z-index: 2;
   }
   .motion-key:active { cursor: grabbing; }
   .motion-key.dc { border-color: var(--phosphor); }
@@ -1264,7 +1292,7 @@
     background: var(--alert);
     box-shadow: 0 0 6px var(--alert);
     pointer-events: none;
-    z-index: 2;
+    z-index: 3;
   }
   .motion-status {
     color: var(--ink-dim);
@@ -2562,6 +2590,9 @@ const MOTION_TRACK_SPECS = [1, 2, 3].flatMap(boardId => ([
   { kind: "servo", boardId, channel: 2, label: `B${boardId}.S2`, min: 0, max: 100, unit: "%" },
   { kind: "dc",    boardId, channel: 0, label: `B${boardId}.DC`, min: -100, max: 100, unit: "spd" },
 ]));
+const SERVO_FEASIBILITY_MS_PER_PERCENT = 77;
+const SERVO_STACCATO_MS_PER_PERCENT = 120;
+const SERVO_TINY_DELTA_PERCENT = 2;
 
 let currentMotionId = null;
 let motionDirty = false;
@@ -2629,10 +2660,10 @@ function defaultMotion(lib) {
       boardId: spec.boardId,
       channel: spec.channel,
       label: spec.label,
-      // Safe rest: 0% (fully up) for servos, 0 (stopped) for DC.
+      // Default start state only. The motion now holds its final explicit
+      // keyframe instead of forcing every track to return to 0 at the end.
       keyframes: [
         { atMs: 0, value: 0 },
-        { atMs: durationMs, value: 0 },
       ],
     })),
   };
@@ -2666,16 +2697,23 @@ function normalizeKeyframes(track, durationMs, spec) {
   for (const raw of sourceKeyframes) {
     const atMs = Math.max(0, Math.min(durationMs, parseInt(raw?.atMs, 10) || 0));
     const value = clampMotionValue(parseFloat(raw?.value ?? 0), spec);
+    // Older builds auto-generated a trailing "return to 0" boundary and
+    // tagged it with autoBoundary. Strip those here so motions now end on
+    // the author's last explicit keyframe. Explicit end keyframes survive
+    // because they were never tagged autoBoundary.
+    if (raw?.autoBoundary && atMs > 0 && value === 0) continue;
     // Preserve raw.easing verbatim instead of overwriting to "linear" —
     // servo-e3t will introduce non-linear segment curves (ease-in/out,
     // S-curve, hold) that need their value to survive a normalize pass.
-    byTime.set(atMs, { atMs, value, ...(raw?.easing ? { easing: String(raw.easing) } : {}) });
+    byTime.set(atMs, {
+      atMs,
+      value,
+      ...(raw?.easing ? { easing: String(raw.easing) } : {}),
+    });
   }
-  // Boundary defaults: 0% for servo (fully up rest) and 0 speed for DC.
-  // Both collapse to value=0 since servo's "safe rest" is now 0% by
-  // construction (servo-6oa).
+  // Only synthesize a start boundary. End position is now defined by the
+  // last explicit keyframe on the track.
   if (!byTime.has(0)) byTime.set(0, { atMs: 0, value: 0 });
-  if (!byTime.has(durationMs)) byTime.set(durationMs, { atMs: durationMs, value: 0 });
   return Array.from(byTime.values()).sort((a, b) => a.atMs - b.atMs);
 }
 
@@ -2699,6 +2737,92 @@ function normalizeMotion(motion) {
       };
     }),
   };
+}
+
+function analyzeServoSegmentFeasibility(track, spec, fromKf, toKf, motion) {
+  const deltaPercent = Math.abs((toKf?.value ?? 0) - (fromKf?.value ?? 0));
+  const durationMs = Math.max(0, (toKf?.atMs ?? 0) - (fromKf?.atMs ?? 0));
+  const minDurationMs = Math.ceil(deltaPercent * SERVO_FEASIBILITY_MS_PER_PERCENT);
+  const staccatoDurationMs = Math.ceil(deltaPercent * SERVO_STACCATO_MS_PER_PERCENT);
+  const finding = {
+    motionId: motion.id,
+    motionName: motion.name || motion.id,
+    trackKey: motionTrackKey(track),
+    label: spec.label,
+    boardId: spec.boardId,
+    channel: spec.channel,
+    fromAtMs: fromKf.atMs,
+    toAtMs: toKf.atMs,
+    fromValue: fromKf.value,
+    toValue: toKf.value,
+    deltaPercent,
+    durationMs,
+    minDurationMs,
+    staccatoDurationMs,
+    level: "ok",
+  };
+  if (deltaPercent < SERVO_TINY_DELTA_PERCENT) {
+    finding.level = "hold";
+    return finding;
+  }
+  if (durationMs < minDurationMs) {
+    finding.level = "invalid";
+    return finding;
+  }
+  if (durationMs > staccatoDurationMs) {
+    finding.level = "warning";
+  }
+  return finding;
+}
+
+function analyzeMotionServoFeasibility(motion) {
+  const report = { motionId: motion.id, motionName: motion.name || motion.id, all: [], invalid: [], warnings: [], holds: [], ok: [] };
+  for (const spec of MOTION_TRACK_SPECS.filter(s => s.kind === "servo")) {
+    const track = findTrack(motion, spec);
+    if (!track) continue;
+    const frames = normalizeKeyframes(track, motion.durationMs, spec);
+    for (let i = 0; i + 1 < frames.length; i++) {
+      const finding = analyzeServoSegmentFeasibility(track, spec, frames[i], frames[i + 1], motion);
+      report.all.push(finding);
+      if (finding.level === "invalid") report.invalid.push(finding);
+      else if (finding.level === "warning") report.warnings.push(finding);
+      else if (finding.level === "hold") report.holds.push(finding);
+      else report.ok.push(finding);
+    }
+  }
+  return report;
+}
+
+function analyzeLibraryServoFeasibility(lib) {
+  const report = { invalid: [], warnings: [], holds: [], motions: [] };
+  for (const motion of lib.motions || []) {
+    const motionReport = analyzeMotionServoFeasibility(normalizeMotion(motion));
+    report.motions.push(motionReport);
+    report.invalid.push(...motionReport.invalid);
+    report.warnings.push(...motionReport.warnings);
+    report.holds.push(...motionReport.holds);
+  }
+  return report;
+}
+
+function formatServoFeasibilityFinding(finding) {
+  const motionPrefix = finding.motionName ? `${finding.motionName} · ` : "";
+  if (finding.level === "invalid") {
+    return `${motionPrefix}${finding.label} ${finding.fromValue}%→${finding.toValue}% in ${finding.durationMs}ms needs >=${finding.minDurationMs}ms`;
+  }
+  if (finding.level === "warning") {
+    return `${motionPrefix}${finding.label} ${finding.fromValue}%→${finding.toValue}% in ${finding.durationMs}ms may step`;
+  }
+  if (finding.level === "hold") {
+    return `${motionPrefix}${finding.label} ${finding.fromValue}%→${finding.toValue}% over ${finding.durationMs}ms is effectively a hold`;
+  }
+  return `${motionPrefix}${finding.label} ok`;
+}
+
+function servoFeasibilityWarningSuffix(report) {
+  if (!report?.warnings?.length) return "";
+  const noun = report.warnings.length === 1 ? "segment" : "segments";
+  return ` · ${report.warnings.length} slow ${noun} may step`;
 }
 
 function getCurrentMotion(lib = sequenceLibrary()) {
@@ -2825,10 +2949,25 @@ function previousKeyframe(track, atMs) {
   return (track.keyframes || []).filter(k => k.atMs <= atMs).sort((a, b) => b.atMs - a.atMs)[0] || null;
 }
 
+function renderMotionFeasibilitySegments(findings, durationMs) {
+  return (findings || []).map(finding => {
+    const left = motionTimeToPct(finding.fromAtMs, durationMs);
+    const right = motionTimeToPct(finding.toAtMs, durationMs);
+    const width = Math.max(0.6, right - left);
+    return `<span class="motion-segment ${finding.level}" title="${escapeHtml(formatServoFeasibilityFinding(finding))}" style="left:${left}%; width:${width}%"></span>`;
+  }).join("");
+}
+
 function renderMotionEditor() {
   const lib = sequenceLibrary();
   const motion = getCurrentMotion(lib);
   if (!motion) return;
+  const feasibilityReport = analyzeMotionServoFeasibility(motion);
+  const feasibilityByTrack = new Map();
+  for (const finding of feasibilityReport.all) {
+    if (!feasibilityByTrack.has(finding.trackKey)) feasibilityByTrack.set(finding.trackKey, []);
+    feasibilityByTrack.get(finding.trackKey).push(finding);
+  }
   const playheadMs = Math.min(parseInt(motionScrubEl.value, 10) || 0, motion.durationMs);
   motionSelectEl.innerHTML = lib.motions.map(m =>
     `<option value="${escapeHtml(m.id)}"${m.id === motion.id ? " selected" : ""}>${escapeHtml(m.name || m.id)}</option>`
@@ -2867,6 +3006,9 @@ function renderMotionEditor() {
       const muted = motionMutedTracks.has(key);
       const solo = motionSoloTracks.has(key);
       const prev = previousKeyframe(track, playheadMs);
+      const segmentHtml = spec.kind === "servo"
+        ? renderMotionFeasibilitySegments(feasibilityByTrack.get(key), motion.durationMs)
+        : "";
       html += `<div class="motion-row ${spec.kind}${collapsed ? " hidden" : ""}${muted ? " muted" : ""}" data-track="${escapeHtml(key)}">
         <div class="motion-label">
           <span class="id">${escapeHtml(spec.label)}</span>
@@ -2877,6 +3019,7 @@ function renderMotionEditor() {
           <button class="cmd compact${muted ? " alert" : ""}" data-motion-mute="${escapeHtml(key)}" title="Mute">M</button>
         </div>
         <div class="motion-track" data-track="${escapeHtml(key)}">
+          ${segmentHtml}
           <div class="motion-playhead" style="left:${motionTimeToPct(playheadMs, motion.durationMs)}%"></div>
           ${prev ? `<span class="motion-key ghost ${spec.kind}" style="left:${motionTimeToPct(prev.atMs, motion.durationMs)}%; top:${motionValueToPct(prev.value, spec)}%"></span>` : ""}
           ${(track.keyframes || []).map((kf, idx) => `<span class="motion-key ${spec.kind}" data-track="${escapeHtml(key)}" data-key-index="${idx}" title="${kf.atMs}ms · ${kf.value}${spec.unit}" style="left:${motionTimeToPct(kf.atMs, motion.durationMs)}%; top:${motionValueToPct(kf.value, spec)}%"></span>`).join("")}
@@ -2915,16 +3058,33 @@ function mutateCurrentMotion(mutator, save = true) {
 }
 
 function addMotionKeyframe(spec, atMs, value) {
+  let applied = false;
+  let clamped = false;
+  let appliedAtMs = atMs;
   mutateCurrentMotion(motion => {
     const track = findTrack(motion, spec);
-    const snappedAt = Math.max(0, Math.min(motion.durationMs, atMs));
-    const snappedValue = clampMotionValue(value, spec);
-    const existing = track.keyframes.find(k => Math.abs(k.atMs - snappedAt) < 1);
-    if (existing) existing.value = snappedValue;
-    else track.keyframes.push({ atMs: snappedAt, value: snappedValue });
+    const candidate = {
+      atMs: Math.max(0, Math.min(motion.durationMs, atMs)),
+      value: clampMotionValue(value, spec),
+    };
+    const constrained = constrainServoKeyframePoint(track, spec, motion.durationMs, candidate);
+    if (!constrained?.point) return;
+    applied = true;
+    clamped = constrained.clamped;
+    appliedAtMs = constrained.point.atMs;
+    const existing = track.keyframes.find(k => Math.abs(k.atMs - constrained.point.atMs) < 1);
+    if (existing) existing.value = constrained.point.value;
+    else track.keyframes.push(constrained.point);
     track.keyframes = normalizeKeyframes(track, motion.durationMs, spec);
   });
-  setMotionStatus(`keyframe ${spec.label} · ${atMs}ms`, "phosphor");
+  if (!applied) {
+    setMotionStatus(`blocked · ${spec.label} needs more time for ${Math.round(value)}%`, "alert");
+    return;
+  }
+  setMotionStatus(
+    clamped ? `clamped · ${spec.label} at ${appliedAtMs}ms` : `keyframe ${spec.label} · ${appliedAtMs}ms`,
+    clamped ? "amber" : "phosphor"
+  );
 }
 
 function motionPointFromEvent(trackEl, spec, event) {
@@ -2935,6 +3095,41 @@ function motionPointFromEvent(trackEl, spec, event) {
   const atMs = Math.max(0, Math.min(durationMs, snapMotionTime((xPct / 100) * durationMs, event.shiftKey)));
   const value = clampMotionValue(snapMotionValue(pctToMotionValue(yPct, spec), event.shiftKey), spec);
   return { atMs, value };
+}
+
+function constrainServoKeyframePoint(track, spec, motionDurationMs, draftPoint, movingIndex = -1) {
+  if (spec.kind !== "servo") return { point: draftPoint, clamped: false, lowerBound: 0, upperBound: motionDurationMs, impossible: false };
+  const frames = (track.keyframes || [])
+    .filter((_, idx) => idx !== movingIndex)
+    .map(k => ({ atMs: k.atMs, value: k.value }))
+    .sort((a, b) => a.atMs - b.atMs);
+  let prev = null;
+  let next = null;
+  for (const frame of frames) {
+    if (frame.atMs <= draftPoint.atMs) prev = frame;
+    if (frame.atMs >= draftPoint.atMs) {
+      next = frame;
+      break;
+    }
+  }
+  if (!prev && next && next.atMs === draftPoint.atMs && next.value === draftPoint.value) prev = next;
+  const lowerBound = prev
+    ? prev.atMs + Math.ceil(Math.abs(draftPoint.value - prev.value) * SERVO_FEASIBILITY_MS_PER_PERCENT)
+    : 0;
+  const upperBound = next
+    ? next.atMs - Math.ceil(Math.abs(next.value - draftPoint.value) * SERVO_FEASIBILITY_MS_PER_PERCENT)
+    : motionDurationMs;
+  if (lowerBound > upperBound) {
+    return { point: null, clamped: false, lowerBound, upperBound, impossible: true };
+  }
+  const atMs = Math.max(lowerBound, Math.min(upperBound, draftPoint.atMs));
+  return {
+    point: { atMs, value: draftPoint.value },
+    clamped: atMs !== draftPoint.atMs,
+    lowerBound,
+    upperBound,
+    impossible: false,
+  };
 }
 
 function scrubMotionTo(atMs, live = true) {
@@ -3110,29 +3305,25 @@ function _planMotionPreRoll(motion) {
     maxDelta = Math.max(maxDelta, Math.abs(startValue - currentValue));
   }
   if (maxDelta < 5) return null;              // trivial drift, skip
-  // 30ms per 1% of delta → 100% glide = 3s, 50% glide = 1.5s. Floor at
-  // 800ms so even small deltas have a perceptible "settling" beat, cap
-  // at 4s so the operator isn't waiting forever.
-  const durationMs = Math.max(800, Math.min(4000, maxDelta * 30));
-  return { active: true, startedAt: performance.now(), durationMs, fromValues, toValues };
+  // Use the same measured physical floor as keyframe feasibility so the
+  // warm-up doesn't release the playhead before the servo could plausibly
+  // have reached the motion's start pose.
+  const durationMs = Math.max(800, Math.ceil(maxDelta * SERVO_FEASIBILITY_MS_PER_PERCENT));
+  return { active: true, startedAt: performance.now(), durationMs, fromValues, toValues, dispatched: false };
 }
 
-function _sendPreRollFrame(preRoll, progress) {
+function _dispatchPreRoll(preRoll) {
   const signal = motionPlayer.fetchAbort?.signal;
-  const lastSent = motionPlayer.lastSent || {};
   for (const [key, fromValue] of preRoll.fromValues) {
     const toValue = preRoll.toValues.get(key);
     if (toValue == null) continue;
-    const value = Math.round(fromValue + (toValue - fromValue) * progress);
-    if (lastSent[key] === value) continue;
-    lastSent[key] = value;
-    motionLastDispatched.set(key, value);
+    motionLastDispatched.set(key, toValue);
     const [boardIdStr, , channelStr] = key.split(":");
     const ip = boards[parseInt(boardIdStr, 10) - 1];
     if (!ip) continue;
-    sendMotionCommand(ip, `DOWN ${parseInt(channelStr, 10)} ${value}`, signal);
+    sendMotionCommand(ip, `DMOVE ${parseInt(channelStr, 10)} ${toValue} ${preRoll.durationMs}`, signal);
   }
-  motionPlayer.lastSent = lastSent;
+  preRoll.dispatched = true;
 }
 
 function tickMotionPlayback() {
@@ -3143,37 +3334,24 @@ function tickMotionPlayback() {
   // to this motion's start value. Playhead clock doesn't advance until
   // each servo has actually been commanded to its target value.
   //
-  // Exit condition is dispatch-based, not wall-clock: we wait until every
-  // servo in the pre-roll set has had its target value pushed onto the
-  // wire (motionLastDispatched matches preRoll.toValues). The wall-clock
-  // durationMs governs the GLIDE shape (how fast the progress curve
-  // advances) but not when we stop. Without this, HTTP/1.1 head-of-line
-  // blocking on a slow Arduino response can stall the glide partway and
-  // the wall-clock would expire with the servo only halfway moved —
-  // causing a visible jerk when the main timeline starts commanding
-  // values from a different anchor.
-  //
-  // Safety ceiling at 2x durationMs (or 8s absolute) so a totally
-  // unresponsive board doesn't hang the editor forever — the timeline
-  // proceeds with whatever the servo could reach.
+  // Pre-roll is a single timed DMOVE to each start pose. The playhead
+  // stays parked until that move's duration has elapsed, with a safety
+  // ceiling in case a board stops responding.
   if (motionPlayer.preRoll && motionPlayer.preRoll.active) {
     const elapsed = performance.now() - motionPlayer.preRoll.startedAt;
-    const progress = Math.min(1, elapsed / motionPlayer.preRoll.durationMs);
-    const allReached = Array.from(motionPlayer.preRoll.toValues.entries())
-      .every(([key, toValue]) => motionLastDispatched.get(key) === toValue);
-    const safetyCap = elapsed >= Math.max(motionPlayer.preRoll.durationMs * 2, 8000);
-    const preDone = allReached || safetyCap;
-    if (performance.now() - motionPlayer.lastSendAt >= 200 || preDone) {
+    if (!motionPlayer.preRoll.dispatched) {
+      _dispatchPreRoll(motionPlayer.preRoll);
       motionPlayer.lastSendAt = performance.now();
-      _sendPreRollFrame(motionPlayer.preRoll, preDone ? 1 : progress);
     }
+    const safetyCap = elapsed >= Math.max(motionPlayer.preRoll.durationMs * 2, 8000);
+    const preDone = elapsed >= motionPlayer.preRoll.durationMs || safetyCap;
     if (preDone) {
       motionPlayer.preRoll.active = false;
       motionPlayer.startedAt = performance.now();
       motionPlayer.lastSendAt = 0;
       motionPlayer.lastSent = {};
       motionPlayer.segmentDispatched = new Map();
-      const exitReason = allReached ? "" : " (timed out — board slow)";
+      const exitReason = safetyCap ? " (timed out — board slow)" : "";
       setMotionStatus(`playing live · ${motion.name || motion.id}${exitReason}`, "amber");
     }
     motionPlayer.raf = requestAnimationFrame(tickMotionPlayback);
@@ -3231,9 +3409,15 @@ function tickMotionPlayback() {
 
 function playMotionLive() {
   const motion = readMotionFromDom();
+  const feasibility = analyzeMotionServoFeasibility(motion);
+  if (feasibility.invalid.length) {
+    setMotionStatus(`blocked · ${formatServoFeasibilityFinding(feasibility.invalid[0])}`, "alert");
+    return;
+  }
   saveCurrentMotion(motion);
   stopMotionPlayback(false);
   const preRoll = _planMotionPreRoll(motion);
+  const warningSuffix = servoFeasibilityWarningSuffix(feasibility);
   motionPlayer = {
     active: true, raf: 0,
     startedAt: performance.now(), lastSendAt: 0,
@@ -3252,9 +3436,9 @@ function playMotionLive() {
   motionPlayEl.disabled = true;
   motionStopEl.disabled = false;
   if (preRoll) {
-    setMotionStatus(`warming up · ${(preRoll.durationMs / 1000).toFixed(1)}s glide to start`, "amber");
+    setMotionStatus(`warming up · ${(preRoll.durationMs / 1000).toFixed(1)}s glide to start${warningSuffix}`, "amber");
   } else {
-    setMotionStatus(`playing live · ${motion.name || motion.id}`, "amber");
+    setMotionStatus(`playing live · ${motion.name || motion.id}${warningSuffix}`, "amber");
   }
   tickMotionPlayback();
 }
@@ -3425,15 +3609,27 @@ window.addEventListener("pointermove", e => {
   const motion = motionDraftOverride;
   const track = motion.tracks.find(t => motionTrackKey(t) === motionDrag.trackKey);
   if (!track || !track.keyframes[motionDrag.keyIndex]) return;
-  track.keyframes[motionDrag.keyIndex] = { ...track.keyframes[motionDrag.keyIndex], atMs: point.atMs, value: point.value };
+  const constrained = constrainServoKeyframePoint(track, spec, motion.durationMs, point, motionDrag.keyIndex);
+  if (!constrained?.point) {
+    setMotionStatus(`blocked · ${spec.label} needs more time for ${Math.round(point.value)}%`, "alert");
+    return;
+  }
+  track.keyframes[motionDrag.keyIndex] = {
+    ...track.keyframes[motionDrag.keyIndex],
+    atMs: constrained.point.atMs,
+    value: constrained.point.value,
+  };
   track.keyframes = normalizeKeyframes(track, motion.durationMs, spec);
   // normalizeKeyframes resorts by atMs — find the new index of the
   // keyframe we just moved so subsequent pointermoves keep targeting
   // the same logical keyframe, not whichever happens to share its old
   // slot.
-  const movedIdx = track.keyframes.findIndex(k => k.atMs === point.atMs && k.value === point.value);
+  const movedIdx = track.keyframes.findIndex(k => k.atMs === constrained.point.atMs && k.value === constrained.point.value);
   if (movedIdx >= 0) motionDrag.keyIndex = movedIdx;
   motionDirty = true;
+  if (constrained.clamped) {
+    setMotionStatus(`clamped · ${spec.label} ${Math.round(constrained.point.value)}% needs ${constrained.point.atMs}ms here`, "amber");
+  }
   renderMotionEditor();
 });
 window.addEventListener("pointerup", () => {
@@ -3461,9 +3657,15 @@ motionPlayEl.addEventListener("click", playMotionLive);
 motionStopEl.addEventListener("click", () => stopMotionPlayback(true));
 $("#motionFire").addEventListener("click", async () => {
   const motion = readMotionFromDom();
+  const feasibility = analyzeMotionServoFeasibility(motion);
+  if (feasibility.invalid.length) {
+    setMotionStatus(`blocked · ${formatServoFeasibilityFinding(feasibility.invalid[0])}`, "alert");
+    return;
+  }
   saveCurrentMotion(motion);
   const ip = await broadcastCommand(`MOTION ${motion.id}`);
-  setMotionStatus(ip ? `sent MOTION ${motion.id}` : "MOTION command failed", ip ? "phosphor" : "alert");
+  const warningSuffix = servoFeasibilityWarningSuffix(feasibility);
+  setMotionStatus(ip ? `sent MOTION ${motion.id}${warningSuffix}` : "MOTION command failed", ip ? "phosphor" : "alert");
   setTimeout(pollOnce, 200);
 });
 $("#motionSave").addEventListener("click", () => {
@@ -3926,6 +4128,14 @@ async function bakeToAllBoards() {
     bakeLog(`unsupported schemaVersion ${lib.schemaVersion}, expected ${SCHEMA_VERSION}`, "alert");
     return;
   }
+  const feasibility = analyzeLibraryServoFeasibility(lib);
+  if (feasibility.invalid.length) {
+    bakeLog(`bake blocked: ${formatServoFeasibilityFinding(feasibility.invalid[0])}`, "alert");
+    return;
+  }
+  if (feasibility.warnings.length) {
+    bakeLog(`bake warning: ${formatServoFeasibilityFinding(feasibility.warnings[0])}`, "amber");
+  }
   if (boards.length === 0) { bakeLog("no boards configured", "alert"); return; }
 
   bakeAllEl.disabled = true;
@@ -4083,6 +4293,14 @@ bakeFileEl.addEventListener("change", async () => {
 
 bakeExportEl.addEventListener("click", () => {
   const lib = loadLibrary() || emptyLibrary();
+  const feasibility = analyzeLibraryServoFeasibility(lib);
+  if (feasibility.invalid.length) {
+    bakeLog(`export blocked: ${formatServoFeasibilityFinding(feasibility.invalid[0])}`, "alert");
+    return;
+  }
+  if (feasibility.warnings.length) {
+    bakeLog(`export warning: ${formatServoFeasibilityFinding(feasibility.warnings[0])}`, "amber");
+  }
   const blob = new Blob([JSON.stringify(lib, null, 2)], { type: "application/json" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");

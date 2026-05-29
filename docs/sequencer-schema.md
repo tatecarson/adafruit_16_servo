@@ -100,7 +100,7 @@ A `(boardId, kind, channel)` triple must be unique within a Motion (no two track
 | Field | Type | Required | Notes |
 |---|---|---|---|
 | `atMs` | integer ≥ 0 | yes | Strictly increasing within a track. First keyframe must be `atMs: 0`. Last keyframe's `atMs` must equal Motion's `durationMs`. |
-| `value` | number | yes | Servo: 0–180 (degrees). DC: −100..+100 (signed speed). |
+| `value` | number | yes | Servo: 0–100 absolute percent down (`0` = fully up/retracted, `100` = fully down/lowered). DC: −100..+100 (signed speed). |
 | `easing` | `"linear"` | no | Default `"linear"`. Only `"linear"` is supported in `schemaVersion: 1`. Reserved values for future use: `"easeIn"`, `"easeOut"`, `"easeInOut"`, `"hold"`. The `easing` on a keyframe controls how the value is approached **from the previous keyframe** (i.e., it's the easing of the incoming segment). The first keyframe's `easing` is ignored. |
 | `bypassRamp` | boolean | no | DC tracks only. Historically reserved for opting out of `motorState.ramping`. As of `schemaVersion: 1` the firmware **always** bypasses ramping during `MOTION` playback (see Interpolation rules below), so this field has no effect and is accepted but ignored. May be repurposed in a future schema version. |
 
@@ -108,7 +108,7 @@ A `(boardId, kind, channel)` triple must be unique within a Motion (no two track
 
 - Between two adjacent keyframes at `t0`/`v0` and `t1`/`v1`, with `t0 < t < t1`:
   - `linear`: `value(t) = v0 + (v1 - v0) * (t - t0) / (t1 - t0)`
-- Servo values are written to the PCA9685 every tick (existing servo tick loop).
+- Servo values are interpreted as absolute percent-down positions, then mapped through each channel's calibrated up/down travel before being written to the PCA9685 every tick.
 - DC values are written **directly** to the motor outputs (bypassing the `motorState.ramping` smoothing used by `ROTATE`). The keyframe curve is the only smoothing applied during `MOTION` playback — author smooth DC ramps as additional keyframes rather than relying on the ramp path. `STOP` and any cancelling command also cut DC to 0 abruptly via the same direct path.
 - Motion playback ends exactly at `durationMs`; the final keyframe's value is the resting state.
 

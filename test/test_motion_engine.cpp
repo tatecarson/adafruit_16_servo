@@ -48,9 +48,19 @@ SequenceRuntime sequenceRunner;
 // cross-engine cancel hook so motion_engine.h compiles standalone.
 void cancelSequencePlayback() {}
 
+uint16_t degreesToPulse(uint8_t servo, uint16_t degrees) {
+  degrees = constrain(degrees, 0, servoConfig[servo].totalDegrees);
+  return map(degrees, 0, servoConfig[servo].totalDegrees, servoConfig[servo].minPulse, servoConfig[servo].maxPulse);
+}
+
 uint16_t sequenceDegreesToPulse(uint8_t servo, uint16_t degrees) {
   degrees = constrain(degrees, 0, 180);
   return map(degrees, 0, 180, servoConfig[servo].minPulse, servoConfig[servo].maxPulse);
+}
+
+uint16_t percentToDegrees(uint8_t servo, uint8_t percent) {
+  percent = constrain(percent, 0, 100);
+  return map(percent, 0, 100, servoConfig[servo].upDegrees, servoConfig[servo].downDegrees);
 }
 
 #include "../adafruit_16_servo/motion_engine.h"
@@ -64,9 +74,9 @@ static int _tests_run = 0, _tests_passed = 0, _tests_failed = 0;
 static const char* kBlob =
   "{\"schemaVersion\":1,"
   "\"motions\":["
-    "{\"id\":\"tidal-drift\",\"name\":\"Tidal Drift\",\"scope\":\"board\",\"durationMs\":1000,"
-     "\"tracks\":["
-       "{\"kind\":\"servo\",\"boardId\":1,\"channel\":0,\"keyframes\":[{\"atMs\":0,\"value\":0},{\"atMs\":1000,\"value\":180}]},"
+     "{\"id\":\"tidal-drift\",\"name\":\"Tidal Drift\",\"scope\":\"board\",\"durationMs\":1000,"
+      "\"tracks\":["
+       "{\"kind\":\"servo\",\"boardId\":1,\"channel\":0,\"keyframes\":[{\"atMs\":0,\"value\":0},{\"atMs\":1000,\"value\":100}]},"
        "{\"kind\":\"dc\",\"boardId\":1,\"channel\":0,\"keyframes\":[{\"atMs\":0,\"value\":0},{\"atMs\":500,\"value\":50},{\"atMs\":1000,\"value\":-50}]}"
      "]},"
     "{\"id\":\"other\",\"name\":\"Other\",\"scope\":\"board\",\"durationMs\":100,"
@@ -81,8 +91,9 @@ static void reset_state() {
   for (uint8_t i = 0; i < NUM_SERVOS; i++) {
     servoConfig[i].minPulse = 150;
     servoConfig[i].maxPulse = 600;
-    servoConfig[i].totalDegrees = 180;
-    servoConfig[i].downDegrees = 180;
+    servoConfig[i].totalDegrees = 1800;
+    servoConfig[i].upDegrees = 0;
+    servoConfig[i].downDegrees = 1800;
     servoState[i].posPulse = 375;
     servoState[i].targetPulse = 375;
     servoState[i].moving = false;
