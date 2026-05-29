@@ -3112,8 +3112,7 @@ function constrainServoKeyframePoint(track, spec, motionDurationMs, draftPoint, 
       break;
     }
   }
-  if (!prev && frames.length) prev = frames[0];
-  if (!next && frames.length) next = frames[frames.length - 1];
+  if (!prev && next && next.atMs === draftPoint.atMs && next.value === draftPoint.value) prev = next;
   const lowerBound = prev
     ? prev.atMs + Math.ceil(Math.abs(draftPoint.value - prev.value) * SERVO_FEASIBILITY_MS_PER_PERCENT)
     : 0;
