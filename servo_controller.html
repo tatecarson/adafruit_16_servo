@@ -1076,6 +1076,13 @@
   .baked-row .bn { font: 600 12px/1.2 var(--mono); color: var(--ink); flex: 0 0 auto; }
   .baked-row .bid { font: 600 10px/1 var(--mono); color: var(--ink-dim); background: var(--bg-deep); border: 1px solid var(--rule); padding: 4px 6px; }
   .baked-row .bmeta { font: 500 10px/1 var(--mono); color: var(--ink-mute); margin-left: auto; }
+  .bb-toggle { cursor: pointer; user-select: none; }
+  .bb-toggle:hover { color: var(--ink); }
+  .bb-summary { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; font: 600 11px/1.4 var(--mono); color: var(--ink-dim); padding-top: 4px; }
+  .bb-summary .s-ok { color: var(--ink-dim); }
+  .bb-summary .s-warn { color: var(--amber); }
+  .bb-summary .s-over { color: var(--alert); }
+  .bb-summary .s-hint { color: var(--ink-mute); font-weight: 500; }
   .bake-budget { width: 100%; display: flex; flex-direction: column; gap: 10px; padding-top: 4px; }
   .bb-bars { display: flex; flex-wrap: wrap; gap: 8px; }
   .bb-bar { flex: 1 1 160px; border: 1px solid var(--rule); padding: 6px 8px; }
@@ -1565,7 +1572,7 @@
     </div>
 
     <div class="group" style="flex-basis:100%">
-      <div class="gname">Bake budget <span class="key">FIT</span></div>
+      <div class="gname bb-toggle" id="bakeBudgetToggle" title="Show/hide per-board size + prune"><span id="bakeBudgetCaret">+</span> Bake budget <span class="key">FIT</span></div>
       <div id="bakeBudget" class="bake-budget"></div>
     </div>
 
@@ -2566,6 +2573,7 @@ const bakeLogEl     = $("#bakeLog");
 const bakeSummaryEl = $("#bakeLibSummary");
 const bakedPanelEl  = $("#bakedPanel");
 const bakeBudgetEl  = $("#bakeBudget");
+const bakeBudgetCaretEl = $("#bakeBudgetCaret");
 
 const seqSelectEl     = $("#seqSelect");
 const seqNameEl       = $("#seqName");
@@ -2654,6 +2662,8 @@ function renderLibSummary() {
 // from the real conformed bake blob (sliceForBoard). Sequences/setlists bake
 // in full to every board, so their own size is their per-board cost; a
 // motion's size is its conformed all-tracks size (a relative magnitude).
+let bakeBudgetExpanded = false;
+
 function renderBakeInventory() {
   if (!bakeBudgetEl) return;
   const lib = loadLibrary();
@@ -2661,10 +2671,24 @@ function renderBakeInventory() {
   const enc = new TextEncoder();
   const size = obj => enc.encode(JSON.stringify(obj)).length;
 
-  const bars = [1, 2, 3].map(boardId => {
+  const boardBytes = [1, 2, 3].map(boardId => {
     const bytes = size(sliceForBoard(lib, boardId));
-    const pct = Math.min(100, Math.round((bytes / STORAGE_PAYLOAD_MAX) * 100));
     const level = bytes > STORAGE_PAYLOAD_MAX ? "over" : (bytes >= STORAGE_PAYLOAD_MAX * 0.8 ? "warn" : "ok");
+    return { boardId, bytes, level };
+  });
+  if (bakeBudgetCaretEl) bakeBudgetCaretEl.textContent = bakeBudgetExpanded ? "−" : "+";
+
+  // Collapsed: one-line per-board summary (still flags over/near-full so you
+  // notice without expanding). Click the header to expand and prune.
+  if (!bakeBudgetExpanded) {
+    const parts = boardBytes.map(b =>
+      `<span class="s-${b.level}">B${b.boardId} ${b.bytes}/${STORAGE_PAYLOAD_MAX}B</span>`).join("");
+    bakeBudgetEl.innerHTML = `<div class="bb-summary">${parts}<span class="s-hint">· click to trim</span></div>`;
+    return;
+  }
+
+  const bars = boardBytes.map(({ boardId, bytes, level }) => {
+    const pct = Math.min(100, Math.round((bytes / STORAGE_PAYLOAD_MAX) * 100));
     return `<div class="bb-bar ${level}"><div class="bb-label"><span>board ${boardId}</span><span>${bytes} / ${STORAGE_PAYLOAD_MAX}B</span></div>`
       + `<div class="bb-track"><div class="bb-fill" style="width:${pct}%"></div></div></div>`;
   }).join("");
@@ -4853,6 +4877,12 @@ bakedPanelEl.addEventListener("click", async (e) => {
   const ok = await sendCommand(ip, `MOTION ${id}`);
   bakeLog(ok ? `${ip}: MOTION ${id} sent` : `${ip}: MOTION ${id} failed — board unreachable`, ok ? "phosphor" : "alert");
   btn.disabled = false;
+});
+
+// Collapsed by default to keep // 03 tidy; expand to see bars + prune (servo-gwa).
+$("#bakeBudgetToggle").addEventListener("click", () => {
+  bakeBudgetExpanded = !bakeBudgetExpanded;
+  renderBakeInventory();
 });
 
 // Prune from the bake inventory (servo-gwa): delete a motion/sequence/setlist
