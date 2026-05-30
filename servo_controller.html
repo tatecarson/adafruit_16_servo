@@ -1076,8 +1076,9 @@
   .baked-row .bn { font: 600 12px/1.2 var(--mono); color: var(--ink); flex: 0 0 auto; }
   .baked-row .bid { font: 600 10px/1 var(--mono); color: var(--ink-dim); background: var(--bg-deep); border: 1px solid var(--rule); padding: 4px 6px; }
   .baked-row .bmeta { font: 500 10px/1 var(--mono); color: var(--ink-mute); margin-left: auto; }
-  .bb-toggle { cursor: pointer; user-select: none; }
+  .bb-toggle { cursor: pointer; user-select: none; appearance: none; -webkit-appearance: none; background: none; border: none; padding: 0; text-align: left; display: block; }
   .bb-toggle:hover { color: var(--ink); }
+  .bb-toggle:focus-visible { outline: 1px solid var(--amber); outline-offset: 2px; }
   .bb-summary { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; font: 600 11px/1.4 var(--mono); color: var(--ink-dim); padding-top: 4px; }
   .bb-summary .s-ok { color: var(--ink-dim); }
   .bb-summary .s-warn { color: var(--amber); }
@@ -1572,7 +1573,7 @@
     </div>
 
     <div class="group" style="flex-basis:100%">
-      <div class="gname bb-toggle" id="bakeBudgetToggle" title="Show/hide per-board size + prune"><span id="bakeBudgetCaret">+</span> Bake budget <span class="key">FIT</span></div>
+      <button type="button" class="gname bb-toggle" id="bakeBudgetToggle" title="Show/hide per-board size + prune" aria-expanded="false" aria-controls="bakeBudget"><span id="bakeBudgetCaret">+</span> Bake budget <span class="key">FIT</span></button>
       <div id="bakeBudget" class="bake-budget"></div>
     </div>
 
@@ -4882,6 +4883,7 @@ bakedPanelEl.addEventListener("click", async (e) => {
 // Collapsed by default to keep // 03 tidy; expand to see bars + prune (servo-gwa).
 $("#bakeBudgetToggle").addEventListener("click", () => {
   bakeBudgetExpanded = !bakeBudgetExpanded;
+  $("#bakeBudgetToggle").setAttribute("aria-expanded", String(bakeBudgetExpanded));
   renderBakeInventory();
 });
 
@@ -4898,12 +4900,18 @@ bakeBudgetEl.addEventListener("click", (e) => {
   else                                          { id = btn.getAttribute("data-del-setlist");  arr = "setlists";  kind = "setlist"; }
   if (!confirm(`Delete ${kind} "${id}" from the library?\nThis can't be undone (export first if unsure).`)) return;
   lib[arr] = (lib[arr] || []).filter(x => x.id !== id);
+  // Clear selection + refresh the matching editor so it doesn't show a
+  // deleted item until the next interaction (coderabbit, servo-gwa).
   if (kind === "motion" && currentMotionId === id) currentMotionId = null;
+  if (kind === "sequence" && currentSeqId === id) currentSeqId = null;
+  if (kind === "setlist" && currentSetlistId === id) currentSetlistId = null;
   if (kind === "setlist" && lib.activeSetlistId === id) lib.activeSetlistId = null;
   saveLibrary(lib);
   bakeLog(`removed ${kind} ${id}`, "amber");
   renderLibSummary();
   if (kind === "motion") renderMotionEditor();
+  else if (kind === "sequence") renderSequencer();
+  else if (kind === "setlist") renderSetlist();
 });
 
 seqSelectEl.addEventListener("change", () => {
