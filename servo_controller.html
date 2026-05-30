@@ -2494,6 +2494,11 @@ const SCHEMA_VERSION = 1;
 // playback (servo-4hc).
 const MOTION_MAX_KEYFRAMES = 64;
 const MOTION_MAX_TRACKS = 17;
+// EEPROM slot byte budget for a whole per-board bake blob (storage.h
+// STORAGE_PAYLOAD_MAX). The firmware refuses to write a larger slot; guard it
+// before POST so the operator gets a clear "trim the library" message rather
+// than a mid-write client timeout (servo-4hc).
+const STORAGE_PAYLOAD_MAX = 4080;
 // Firmware POST /sequences blocks on EEPROM writes. UNO R4 dataflash byte
 // writes are ~5-10ms each plus per-block erase, so a multi-KB bake can
 // spend 60s+ in storageWriteSlot before the HTTP response goes out. 15s
@@ -4469,6 +4474,19 @@ async function bakeToAllBoards() {
     const diff = diffBlob(prev, blob);
     return { ip, boardId, blob, json, bytes, diff };
   });
+
+  // Guard the EEPROM slot size (servo-4hc): the firmware rejects any blob
+  // over STORAGE_PAYLOAD_MAX, but it does so mid-write, which surfaces as a
+  // confusing client timeout. Catch it here and name the offending board(s)
+  // + overage so the operator trims the library instead of guessing.
+  const tooBig = plans.filter(p => p.bytes.length > STORAGE_PAYLOAD_MAX);
+  if (tooBig.length) {
+    for (const p of tooBig) {
+      bakeLog(`bake blocked: ${p.ip} (board ${p.boardId}) blob ${p.bytes.length}B exceeds ${STORAGE_PAYLOAD_MAX}B slot — trim the library`, "alert");
+    }
+    bakeAllEl.disabled = false;
+    return;
+  }
 
   const agg = plans.reduce((a, p) => ({
     added:   a.added   + p.diff.added,
