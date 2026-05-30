@@ -1016,6 +1016,13 @@ when baked should be run once servo-67d lands.
 - [x] `make -C test storage` — 22/22 storage / CRC / bake validation
 - [ ] Browser Playwright smoke — blocked in this environment: bundled wrapper fetched through npm path, then exited with `sh: playwright-cli: command not found`
 
+**2026-05-30 (servo-0dj bake timeout recovery):**
+- [x] `node -e "new Function(...inline script...)"` — `servo_controller.html` inline script syntax OK
+- [x] `make -C test` — 7/7 time multiplier
+- [x] `make -C test motion` — 6/6 motion engine
+- [x] `make -C test storage` — 22/22 storage / CRC / bake validation
+- [ ] Hardware bake timeout recovery — not run in this session; requires a slow board or induced POST timeout, then confirmation that `/sequences/info` retry recovers the bake.
+
 ---
 
 ## Servo Calibration Notes
