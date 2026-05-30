@@ -2486,6 +2486,14 @@ function renderOtaBoardButtons() {
 const LIB_KEY = "servoCluster.library";
 const LIB_SNAP_PREFIX = "servoCluster.lastBake.";
 const SCHEMA_VERSION = 1;
+// Firmware motion limits (servo_runtime.h). MOTION_MAX_KEYFRAMES is the TOTAL
+// keyframe budget across all tracks of a motion (one shared counter in the
+// firmware's motionParseTrack), not per-track. MOTION_MAX_TRACKS is the total
+// track count. Mirrored here so the bake can block over-budget motions with a
+// clear message instead of letting the board reject them as bad-track at
+// playback (servo-4hc).
+const MOTION_MAX_KEYFRAMES = 64;
+const MOTION_MAX_TRACKS = 17;
 // Firmware POST /sequences blocks on EEPROM writes. UNO R4 dataflash byte
 // writes are ~5-10ms each plus per-block erase, so a multi-KB bake can
 // spend 60s+ in storageWriteSlot before the HTTP response goes out. 15s
@@ -4240,8 +4248,67 @@ function addSequenceStep() {
   saveCurrentSequence(seq);
 }
 
+// Conform one track's keyframes to the firmware's contract for baking
+// (servo-4hc). The firmware (motionParseTrack) requires every track to have
+// >=2 keyframes, the first at atMs 0, strictly increasing times, and the
+// LAST keyframe exactly at the motion duration. The editor model
+// deliberately doesn't enforce this (motions "end on the last explicit
+// keyframe", and a default track is a single keyframe at 0). So at bake time
+// we normalize (sort/clamp/dedupe/start-at-0 via normalizeKeyframes) and then
+// pad a trailing keyframe at durationMs holding the last value. Static tracks
+// become a valid 2-keyframe hold [0:v, dur:v]. Editor state is untouched.
+function conformTrackForBake(track, durationMs) {
+  const spec = MOTION_TRACK_SPECS.find(s =>
+    s.boardId === track.boardId && s.kind === track.kind && s.channel === track.channel)
+    || { kind: track.kind, min: -100, max: 100 };
+  const frames = normalizeKeyframes(track, durationMs, spec); // sorted, clamped, first at 0
+  // Guarantee the last keyframe lands exactly at durationMs, holding the last
+  // value (servos hold position, DC holds speed — the operator adds an
+  // explicit 0/STOP if they want it to stop).
+  const last = frames[frames.length - 1];
+  if (!last || last.atMs !== durationMs) {
+    frames.push({ atMs: durationMs, value: last ? last.value : 0 });
+  }
+  // A lone keyframe (e.g. one at exactly durationMs) still needs a 0 anchor.
+  if (frames.length < 2 && frames[0]?.atMs !== 0) {
+    frames.unshift({ atMs: 0, value: frames[0] ? frames[0].value : 0 });
+  }
+  return { ...track, keyframes: frames };
+}
+
+// Per-board conformance check (servo-4hc): conform every track, then verify
+// the slice fits the firmware's TOTAL keyframe and track budgets. Returns
+// findings for motions that can't be baked even after conforming — the only
+// cases the bake must block + name. Mirrors analyzeLibraryServoFeasibility.
+function analyzeBakeConformance(lib) {
+  const report = { errors: [] };
+  for (const boardId of [1, 2, 3]) {
+    for (const m of lib.motions || []) {
+      const boardTracks = (m.tracks || []).filter(t => t.boardId === boardId);
+      if (!boardTracks.length) continue;
+      const durationMs = Math.max(100, parseInt(m.durationMs, 10) || 8000);
+      const conformed = boardTracks.map(t => conformTrackForBake(t, durationMs));
+      const totalKeyframes = conformed.reduce((n, t) => n + t.keyframes.length, 0);
+      if (conformed.length > MOTION_MAX_TRACKS) {
+        report.errors.push({ motionId: m.id, motionName: m.name || m.id, boardId,
+          reason: `${conformed.length} tracks exceeds firmware max ${MOTION_MAX_TRACKS}` });
+      }
+      if (totalKeyframes > MOTION_MAX_KEYFRAMES) {
+        report.errors.push({ motionId: m.id, motionName: m.name || m.id, boardId,
+          reason: `${totalKeyframes} keyframes (board ${boardId}) exceeds firmware max ${MOTION_MAX_KEYFRAMES}` });
+      }
+    }
+  }
+  return report;
+}
+
+function formatBakeConformanceError(e) {
+  return `${e.motionName} · board ${e.boardId}: ${e.reason}`;
+}
+
 // Slice the library for a single board: keep only Motion tracks whose
-// boardId matches; drop Motions that end up with no tracks. Sequences,
+// boardId matches; drop Motions that end up with no tracks. Each kept track
+// is conformed to the firmware's keyframe contract (servo-4hc). Sequences,
 // setlists, schedulerConfig, activeSetlistId are full-library on every
 // board so any board can become leader (per schema §5).
 function sliceForBoard(lib, boardId) {
@@ -4249,7 +4316,9 @@ function sliceForBoard(lib, boardId) {
   for (const m of lib.motions || []) {
     const tracks = (m.tracks || []).filter(t => t.boardId === boardId);
     if (tracks.length === 0) continue;
-    motions.push({ ...m, tracks });
+    const durationMs = Math.max(100, parseInt(m.durationMs, 10) || 8000);
+    const conformedTracks = tracks.map(t => conformTrackForBake(t, durationMs));
+    motions.push({ ...m, tracks: conformedTracks });
   }
   return {
     schemaVersion: SCHEMA_VERSION,
@@ -4357,6 +4426,14 @@ async function bakeToAllBoards() {
   }
   if (feasibility.warnings.length) {
     bakeLog(`bake warning: ${formatServoFeasibilityFinding(feasibility.warnings[0])}`, "amber");
+  }
+  // Conformance: tracks are auto-fixed to the firmware keyframe contract in
+  // sliceForBoard, but a motion that still exceeds the firmware's total
+  // keyframe/track budget can't be baked — block + name it (servo-4hc).
+  const conformance = analyzeBakeConformance(lib);
+  if (conformance.errors.length) {
+    bakeLog(`bake blocked: ${formatBakeConformanceError(conformance.errors[0])}`, "alert");
+    return;
   }
   if (boards.length === 0) { bakeLog("no boards configured", "alert"); return; }
 
