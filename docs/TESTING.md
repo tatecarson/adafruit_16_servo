@@ -1023,6 +1023,13 @@ when baked should be run once servo-67d lands.
 - [x] `make -C test storage` — 22/22 storage / CRC / bake validation
 - [ ] Hardware bake timeout recovery — not run in this session; requires a slow board or induced POST timeout, then confirmation that `/sequences/info` retry recovers the bake.
 
+**2026-05-30 (servo-974 board availability recovery):**
+- [x] `make -C test` — 7/7 time multiplier
+- [x] `make -C test motion` — 6/6 motion engine
+- [x] `make -C test storage` — 22/22 storage / CRC / bake validation
+- [x] `make -C test size` — 119976 / 122880 bytes (+2904 headroom)
+- [ ] Hardware reconnect smoke — not run in this session. Test by letting a board appear online in the router after Wi-Fi loss/rejoin, then confirming `GET /status.json`, `GET /boardId`, browser cards, OTA, and UDP sync recover without power-cycling.
+
 ---
 
 ## Servo Calibration Notes

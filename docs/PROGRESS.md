@@ -174,6 +174,10 @@ adafruit_16_servo/
 
 29. `fix: retry bake recovery info probes`
 
+## Git Commits (Network Recovery)
+
+30. `fix: restart network services after wifi reconnect`
+
 ## Future Features
 
 - [ ] **EEPROM calibration storage** - Save/load servo calibrations (type, min, max, stop pulse) to persist across power cycles. Commands: `SAVE`, `LOAD`, `CLEAR`

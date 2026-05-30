@@ -102,6 +102,20 @@ static void printWifiStatus() {
   Serial.print(F("IP: ")); Serial.println(WiFi.localIP());
 }
 
+static bool wifiHasUsableIp() {
+  return WiFi.status() == WL_CONNECTED && !ipIsUnset(WiFi.localIP());
+}
+
+static void networkServicesBegin() {
+  ArduinoOTA.onStart(onOtaStart);
+  ArduinoOTA.beforeApply(onOtaApply);
+  ArduinoOTA.onError(onOtaError);
+  ArduinoOTA.begin(WiFi.localIP(), OTA_HOSTNAME, OTA_PASSWORD, InternalStorage);
+  webBegin();
+  syncBegin();
+  otaReady = true;
+}
+
 static void wifiAndOtaBegin() {
   Serial.print(F("WiFi firmware: "));
   Serial.println(WiFi.firmwareVersion());
@@ -120,13 +134,7 @@ static void wifiAndOtaBegin() {
     printWifiStatus();
     return;
   }
-  ArduinoOTA.onStart(onOtaStart);
-  ArduinoOTA.beforeApply(onOtaApply);
-  ArduinoOTA.onError(onOtaError);
-  ArduinoOTA.begin(WiFi.localIP(), OTA_HOSTNAME, OTA_PASSWORD, InternalStorage);
-  webBegin();
-  syncBegin();
-  otaReady = true;
+  networkServicesBegin();
   Serial.println(F("OTA + sync ready."));
   Serial.print(F("Node id: ")); Serial.println(syncNodeId());
   Serial.print(F("Sync UDP port: ")); Serial.println(SYNC_PORT);
@@ -387,13 +395,21 @@ static void maintainWifi() {
   if (now - lastCheckMs < CHECK_INTERVAL_MS) return;
   lastCheckMs = now;
 
-  if (WiFi.status() == WL_CONNECTED && !ipIsUnset(WiFi.localIP())) {
-    reconnecting = false;
+  if (wifiHasUsableIp()) {
+    if (!otaReady || reconnecting) {
+      reconnecting = false;
+      networkServicesBegin();
+      Serial.println(F("WiFi ready; HTTP/OTA/sync restarted."));
+      Serial.print(F("Control: http://")); Serial.print(WiFi.localIP()); Serial.println(F("/"));
+      printWifiStatus();
+    }
     return;
   }
 
   if (!reconnecting) {
     Serial.println(F("WiFi link lost; attempting reconnect..."));
+    otaReady = false;
+    otaInProgress = false;
     WiFi.disconnect();
     delay(100);
     WiFi.begin(wifiSsid, wifiPass);
@@ -415,9 +431,10 @@ void loop() {
   unsigned long t0 = millis();
   unsigned long tMaint = 0, tOta = 0, tWeb = 0, tSync = 0, tAnim = 0;
 
+  unsigned long s = millis();
+  maintainWifi();             tMaint = millis() - s;
+
   if (otaReady) {
-    unsigned long s = millis();
-    maintainWifi();             tMaint = millis() - s;
     s = millis();
     ArduinoOTA.poll();          tOta   = millis() - s;
     s = millis();
