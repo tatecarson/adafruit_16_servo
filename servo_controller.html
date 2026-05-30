@@ -1063,6 +1063,19 @@
     min-width: 110px;
     max-width: 220px;
   }
+  .baked-panel { width: 100%; display: flex; flex-direction: column; gap: 10px; padding-top: 4px; }
+  .baked-board { border: 1px solid var(--rule); padding: 8px 10px; }
+  .baked-board > .bb-head {
+    font: 700 9px/1.4 var(--label); text-transform: uppercase; letter-spacing: .18em;
+    color: var(--ink-dim); margin-bottom: 8px; display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap;
+  }
+  .baked-board .bb-stale { color: var(--amber); }
+  .baked-board .bb-empty { color: var(--ink-mute); font: 500 11px/1.4 var(--mono); text-transform: none; letter-spacing: 0; }
+  .baked-row { display: flex; align-items: center; gap: 10px; padding: 4px 0; border-top: 1px dashed var(--rule); }
+  .baked-row:first-of-type { border-top: none; }
+  .baked-row .bn { font: 600 12px/1.2 var(--mono); color: var(--ink); flex: 0 0 auto; }
+  .baked-row .bid { font: 600 10px/1 var(--mono); color: var(--ink-dim); background: var(--bg-deep); border: 1px solid var(--rule); padding: 4px 6px; }
+  .baked-row .bmeta { font: 500 10px/1 var(--mono); color: var(--ink-mute); margin-left: auto; }
   .motion-picker select,
   .motion-picker input,
   .motion-toolbar input {
@@ -1526,6 +1539,11 @@
         <button class="cmd compact" id="bakeRetry" disabled title="Re-bake only the boards that failed/were unreachable in the last bake">Retry Failed</button>
         <button class="cmd compact" id="bakeRestore">Restore Previous</button>
       </div>
+    </div>
+
+    <div class="group" style="flex-basis:100%">
+      <div class="gname">Baked on boards <span class="key">RUN</span></div>
+      <div id="bakedPanel" class="baked-panel"></div>
     </div>
 
     <div id="bakeLog" style="padding:8px 0 0; font:500 11px/1.6 var(--mono); color:var(--ink-dim); max-height:200px; overflow-y:auto"></div>
@@ -2523,6 +2541,7 @@ const bakeRetryEl   = $("#bakeRetry");
 const bakeRestoreEl = $("#bakeRestore");
 const bakeLogEl     = $("#bakeLog");
 const bakeSummaryEl = $("#bakeLibSummary");
+const bakedPanelEl  = $("#bakedPanel");
 
 const seqSelectEl     = $("#seqSelect");
 const seqNameEl       = $("#seqName");
@@ -2601,6 +2620,67 @@ function renderLibSummary() {
   const active = lib.activeSetlistId || "none";
   bakeSummaryEl.textContent = `${m} motion${m===1?"":"s"} · ${s} sequence${s===1?"":"s"} · ${l} setlist${l===1?"":"s"} · active=${active}`;
   bakeAllEl.disabled = boards.length === 0;
+  renderBakedPanel();
+}
+
+function _formatAgo(ms) {
+  if (!ms) return "unknown time";
+  const s = Math.max(0, Math.round((Date.now() - ms) / 1000));
+  if (s < 60) return `${s}s ago`;
+  const min = Math.round(s / 60);
+  if (min < 60) return `${min}m ago`;
+  const h = Math.round(min / 60);
+  if (h < 24) return `${h}h ago`;
+  return `${Math.round(h / 24)}d ago`;
+}
+
+// Baked-on-boards panel (servo-67d): the browser is the source of truth for
+// what it baked — sliceForBoard wrote a per-ip snapshot under
+// LIB_SNAP_PREFIX at bake time. Surface each board's baked motion ids with a
+// Play button (fires MOTION <id> to that board), clear id-vs-name labeling,
+// and a "stale vs editor" flag so the operator can trust what's actually
+// runnable. No firmware change needed.
+function renderBakedPanel() {
+  if (!bakedPanelEl) return;
+  if (!boards.length) {
+    bakedPanelEl.innerHTML = `<div class="bb-empty">no boards configured</div>`;
+    return;
+  }
+  const lib = loadLibrary();
+  const blocks = boards.map(ip => {
+    let snap = null;
+    try { snap = JSON.parse(localStorage.getItem(LIB_SNAP_PREFIX + ip) || "null"); } catch {}
+    if (!snap) {
+      return `<div class="baked-board"><div class="bb-head">${escapeHtml(ip)}</div>`
+        + `<div class="bb-empty">no bake recorded from this browser — Bake to Boards to populate</div></div>`;
+    }
+    const motions = snap.motions || [];
+    const boardId = motions[0]?.tracks?.[0]?.boardId ?? null;
+    // Staleness: does the current editor library still match what was baked?
+    let staleNote = "";
+    if (lib && boardId != null) {
+      const d = diffBlob(snap, sliceForBoard(lib, boardId));
+      const n = d.added + d.changed + d.deleted;
+      if (n) staleNote = `<span class="bb-stale">· edited since bake (${n}) — re-bake to update</span>`;
+    }
+    const head = `<div class="bb-head">${escapeHtml(ip)}`
+      + (boardId != null ? ` · board ${boardId}` : "")
+      + ` · baked ${escapeHtml(_formatAgo(snap.bakedAtMs))}${staleNote}</div>`;
+    if (!motions.length) {
+      return `<div class="baked-board">${head}<div class="bb-empty">bake recorded, but no motions target this board</div></div>`;
+    }
+    const rows = motions.map(mo => {
+      const trackCount = (mo.tracks || []).length;
+      return `<div class="baked-row">`
+        + `<span class="bn">${escapeHtml(mo.name || mo.id)}</span>`
+        + `<code class="bid">id: ${escapeHtml(mo.id)}</code>`
+        + `<button class="cmd compact amber" data-baked-play data-ip="${escapeHtml(ip)}" data-id="${escapeHtml(mo.id)}" title="Fire MOTION ${escapeHtml(mo.id)} on ${escapeHtml(ip)}">Play</button>`
+        + `<span class="bmeta">${trackCount} track${trackCount === 1 ? "" : "s"}</span>`
+        + `</div>`;
+    }).join("");
+    return `<div class="baked-board">${head}${rows}</div>`;
+  });
+  bakedPanelEl.innerHTML = blocks.join("");
 }
 
 // ============================================================
@@ -4556,6 +4636,7 @@ async function bakeToAllBoards(onlyIps = null) {
   bakeAllEl.disabled = false;
   bakeRetryEl.disabled = failedIps.length === 0;
   if (failedIps.length) bakeLog(`Retry Failed will re-bake: ${failedIps.join(", ")}`, "amber");
+  renderBakedPanel();   // reflect newly written snapshots immediately (servo-67d)
   if (ok > 0 && restoreLockedSinceLastBake) {
     restoreLockedSinceLastBake = false;
     bakeRestoreEl.disabled = false;
@@ -4691,6 +4772,22 @@ bakeRetryEl.addEventListener("click", () => {
   bakeToAllBoards(lastBakeFailedIps.slice());
 });
 bakeRestoreEl.addEventListener("click", restorePreviousBake);
+
+// Play a baked motion directly on the board it was baked to (servo-67d).
+// Await the send and color the log by delivery so the panel's confirmation
+// stays honest — a failed fire to an offline board must not look successful.
+bakedPanelEl.addEventListener("click", async (e) => {
+  const btn = e.target.closest("[data-baked-play]");
+  if (!btn) return;
+  const ip = btn.dataset.ip;
+  const id = btn.dataset.id;
+  if (!ip || !id) return;
+  btn.disabled = true;
+  bakeLog(`${ip}: MOTION ${id}...`, "amber");
+  const ok = await sendCommand(ip, `MOTION ${id}`);
+  bakeLog(ok ? `${ip}: MOTION ${id} sent` : `${ip}: MOTION ${id} failed — board unreachable`, ok ? "phosphor" : "alert");
+  btn.disabled = false;
+});
 
 seqSelectEl.addEventListener("change", () => {
   if (seqDirty) saveCurrentSequence(readSequenceFromDom());
