@@ -1523,6 +1523,7 @@
       <div class="gname">Bake</div>
       <div class="btns">
         <button class="cmd amber" id="bakeAll" disabled>Bake to Boards</button>
+        <button class="cmd compact" id="bakeRetry" disabled title="Re-bake only the boards that failed/were unreachable in the last bake">Retry Failed</button>
         <button class="cmd compact" id="bakeRestore">Restore Previous</button>
       </div>
     </div>
@@ -2486,6 +2487,19 @@ function renderOtaBoardButtons() {
 const LIB_KEY = "servoCluster.library";
 const LIB_SNAP_PREFIX = "servoCluster.lastBake.";
 const SCHEMA_VERSION = 1;
+// Firmware motion limits (servo_runtime.h). MOTION_MAX_KEYFRAMES is the TOTAL
+// keyframe budget across all tracks of a motion (one shared counter in the
+// firmware's motionParseTrack), not per-track. MOTION_MAX_TRACKS is the total
+// track count. Mirrored here so the bake can block over-budget motions with a
+// clear message instead of letting the board reject them as bad-track at
+// playback (servo-4hc).
+const MOTION_MAX_KEYFRAMES = 64;
+const MOTION_MAX_TRACKS = 17;
+// EEPROM slot byte budget for a whole per-board bake blob (storage.h
+// STORAGE_PAYLOAD_MAX). The firmware refuses to write a larger slot; guard it
+// before POST so the operator gets a clear "trim the library" message rather
+// than a mid-write client timeout (servo-4hc).
+const STORAGE_PAYLOAD_MAX = 4080;
 // Firmware POST /sequences blocks on EEPROM writes. UNO R4 dataflash byte
 // writes are ~5-10ms each plus per-block erase, so a multi-KB bake can
 // spend 60s+ in storageWriteSlot before the HTTP response goes out. 15s
@@ -2505,6 +2519,7 @@ const bakeFileInfoEl = $("#bakeFileInfo");
 const bakeExportEl  = $("#bakeExport");
 const bakeClearEl   = $("#bakeClear");
 const bakeAllEl     = $("#bakeAll");
+const bakeRetryEl   = $("#bakeRetry");
 const bakeRestoreEl = $("#bakeRestore");
 const bakeLogEl     = $("#bakeLog");
 const bakeSummaryEl = $("#bakeLibSummary");
@@ -4240,8 +4255,67 @@ function addSequenceStep() {
   saveCurrentSequence(seq);
 }
 
+// Conform one track's keyframes to the firmware's contract for baking
+// (servo-4hc). The firmware (motionParseTrack) requires every track to have
+// >=2 keyframes, the first at atMs 0, strictly increasing times, and the
+// LAST keyframe exactly at the motion duration. The editor model
+// deliberately doesn't enforce this (motions "end on the last explicit
+// keyframe", and a default track is a single keyframe at 0). So at bake time
+// we normalize (sort/clamp/dedupe/start-at-0 via normalizeKeyframes) and then
+// pad a trailing keyframe at durationMs holding the last value. Static tracks
+// become a valid 2-keyframe hold [0:v, dur:v]. Editor state is untouched.
+function conformTrackForBake(track, durationMs) {
+  const spec = MOTION_TRACK_SPECS.find(s =>
+    s.boardId === track.boardId && s.kind === track.kind && s.channel === track.channel)
+    || { kind: track.kind, min: -100, max: 100 };
+  const frames = normalizeKeyframes(track, durationMs, spec); // sorted, clamped, first at 0
+  // Guarantee the last keyframe lands exactly at durationMs, holding the last
+  // value (servos hold position, DC holds speed — the operator adds an
+  // explicit 0/STOP if they want it to stop).
+  const last = frames[frames.length - 1];
+  if (!last || last.atMs !== durationMs) {
+    frames.push({ atMs: durationMs, value: last ? last.value : 0 });
+  }
+  // A lone keyframe (e.g. one at exactly durationMs) still needs a 0 anchor.
+  if (frames.length < 2 && frames[0]?.atMs !== 0) {
+    frames.unshift({ atMs: 0, value: frames[0] ? frames[0].value : 0 });
+  }
+  return { ...track, keyframes: frames };
+}
+
+// Per-board conformance check (servo-4hc): conform every track, then verify
+// the slice fits the firmware's TOTAL keyframe and track budgets. Returns
+// findings for motions that can't be baked even after conforming — the only
+// cases the bake must block + name. Mirrors analyzeLibraryServoFeasibility.
+function analyzeBakeConformance(lib) {
+  const report = { errors: [] };
+  for (const boardId of [1, 2, 3]) {
+    for (const m of lib.motions || []) {
+      const boardTracks = (m.tracks || []).filter(t => t.boardId === boardId);
+      if (!boardTracks.length) continue;
+      const durationMs = Math.max(100, parseInt(m.durationMs, 10) || 8000);
+      const conformed = boardTracks.map(t => conformTrackForBake(t, durationMs));
+      const totalKeyframes = conformed.reduce((n, t) => n + t.keyframes.length, 0);
+      if (conformed.length > MOTION_MAX_TRACKS) {
+        report.errors.push({ motionId: m.id, motionName: m.name || m.id, boardId,
+          reason: `${conformed.length} tracks exceeds firmware max ${MOTION_MAX_TRACKS}` });
+      }
+      if (totalKeyframes > MOTION_MAX_KEYFRAMES) {
+        report.errors.push({ motionId: m.id, motionName: m.name || m.id, boardId,
+          reason: `${totalKeyframes} keyframes (board ${boardId}) exceeds firmware max ${MOTION_MAX_KEYFRAMES}` });
+      }
+    }
+  }
+  return report;
+}
+
+function formatBakeConformanceError(e) {
+  return `${e.motionName} · board ${e.boardId}: ${e.reason}`;
+}
+
 // Slice the library for a single board: keep only Motion tracks whose
-// boardId matches; drop Motions that end up with no tracks. Sequences,
+// boardId matches; drop Motions that end up with no tracks. Each kept track
+// is conformed to the firmware's keyframe contract (servo-4hc). Sequences,
 // setlists, schedulerConfig, activeSetlistId are full-library on every
 // board so any board can become leader (per schema §5).
 function sliceForBoard(lib, boardId) {
@@ -4249,7 +4323,9 @@ function sliceForBoard(lib, boardId) {
   for (const m of lib.motions || []) {
     const tracks = (m.tracks || []).filter(t => t.boardId === boardId);
     if (tracks.length === 0) continue;
-    motions.push({ ...m, tracks });
+    const durationMs = Math.max(100, parseInt(m.durationMs, 10) || 8000);
+    const conformedTracks = tracks.map(t => conformTrackForBake(t, durationMs));
+    motions.push({ ...m, tracks: conformedTracks });
   }
   return {
     schemaVersion: SCHEMA_VERSION,
@@ -4288,7 +4364,10 @@ function diffBlob(prev, next) {
 
 async function fetchBoardId(ip) {
   const ctrl = new AbortController();
-  const t = setTimeout(() => ctrl.abort(), 4000);
+  // 8s (up from 4s): a board mid-write or congested by status polls can take
+  // several seconds to answer /boardId; 4s falsely flagged alive boards as
+  // unreachable (servo-fee). The resolve loop also retries once.
+  const t = setTimeout(() => ctrl.abort(), 8000);
   try {
     const r = await fetch(`http://${ip}/boardId`, { signal: ctrl.signal, cache: "no-store" });
     if (!r.ok) throw new Error("HTTP " + r.status);
@@ -4343,7 +4422,14 @@ async function postSequences(ip, payload) {
   } finally { clearTimeout(timer); }
 }
 
-async function bakeToAllBoards() {
+// Boards that failed (POST error or unreachable) in the last bake run, so
+// "Retry Failed" can re-bake just those — the EEPROM write is slow, so
+// re-baking all boards to fix one is wasteful (servo-s5a).
+let lastBakeFailedIps = [];
+
+// onlyIps: when provided (and non-empty), bake just those boards instead of
+// the whole configured cluster — used by Retry Failed.
+async function bakeToAllBoards(onlyIps = null) {
   const lib = loadLibrary();
   if (!lib) { bakeLog("no library loaded", "alert"); return; }
   if (lib.schemaVersion !== SCHEMA_VERSION) {
@@ -4358,24 +4444,52 @@ async function bakeToAllBoards() {
   if (feasibility.warnings.length) {
     bakeLog(`bake warning: ${formatServoFeasibilityFinding(feasibility.warnings[0])}`, "amber");
   }
-  if (boards.length === 0) { bakeLog("no boards configured", "alert"); return; }
+  // Conformance: tracks are auto-fixed to the firmware keyframe contract in
+  // sliceForBoard, but a motion that still exceeds the firmware's total
+  // keyframe/track budget can't be baked — block + name it (servo-4hc).
+  const conformance = analyzeBakeConformance(lib);
+  if (conformance.errors.length) {
+    bakeLog(`bake blocked: ${formatBakeConformanceError(conformance.errors[0])}`, "alert");
+    return;
+  }
+  const targetBoards = (onlyIps && onlyIps.length) ? onlyIps : boards;
+  if (targetBoards.length === 0) { bakeLog("no boards configured", "alert"); return; }
 
   bakeAllEl.disabled = true;
-  bakeLog("resolving boardId for each board...");
+  bakeRetryEl.disabled = true;
+  // Pause status polling for the whole bake (servo-fee): the UNO R4 is
+  // single-threaded and a bake blocks its web server for 60-120s; polling
+  // /status.json every ~800ms congests its single socket and makes resolves
+  // and POSTs time out, falsely reporting boards "unreachable". Resumed in the
+  // finally below. Track failures so Retry Failed can target just them.
+  const wasPolling = !!pollHandle;
+  stopPolling();
+  const failedIps = [];
+  bakeLog(onlyIps ? `retrying ${targetBoards.length} board(s): ${targetBoards.join(", ")}` : "resolving boardId for each board...");
 
-  // Step 1: resolve boardIds. Skip boards that don't answer.
+  try {
+  // Step 1: resolve boardIds, retrying once before giving up so a momentarily
+  // busy board isn't falsely skipped. Boards that still don't answer are
+  // recorded as failed so a later Retry can attempt them again.
   const targets = [];
-  for (const ip of boards) {
-    try {
-      const id = await fetchBoardId(ip);
+  for (const ip of targetBoards) {
+    let id = null, lastErr = null;
+    for (let attempt = 1; attempt <= 2 && id === null; attempt++) {
+      try { id = await fetchBoardId(ip); }
+      catch (e) { lastErr = e; if (attempt < 2) await new Promise(r => setTimeout(r, 600)); }
+    }
+    if (id !== null) {
       targets.push({ ip, boardId: id });
-    } catch (e) {
-      bakeLog(`${ip}: unreachable — ${e.message}`, "alert");
+    } else {
+      bakeLog(`${ip}: unreachable — ${lastErr?.message || "no response"}`, "alert");
+      failedIps.push(ip);
     }
   }
   if (targets.length === 0) {
     bakeLog("no reachable boards", "alert");
+    lastBakeFailedIps = failedIps;
     bakeAllEl.disabled = false;
+    bakeRetryEl.disabled = failedIps.length === 0;
     return;
   }
 
@@ -4393,6 +4507,20 @@ async function bakeToAllBoards() {
     return { ip, boardId, blob, json, bytes, diff };
   });
 
+  // Guard the EEPROM slot size (servo-4hc): the firmware rejects any blob
+  // over STORAGE_PAYLOAD_MAX, but it does so mid-write, which surfaces as a
+  // confusing client timeout. Catch it here and name the offending board(s)
+  // + overage so the operator trims the library instead of guessing.
+  const tooBig = plans.filter(p => p.bytes.length > STORAGE_PAYLOAD_MAX);
+  if (tooBig.length) {
+    for (const p of tooBig) {
+      bakeLog(`bake blocked: ${p.ip} (board ${p.boardId}) blob ${p.bytes.length}B exceeds ${STORAGE_PAYLOAD_MAX}B slot — trim the library`, "alert");
+    }
+    bakeAllEl.disabled = false;
+    bakeRetryEl.disabled = lastBakeFailedIps.length === 0;
+    return;
+  }
+
   const agg = plans.reduce((a, p) => ({
     added:   a.added   + p.diff.added,
     changed: a.changed + p.diff.changed,
@@ -4403,12 +4531,13 @@ async function bakeToAllBoards() {
   if (!confirm(`Bake to ${plans.length} board(s)?\n\n${summary}\n\nProceed?`)) {
     bakeLog("bake cancelled", "amber");
     bakeAllEl.disabled = false;
+    bakeRetryEl.disabled = lastBakeFailedIps.length === 0;
     return;
   }
   bakeLog(summary);
 
   // Step 3: POST sequentially. A failure on one board doesn't block the rest.
-  let ok = 0, fail = 0;
+  let ok = 0;
   for (const p of plans) {
     bakeLog(`${p.ip} (board ${p.boardId}): POST ${p.bytes.length} bytes...`, "amber");
     try {
@@ -4418,15 +4547,23 @@ async function bakeToAllBoards() {
       ok++;
     } catch (e) {
       bakeLog(`${p.ip}: failed — ${e.message}`, "alert");
-      fail++;
+      failedIps.push(p.ip);
     }
   }
-  bakeLog(`bake done: ${ok} ok, ${fail} failed`, fail ? "alert" : "phosphor");
+  bakeLog(`bake done: ${ok} ok, ${failedIps.length} failed`, failedIps.length ? "alert" : "phosphor");
+  // Remember failures (unreachable + POST) so Retry Failed targets only them.
+  lastBakeFailedIps = failedIps;
   bakeAllEl.disabled = false;
+  bakeRetryEl.disabled = failedIps.length === 0;
+  if (failedIps.length) bakeLog(`Retry Failed will re-bake: ${failedIps.join(", ")}`, "amber");
   if (ok > 0 && restoreLockedSinceLastBake) {
     restoreLockedSinceLastBake = false;
     bakeRestoreEl.disabled = false;
     bakeLog("restore re-armed", "phosphor");
+  }
+  } finally {
+    // Always resume polling we paused, on every exit path (servo-fee).
+    if (wasPolling) startPolling();
   }
 }
 
@@ -4548,7 +4685,11 @@ bakeClearEl.addEventListener("click", () => {
   renderLibSummary();
 });
 
-bakeAllEl.addEventListener("click", bakeToAllBoards);
+bakeAllEl.addEventListener("click", () => bakeToAllBoards());
+bakeRetryEl.addEventListener("click", () => {
+  if (!lastBakeFailedIps.length) { bakeLog("no failed boards to retry", "amber"); return; }
+  bakeToAllBoards(lastBakeFailedIps.slice());
+});
 bakeRestoreEl.addEventListener("click", restorePreviousBake);
 
 seqSelectEl.addEventListener("change", () => {
