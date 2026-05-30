@@ -1555,6 +1555,7 @@
         <span id="bakeFileInfo" style="font:500 10px/1 var(--mono); color:var(--ink-mute)"></span>
         <button class="cmd compact" id="bakeExport">Export</button>
         <button class="cmd compact" id="bakeClear">Clear</button>
+        <button class="cmd compact" id="bakePull" title="Read the baked library back from every reachable board and rebuild the editor library (servo-7mn)">Pull from Boards</button>
       </div>
     </div>
 
@@ -2569,6 +2570,7 @@ const bakeFileEl    = $("#bakeFile");
 const bakeFileInfoEl = $("#bakeFileInfo");
 const bakeExportEl  = $("#bakeExport");
 const bakeClearEl   = $("#bakeClear");
+const bakePullEl    = $("#bakePull");
 const bakeAllEl     = $("#bakeAll");
 const bakeRetryEl   = $("#bakeRetry");
 const bakeRestoreEl = $("#bakeRestore");
@@ -2953,7 +2955,10 @@ function _migrateServoLegacyDegrees(rawKeyframes) {
     const v = parseFloat(raw?.value ?? 0);
     if (Number.isFinite(v) && v > 100) { needsMigration = true; break; }
   }
-  if (!needsMigration) return rawKeyframes;
+  // Always return an array: callers iterate the result, and a sliced motion
+  // pulled from a board (servo-7mn) can have servo specs with no track at
+  // all, so rawKeyframes may be undefined here.
+  if (!needsMigration) return rawKeyframes || [];
   return (rawKeyframes || []).map(raw => ({
     ...raw,
     value: Math.max(0, Math.min(100, (parseFloat(raw?.value ?? 0) / 180) * 100)),
@@ -4814,6 +4819,148 @@ async function restorePreviousBake() {
   }
 }
 
+// ============================================================
+// HYDRATE FROM BOARDS (servo-7mn)
+// Baking is one-way (browser → EEPROM); the editor library lives only in
+// localStorage. After a branch swap, a storage clear, or opening the page on
+// a fresh machine, the editor shows empty even though the boards still run
+// the baked library. Pull reads GET /sequences back from every reachable
+// board and rebuilds a unified editor library:
+//   - motions are board-scoped: each board stores only the tracks whose
+//     boardId matches it (see sliceForBoard), so we union tracks across boards
+//     by (boardId,kind,channel) under each motion id to reconstruct the whole.
+//   - sequences / setlists / activeSetlistId / schedulerConfig are full-library
+//     and identical on every board (schema §5). If boards disagree, that's a
+//     conflict — we warn and let the operator pick a source-of-truth board
+//     rather than silently merging divergent revisions.
+// ============================================================
+async function fetchSequencesBlob(ip) {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), INFO_TIMEOUT_MS);
+  try {
+    const r = await fetch(`http://${ip}/sequences`, { signal: ctrl.signal, cache: "no-store" });
+    if (r.status === 204) return null;            // board has nothing baked
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    const text = await r.text();
+    if (!text.trim()) return null;
+    return JSON.parse(text);
+  } finally { clearTimeout(t); }
+}
+
+// entries: [{ ip, boardId, blob }]. Returns { motions, conflicts }.
+function reconcileBoardBlobs(entries) {
+  // Motions: union tracks across boards, keyed by motion id. Metadata
+  // (name/tags/scope/durationMs) comes from the first board carrying the
+  // motion; later boards only contribute their own tracks.
+  const motionMap = new Map();
+  for (const { blob } of entries) {
+    for (const m of blob.motions || []) {
+      let acc = motionMap.get(m.id);
+      if (!acc) { acc = { ...m, tracks: [] }; motionMap.set(m.id, acc); }
+      const seen = new Set(acc.tracks.map(motionTrackKey));
+      for (const t of m.tracks || []) {
+        const k = motionTrackKey(t);
+        if (!seen.has(k)) { acc.tracks.push(t); seen.add(k); }
+      }
+    }
+  }
+  // Full-library fields must be byte-identical across boards.
+  const conflicts = [];
+  for (const field of ["sequences", "setlists", "activeSetlistId", "schedulerConfig"]) {
+    const byBoard = entries.map(e => ({ boardId: e.boardId, ip: e.ip, json: JSON.stringify(e.blob[field] ?? null) }));
+    if (new Set(byBoard.map(b => b.json)).size > 1) conflicts.push({ field, byBoard });
+  }
+  return { motions: [...motionMap.values()], conflicts };
+}
+
+async function pullFromBoards({ auto = false } = {}) {
+  if (!boards.length) { if (!auto) bakeLog("no boards configured", "alert"); return; }
+  const existing = loadLibrary();
+  const nonEmpty = existing && ((existing.motions || []).length || (existing.sequences || []).length || (existing.setlists || []).length);
+  // Never silently clobber unbaked drafts (servo-7mn). Auto-pull runs only on
+  // an empty library; a manual pull over a non-empty library asks first.
+  if (nonEmpty) {
+    if (auto) return;
+    if (!confirm("Pull from Boards REPLACES the current browser library with what's baked on the boards.\n\nUnbaked edits will be lost. Continue?")) {
+      bakeLog("pull cancelled", "amber");
+      return;
+    }
+  }
+
+  bakePullEl.disabled = true;
+  const wasPolling = !!pollHandle;
+  stopPolling();
+  bakeLog(auto ? "library empty — pulling from boards..." : `pulling library from ${boards.length} board(s)...`);
+  try {
+    const results = await Promise.all(boards.map(async ip => {
+      try {
+        const [boardId, blob] = await Promise.all([fetchBoardId(ip), fetchSequencesBlob(ip)]);
+        return { ip, boardId, blob };
+      } catch (e) {
+        bakeLog(`${ip}: unreachable — ${e.message || e.name}`, "alert");
+        return { ip, boardId: null, blob: null };
+      }
+    }));
+
+    const entries = [];
+    for (const r of results) {
+      if (r.boardId == null) continue;
+      if (!r.blob) { bakeLog(`${r.ip} (board ${r.boardId}): no library baked`, "amber"); continue; }
+      if (r.blob.schemaVersion !== SCHEMA_VERSION) {
+        bakeLog(`${r.ip} (board ${r.boardId}): schemaVersion ${r.blob.schemaVersion} ≠ ${SCHEMA_VERSION} — skipped`, "alert");
+        continue;
+      }
+      entries.push(r);
+    }
+    if (!entries.length) { bakeLog("no board returned a usable baked library — nothing to hydrate", "alert"); return; }
+
+    const { motions, conflicts } = reconcileBoardBlobs(entries);
+
+    // Pick the source-of-truth board for the full-library fields. Default to
+    // the leader; on conflict, let the operator choose.
+    const leaderId = entries.map(e => e.blob?.schedulerConfig?.leaderBoardId).find(x => x != null) || 1;
+    let source = entries.find(e => e.boardId === leaderId) || entries[0];
+    if (conflicts.length) {
+      const fieldList = conflicts.map(c => c.field).join(", ");
+      bakeLog(`boards disagree on: ${fieldList} — pick a source board`, "amber");
+      const choices = entries.map(e => e.boardId).join("/");
+      const ans = prompt(`Boards disagree on the full library (${fieldList}).\n\nEnter the boardId to trust for sequences/setlists/scheduler (${choices}):`, String(source.boardId));
+      if (ans == null) { bakeLog("pull cancelled at conflict", "amber"); return; }
+      const picked = entries.find(e => String(e.boardId) === String(ans).trim());
+      if (!picked) { bakeLog(`board ${ans} not in the pulled set — pull aborted`, "alert"); return; }
+      source = picked;
+      bakeLog(`using board ${source.boardId} (${source.ip}) as library source`, "phosphor");
+    }
+
+    const lib = {
+      schemaVersion: SCHEMA_VERSION,
+      motions,
+      sequences: source.blob.sequences || [],
+      setlists: source.blob.setlists || [],
+      activeSetlistId: source.blob.activeSetlistId ?? null,
+      schedulerConfig: source.blob.schedulerConfig || { leaderBoardId: 1, graceMs: 10000, tagEnergy: [] },
+    };
+    saveLibrary(lib);
+    // Refresh per-ip snapshots so the baked panel + pre-bake diff reflect
+    // what we just read off the boards, not a stale/missing snapshot.
+    for (const e of entries) {
+      try { localStorage.setItem(LIB_SNAP_PREFIX + e.ip, JSON.stringify(e.blob)); } catch {}
+    }
+    bakeLog(`hydrated: ${motions.length} motion(s), ${lib.sequences.length} sequence(s), ${lib.setlists.length} setlist(s) from ${entries.length} board(s)`, "phosphor");
+    currentSeqId = null;
+    currentMotionId = null;
+    renderMotionEditor();
+    renderSequencer();
+    renderSetlist();
+    renderLibSummary();
+  } finally {
+    bakePullEl.disabled = false;
+    if (wasPolling) startPolling();
+  }
+}
+
+bakePullEl.addEventListener("click", () => pullFromBoards());
+
 bakeFileEl.addEventListener("change", async () => {
   const f = bakeFileEl.files[0];
   if (!f) return;
@@ -5779,6 +5926,11 @@ renderLibSummary();
 render();
 refreshBoardIdMap();
 startPolling();
+
+// On an empty library, hydrate from whatever the boards still have baked
+// (servo-7mn). Fire-and-forget so init doesn't block on the network; the
+// pull no-ops if a library is already present and never clobbers drafts.
+if (!loadLibrary()) pullFromBoards({ auto: true });
 </script>
 </body>
 </html>

@@ -179,6 +179,7 @@ Open `servo_controller.html` to author schema v1 Sequences in the browser librar
 - Steps support free-text commands, duration, target board, private labels, hold points, drag reorder, preview, scrub, looped playback, and pause/resume
 - Record mode appends commands sent through the free-form terminal and fills each new step's duration from elapsed time
 - Section `// 03 Sequencer Bake` still imports, exports, slices, and POSTs the same library to the boards
+- **Pull from Boards** reads the baked library back from every reachable board (`GET /sequences`) and rebuilds the editor library: motion tracks are unioned by board, and the full-library fields (sequences/setlists/active/scheduler) must match across boards or the operator is asked to pick a source-of-truth board. The page also auto-pulls on load when the browser library is empty, so a fresh machine or a cleared cache recovers what's physically on the boards. It never overwrites a non-empty local library without confirmation.
 
 ### Sequence Time Scaling
 
