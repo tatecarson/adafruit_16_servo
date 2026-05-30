@@ -1523,6 +1523,7 @@
       <div class="gname">Bake</div>
       <div class="btns">
         <button class="cmd amber" id="bakeAll" disabled>Bake to Boards</button>
+        <button class="cmd compact" id="bakeRetry" disabled title="Re-bake only the boards that failed/were unreachable in the last bake">Retry Failed</button>
         <button class="cmd compact" id="bakeRestore">Restore Previous</button>
       </div>
     </div>
@@ -2518,6 +2519,7 @@ const bakeFileInfoEl = $("#bakeFileInfo");
 const bakeExportEl  = $("#bakeExport");
 const bakeClearEl   = $("#bakeClear");
 const bakeAllEl     = $("#bakeAll");
+const bakeRetryEl   = $("#bakeRetry");
 const bakeRestoreEl = $("#bakeRestore");
 const bakeLogEl     = $("#bakeLog");
 const bakeSummaryEl = $("#bakeLibSummary");
@@ -4417,7 +4419,14 @@ async function postSequences(ip, payload) {
   } finally { clearTimeout(timer); }
 }
 
-async function bakeToAllBoards() {
+// Boards that failed (POST error or unreachable) in the last bake run, so
+// "Retry Failed" can re-bake just those — the EEPROM write is slow, so
+// re-baking all boards to fix one is wasteful (servo-s5a).
+let lastBakeFailedIps = [];
+
+// onlyIps: when provided (and non-empty), bake just those boards instead of
+// the whole configured cluster — used by Retry Failed.
+async function bakeToAllBoards(onlyIps = null) {
   const lib = loadLibrary();
   if (!lib) { bakeLog("no library loaded", "alert"); return; }
   if (lib.schemaVersion !== SCHEMA_VERSION) {
@@ -4440,24 +4449,32 @@ async function bakeToAllBoards() {
     bakeLog(`bake blocked: ${formatBakeConformanceError(conformance.errors[0])}`, "alert");
     return;
   }
-  if (boards.length === 0) { bakeLog("no boards configured", "alert"); return; }
+  const targetBoards = (onlyIps && onlyIps.length) ? onlyIps : boards;
+  if (targetBoards.length === 0) { bakeLog("no boards configured", "alert"); return; }
 
   bakeAllEl.disabled = true;
-  bakeLog("resolving boardId for each board...");
+  bakeRetryEl.disabled = true;
+  // Track failures across resolve + POST so Retry Failed can target them.
+  const failedIps = [];
+  bakeLog(onlyIps ? `retrying ${targetBoards.length} board(s): ${targetBoards.join(", ")}` : "resolving boardId for each board...");
 
-  // Step 1: resolve boardIds. Skip boards that don't answer.
+  // Step 1: resolve boardIds. Boards that don't answer are recorded as failed
+  // so a later Retry can attempt them again.
   const targets = [];
-  for (const ip of boards) {
+  for (const ip of targetBoards) {
     try {
       const id = await fetchBoardId(ip);
       targets.push({ ip, boardId: id });
     } catch (e) {
       bakeLog(`${ip}: unreachable — ${e.message}`, "alert");
+      failedIps.push(ip);
     }
   }
   if (targets.length === 0) {
     bakeLog("no reachable boards", "alert");
+    lastBakeFailedIps = failedIps;
     bakeAllEl.disabled = false;
+    bakeRetryEl.disabled = failedIps.length === 0;
     return;
   }
 
@@ -4485,6 +4502,7 @@ async function bakeToAllBoards() {
       bakeLog(`bake blocked: ${p.ip} (board ${p.boardId}) blob ${p.bytes.length}B exceeds ${STORAGE_PAYLOAD_MAX}B slot — trim the library`, "alert");
     }
     bakeAllEl.disabled = false;
+    bakeRetryEl.disabled = lastBakeFailedIps.length === 0;
     return;
   }
 
@@ -4498,12 +4516,13 @@ async function bakeToAllBoards() {
   if (!confirm(`Bake to ${plans.length} board(s)?\n\n${summary}\n\nProceed?`)) {
     bakeLog("bake cancelled", "amber");
     bakeAllEl.disabled = false;
+    bakeRetryEl.disabled = lastBakeFailedIps.length === 0;
     return;
   }
   bakeLog(summary);
 
   // Step 3: POST sequentially. A failure on one board doesn't block the rest.
-  let ok = 0, fail = 0;
+  let ok = 0;
   for (const p of plans) {
     bakeLog(`${p.ip} (board ${p.boardId}): POST ${p.bytes.length} bytes...`, "amber");
     try {
@@ -4513,11 +4532,15 @@ async function bakeToAllBoards() {
       ok++;
     } catch (e) {
       bakeLog(`${p.ip}: failed — ${e.message}`, "alert");
-      fail++;
+      failedIps.push(p.ip);
     }
   }
-  bakeLog(`bake done: ${ok} ok, ${fail} failed`, fail ? "alert" : "phosphor");
+  bakeLog(`bake done: ${ok} ok, ${failedIps.length} failed`, failedIps.length ? "alert" : "phosphor");
+  // Remember failures (unreachable + POST) so Retry Failed targets only them.
+  lastBakeFailedIps = failedIps;
   bakeAllEl.disabled = false;
+  bakeRetryEl.disabled = failedIps.length === 0;
+  if (failedIps.length) bakeLog(`Retry Failed will re-bake: ${failedIps.join(", ")}`, "amber");
   if (ok > 0 && restoreLockedSinceLastBake) {
     restoreLockedSinceLastBake = false;
     bakeRestoreEl.disabled = false;
@@ -4643,7 +4666,11 @@ bakeClearEl.addEventListener("click", () => {
   renderLibSummary();
 });
 
-bakeAllEl.addEventListener("click", bakeToAllBoards);
+bakeAllEl.addEventListener("click", () => bakeToAllBoards());
+bakeRetryEl.addEventListener("click", () => {
+  if (!lastBakeFailedIps.length) { bakeLog("no failed boards to retry", "amber"); return; }
+  bakeToAllBoards(lastBakeFailedIps.slice());
+});
 bakeRestoreEl.addEventListener("click", restorePreviousBake);
 
 seqSelectEl.addEventListener("change", () => {
