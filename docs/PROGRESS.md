@@ -170,6 +170,10 @@ adafruit_16_servo/
 
 28. `feat: add browser motion editor`
 
+## Git Commits (Browser Bake Recovery)
+
+29. `fix: retry bake recovery info probes`
+
 ## Future Features
 
 - [ ] **EEPROM calibration storage** - Save/load servo calibrations (type, min, max, stop pulse) to persist across power cycles. Commands: `SAVE`, `LOAD`, `CLEAR`

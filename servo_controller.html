@@ -2562,6 +2562,8 @@ const BAKE_TIMEOUT_MS = 150000;
 // fires, the GET queues until the write finishes. 30s covers worst-case
 // queue depth without making genuinely-dead boards hang forever.
 const INFO_TIMEOUT_MS = 30000;
+const BAKE_RECOVERY_INFO_RETRIES = 4;
+const BAKE_RECOVERY_INFO_BACKOFF_MS = [0, 2000, 5000, 10000];
 
 const bakeFileEl    = $("#bakeFile");
 const bakeFileInfoEl = $("#bakeFileInfo");
@@ -4558,6 +4560,28 @@ async function fetchSequencesInfo(ip) {
   } finally { clearTimeout(t); }
 }
 
+function sleepMs(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+async function confirmBakedBytesWithBackoff(ip, expectedBytes) {
+  let lastDetail = "no recovery probe ran";
+  for (let attempt = 0; attempt < BAKE_RECOVERY_INFO_RETRIES; attempt++) {
+    const delay = BAKE_RECOVERY_INFO_BACKOFF_MS[Math.min(attempt, BAKE_RECOVERY_INFO_BACKOFF_MS.length - 1)];
+    if (delay > 0) await sleepMs(delay);
+    try {
+      const info = await fetchSequencesInfo(ip);
+      if (info.ok && info.bytesUsed === expectedBytes) {
+        return { ok: true, attempts: attempt + 1 };
+      }
+      lastDetail = `probe ${attempt + 1}: bytesUsed ${info.bytesUsed}, expected ${expectedBytes}`;
+    } catch (e) {
+      lastDetail = `probe ${attempt + 1}: ${e.message || e.name || "failed"}`;
+    }
+  }
+  return { ok: false, attempts: BAKE_RECOVERY_INFO_RETRIES, detail: lastDetail };
+}
+
 // POST /sequences with a long timeout. If the timeout fires but the EEPROM
 // write actually landed, GET /sequences/info will report bytesUsed equal to
 // the payload we just tried to send — treat that as success so we don't
@@ -4583,13 +4607,15 @@ async function postSequences(ip, payload) {
   } catch (e) {
     if (e.name !== "AbortError") throw e;
     // Check whether the bake actually landed despite the client timeout.
-    try {
-      const info = await fetchSequencesInfo(ip);
-      if (info.ok && info.bytesUsed === payload.length) {
-        return { ok: true, body: "(client timeout, info confirms bytesUsed match)", recovered: true };
-      }
-    } catch { /* fall through */ }
-    throw new Error("client timeout, bake not confirmed");
+    const recovered = await confirmBakedBytesWithBackoff(ip, payload.length);
+    if (recovered.ok) {
+      return {
+        ok: true,
+        body: `(client timeout, info confirms bytesUsed match after ${recovered.attempts} probe${recovered.attempts === 1 ? "" : "s"})`,
+        recovered: true,
+      };
+    }
+    throw new Error(`client timeout, bake not confirmed after ${recovered.attempts} info probes (${recovered.detail})`);
   } finally { clearTimeout(timer); }
 }
 
