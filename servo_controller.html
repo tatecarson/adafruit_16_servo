@@ -1076,6 +1076,24 @@
   .baked-row .bn { font: 600 12px/1.2 var(--mono); color: var(--ink); flex: 0 0 auto; }
   .baked-row .bid { font: 600 10px/1 var(--mono); color: var(--ink-dim); background: var(--bg-deep); border: 1px solid var(--rule); padding: 4px 6px; }
   .baked-row .bmeta { font: 500 10px/1 var(--mono); color: var(--ink-mute); margin-left: auto; }
+  .bake-budget { width: 100%; display: flex; flex-direction: column; gap: 10px; padding-top: 4px; }
+  .bb-bars { display: flex; flex-wrap: wrap; gap: 8px; }
+  .bb-bar { flex: 1 1 160px; border: 1px solid var(--rule); padding: 6px 8px; }
+  .bb-bar .bb-label { font: 700 9px/1.4 var(--label); text-transform: uppercase; letter-spacing: .16em; color: var(--ink-dim); display: flex; justify-content: space-between; gap: 8px; }
+  .bb-bar .bb-track { height: 6px; margin-top: 5px; background: var(--bg-deep); border: 1px solid var(--rule); position: relative; }
+  .bb-bar .bb-fill { position: absolute; left: 0; top: 0; bottom: 0; }
+  .bb-bar.ok    .bb-fill { background: var(--phosphor); }
+  .bb-bar.warn  .bb-fill { background: var(--amber); }
+  .bb-bar.over  .bb-fill { background: var(--alert); }
+  .bb-bar.over  .bb-label { color: var(--alert); }
+  .bb-items { display: flex; flex-direction: column; }
+  .bb-item { display: flex; align-items: center; gap: 10px; padding: 4px 0; border-top: 1px dashed var(--rule); font: 500 11px/1.3 var(--mono); }
+  .bb-item:first-child { border-top: none; }
+  .bb-item .bb-kind { font: 700 9px/1 var(--label); text-transform: uppercase; letter-spacing: .14em; color: var(--ink-mute); width: 64px; flex: 0 0 auto; }
+  .bb-item .bb-name { color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .bb-item .bb-bytes { margin-left: auto; color: var(--ink-dim); }
+  .bb-item button { flex: 0 0 auto; }
+  .bb-empty { color: var(--ink-mute); font: 500 11px/1.4 var(--mono); }
   .motion-picker select,
   .motion-picker input,
   .motion-toolbar input {
@@ -1544,6 +1562,11 @@
     <div class="group" style="flex-basis:100%">
       <div class="gname">Baked on boards <span class="key">RUN</span></div>
       <div id="bakedPanel" class="baked-panel"></div>
+    </div>
+
+    <div class="group" style="flex-basis:100%">
+      <div class="gname">Bake budget <span class="key">FIT</span></div>
+      <div id="bakeBudget" class="bake-budget"></div>
     </div>
 
     <div id="bakeLog" style="padding:8px 0 0; font:500 11px/1.6 var(--mono); color:var(--ink-dim); max-height:200px; overflow-y:auto"></div>
@@ -2542,6 +2565,7 @@ const bakeRestoreEl = $("#bakeRestore");
 const bakeLogEl     = $("#bakeLog");
 const bakeSummaryEl = $("#bakeLibSummary");
 const bakedPanelEl  = $("#bakedPanel");
+const bakeBudgetEl  = $("#bakeBudget");
 
 const seqSelectEl     = $("#seqSelect");
 const seqNameEl       = $("#seqName");
@@ -2621,6 +2645,48 @@ function renderLibSummary() {
   bakeSummaryEl.textContent = `${m} motion${m===1?"":"s"} · ${s} sequence${s===1?"":"s"} · ${l} setlist${l===1?"":"s"} · active=${active}`;
   bakeAllEl.disabled = boards.length === 0;
   renderBakedPanel();
+  renderBakeInventory();
+}
+
+// Bake budget / inventory (servo-gwa): show how full each board's EEPROM slot
+// is and what every motion/sequence/setlist costs, so the operator can prune
+// scratch items before they push a bake past the slot. Per-board size comes
+// from the real conformed bake blob (sliceForBoard). Sequences/setlists bake
+// in full to every board, so their own size is their per-board cost; a
+// motion's size is its conformed all-tracks size (a relative magnitude).
+function renderBakeInventory() {
+  if (!bakeBudgetEl) return;
+  const lib = loadLibrary();
+  if (!lib) { bakeBudgetEl.innerHTML = `<div class="bb-empty">no library</div>`; return; }
+  const enc = new TextEncoder();
+  const size = obj => enc.encode(JSON.stringify(obj)).length;
+
+  const bars = [1, 2, 3].map(boardId => {
+    const bytes = size(sliceForBoard(lib, boardId));
+    const pct = Math.min(100, Math.round((bytes / STORAGE_PAYLOAD_MAX) * 100));
+    const level = bytes > STORAGE_PAYLOAD_MAX ? "over" : (bytes >= STORAGE_PAYLOAD_MAX * 0.8 ? "warn" : "ok");
+    return `<div class="bb-bar ${level}"><div class="bb-label"><span>board ${boardId}</span><span>${bytes} / ${STORAGE_PAYLOAD_MAX}B</span></div>`
+      + `<div class="bb-track"><div class="bb-fill" style="width:${pct}%"></div></div></div>`;
+  }).join("");
+
+  const items = [];
+  for (const m of lib.motions || []) {
+    const durationMs = Math.max(100, parseInt(m.durationMs, 10) || 8000);
+    const conformed = { ...m, tracks: (m.tracks || []).map(t => conformTrackForBake(t, durationMs)) };
+    items.push({ kind: "motion", id: m.id, name: m.name || m.id, bytes: size(conformed), attr: "data-del-motion" });
+  }
+  for (const s of lib.sequences || []) items.push({ kind: "sequence", id: s.id, name: s.name || s.id, bytes: size(s), attr: "data-del-seq" });
+  for (const s of lib.setlists || []) items.push({ kind: "setlist", id: s.id, name: s.name || s.id, bytes: size(s), attr: "data-del-setlist" });
+  items.sort((a, b) => b.bytes - a.bytes);
+
+  const rows = items.length ? items.map(it =>
+    `<div class="bb-item"><span class="bb-kind">${it.kind}</span>`
+    + `<span class="bb-name" title="${escapeHtml(it.id)}">${escapeHtml(it.name)}</span>`
+    + `<span class="bb-bytes">${it.bytes}B</span>`
+    + `<button class="cmd compact alert" ${it.attr}="${escapeHtml(it.id)}" title="Delete ${escapeHtml(it.id)} from the library">×</button></div>`
+  ).join("") : `<div class="bb-empty">library is empty</div>`;
+
+  bakeBudgetEl.innerHTML = `<div class="bb-bars">${bars}</div><div class="bb-items">${rows}</div>`;
 }
 
 function _formatAgo(ms) {
@@ -4787,6 +4853,27 @@ bakedPanelEl.addEventListener("click", async (e) => {
   const ok = await sendCommand(ip, `MOTION ${id}`);
   bakeLog(ok ? `${ip}: MOTION ${id} sent` : `${ip}: MOTION ${id} failed — board unreachable`, ok ? "phosphor" : "alert");
   btn.disabled = false;
+});
+
+// Prune from the bake inventory (servo-gwa): delete a motion/sequence/setlist
+// straight from the budget view, then re-render so sizes update live.
+bakeBudgetEl.addEventListener("click", (e) => {
+  const btn = e.target.closest("[data-del-motion],[data-del-seq],[data-del-setlist]");
+  if (!btn) return;
+  const lib = loadLibrary();
+  if (!lib) return;
+  let id, arr, kind;
+  if (btn.hasAttribute("data-del-motion"))      { id = btn.getAttribute("data-del-motion");  arr = "motions";   kind = "motion"; }
+  else if (btn.hasAttribute("data-del-seq"))    { id = btn.getAttribute("data-del-seq");      arr = "sequences"; kind = "sequence"; }
+  else                                          { id = btn.getAttribute("data-del-setlist");  arr = "setlists";  kind = "setlist"; }
+  if (!confirm(`Delete ${kind} "${id}" from the library?\nThis can't be undone (export first if unsure).`)) return;
+  lib[arr] = (lib[arr] || []).filter(x => x.id !== id);
+  if (kind === "motion" && currentMotionId === id) currentMotionId = null;
+  if (kind === "setlist" && lib.activeSetlistId === id) lib.activeSetlistId = null;
+  saveLibrary(lib);
+  bakeLog(`removed ${kind} ${id}`, "amber");
+  renderLibSummary();
+  if (kind === "motion") renderMotionEditor();
 });
 
 seqSelectEl.addEventListener("change", () => {
