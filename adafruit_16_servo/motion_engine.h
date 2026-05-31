@@ -451,9 +451,7 @@ inline bool startMotionFromStorage(const char* motionId, bool announce) {
     return false;
   }
 
-  sequenceActive = false;
-  speedSeqActive = false;
-  programActive = false;
+  // Legacy sequence/speedSeq/program cancel removed in servo-voc.
   for (uint8_t i = 0; i < motionRuntime.trackCount; i++) {
     MotionTrack& track = motionRuntime.tracks[i];
     track.segmentIndex = 0;

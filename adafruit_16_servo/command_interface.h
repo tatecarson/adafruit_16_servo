@@ -9,7 +9,7 @@ void showHelp() {
   Serial.println(F("Commands: S/P/CAL/SWEEP/TPULSE/STATUS"));
   Serial.println(F("CAL_GET/CAL_SET/CAL_RESET/CAL_PULSE (persisted calibration)"));
   Serial.println(F("UP/DOWN/UMOVE/DMOVE/ROTATE"));
-  Serial.println(F("MOTION/PLAY/SPLAY/RUN/STOP/TIMESCALE"));
+  Serial.println(F("MOTION <id>/RUN <id>/STOP"));
   Serial.println(F("STORAGEINFO/BOARDID. See README for syntax."));
 }
 
@@ -42,83 +42,8 @@ bool startsWith(const char* str, const char* prefix) {
   return strncmp(str, prefix, strlen(prefix)) == 0;
 }
 
-// Helper: check if string contains substring
-bool containsStr(const char* str, const char* substr) {
-  return strstr(str, substr) != nullptr;
-}
-
-bool startPositionSequence(uint8_t seqNum, bool loop, bool announce) {
-  if (!selectPositionSequence(seqNum, currentSequence, currentSequenceLength)) {
-    Serial.println(F("Unknown sequence"));
-    return false;
-  }
-
-  cancelMotionPlayback();
-  cancelSequencePlayback();
-  sequenceLoop = loop;
-  sequenceStartTime = millis();
-  lastTriggeredKeyframe = 0;
-  sequenceActive = true;
-
-  if (announce) {
-    Serial.print(F("Playing sequence "));
-    Serial.print(seqNum);
-    if (loop) Serial.print(F(" (looping)"));
-    Serial.println();
-  }
-  return true;
-}
-
-bool startSpeedSequence(uint8_t seqNum, bool loop, bool announce) {
-  if (!selectSpeedSequence(seqNum, currentSpeedSeq, currentSpeedSeqLength)) {
-    Serial.println(F("Unknown speed sequence"));
-    return false;
-  }
-
-  speedSeqActive = true;
-  cancelMotionPlayback();
-  cancelSequencePlayback();
-  speedSeqLoop = loop;
-  speedSeqStartTime = millis();
-  lastTriggeredSpeedFrame = 0;
-
-  if (announce) {
-    Serial.print(F("Playing speed sequence "));
-    Serial.print(seqNum);
-    if (loop) Serial.print(F(" (looping)"));
-    Serial.println();
-  }
-  return true;
-}
-
-bool startSequenceProgram(uint8_t programNum, bool loop) {
-  if (!selectSequenceProgram(programNum, currentProgram)) {
-    Serial.println(F("Unknown program"));
-    return false;
-  }
-
-  sequenceActive = false;
-  speedSeqActive = false;
-  cancelMotionPlayback();
-  cancelSequencePlayback();
-  programActive = true;
-  programLoop = loop;
-  programPositionDone = (currentProgram->positionLength == 0);
-  programSpeedDone = (currentProgram->speedLength == 0);
-  currentProgramPositionStepIndex = 0;
-  currentProgramPositionIteration = 0;
-  currentProgramSpeedStepIndex = 0;
-  currentProgramSpeedIteration = 0;
-
-  Serial.print(F("Running program "));
-  Serial.print(programNum);
-  if (loop) Serial.print(F(" (looping)"));
-  Serial.println();
-
-  if (!programPositionDone) startNextProgramPositionStep();
-  if (!programSpeedDone) startNextProgramSpeedStep();
-  return true;
-}
+// Legacy startPositionSequence/startSpeedSequence/startSequenceProgram
+// (PLAY/SPLAY/RUN <n>) removed in servo-voc.
 
 void processCommand(char* cmd) {
   trimString(cmd);
@@ -200,24 +125,8 @@ void processCommand(char* cmd) {
       Serial.println(F("% down"));
     }
   }
-  else if (startsWith(cmd, "PLAY")) {
-    int space = findChar(cmd, ' ', 0);
-    if (space > 0) {
-      uint8_t seqNum = atoi(cmd + space + 1);
-      programActive = false;
-      speedSeqActive = false;
-      startPositionSequence(seqNum, containsStr(cmd, "LOOP"), true);
-    }
-  }
-  else if (startsWith(cmd, "SPLAY")) {
-    int space = findChar(cmd, ' ', 0);
-    if (space > 0) {
-      uint8_t seqNum = atoi(cmd + space + 1);
-      programActive = false;
-      sequenceActive = false;
-      startSpeedSequence(seqNum, containsStr(cmd, "LOOP"), true);
-    }
-  }
+  // Legacy PLAY/SPLAY handlers (numbered keyframe/speed sequences) removed in
+  // servo-voc. Use schema-v1 MOTION <id> / RUN <id> / RUN AUTO instead.
   else if (startsWith(cmd, "MOTION")) {
     int space = findChar(cmd, ' ', 0);
     if (space > 0 && cmd[space + 1] != '\0') {
@@ -229,41 +138,26 @@ void processCommand(char* cmd) {
   else if (startsWith(cmd, "RUN")) {
     int space = findChar(cmd, ' ', 0);
     if (space > 0 && cmd[space + 1] != '\0') {
-      // Disambiguate by argument shape:
-      //   RUN 1          → legacy in-firmware program by number
-      //   RUN evening-arc → schema v1 Sequence from active EEPROM bake
-      // Schema id regex (^[a-z][a-z0-9-]{0,31}$) forbids leading
-      // digits, so a digit-prefixed token unambiguously routes to the
-      // legacy path. Trailing " LOOP" works for both.
-      char first = cmd[space + 1];
-      // Only treat " LOOP" as a trailing token, not anywhere in the
-      // command. An id like "my-loop-seq" must not flip loop mode.
+      // Schema-v1 only (legacy RUN <n> program runner removed in servo-voc):
+      //   RUN evening-arc → Sequence from active EEPROM bake
+      // Trailing " LOOP" loops the sequence.
       size_t cmdLen = strlen(cmd);
       bool loop = (cmdLen >= 5 && strcmp(cmd + cmdLen - 5, " LOOP") == 0);
-      if (first >= '0' && first <= '9') {
-        uint8_t programNum = atoi(cmd + space + 1);
-        startSequenceProgram(programNum, loop);
-      } else {
-        // Extract just the id token (stop at space or null) so the
-        // optional LOOP suffix doesn't get passed to the loader.
-        // processCommand uppercased the whole cmd, but schema ids are
-        // lowercase kebab-case, so re-lower as we copy. The matcher in
-        // sequence_engine.h is case-insensitive (so the lookup would
-        // still work), but the copied id is what gets stored in
-        // sequenceRunner.id and surfaced on /status.json — keep it in
-        // the documented shape.
-        char idBuf[SEQ_ID_MAX_LEN + 1] = {0};
-        int i = 0;
-        int src = space + 1;
-        while (cmd[src] && cmd[src] != ' ' && i < (int)sizeof(idBuf) - 1) {
-          char c = cmd[src++];
-          if (c >= 'A' && c <= 'Z') c = (char)(c + ('a' - 'A'));
-          idBuf[i++] = c;
-        }
-        startSequenceFromStorage(idBuf, loop, true);
+      // Extract just the id token (stop at space or null) so the optional
+      // LOOP suffix isn't passed to the loader. processCommand uppercased the
+      // whole cmd, but schema ids are lowercase kebab-case, so re-lower as we
+      // copy — keeps sequenceRunner.id / /status.json in the documented shape.
+      char idBuf[SEQ_ID_MAX_LEN + 1] = {0};
+      int i = 0;
+      int src = space + 1;
+      while (cmd[src] && cmd[src] != ' ' && i < (int)sizeof(idBuf) - 1) {
+        char c = cmd[src++];
+        if (c >= 'A' && c <= 'Z') c = (char)(c + ('a' - 'A'));
+        idBuf[i++] = c;
       }
+      startSequenceFromStorage(idBuf, loop, true);
     } else {
-      Serial.println(F("Use: RUN <n> | RUN <id> [LOOP]"));
+      Serial.println(F("Use: RUN <id> [LOOP]"));
     }
   }
   else if (startsWith(cmd, "TPULSE")) {
@@ -398,9 +292,6 @@ void processCommand(char* cmd) {
     }
   }
   else if (strcmp(cmd, "STOP") == 0 || strcmp(cmd, "STOP ALL") == 0) {
-    sequenceActive = false;
-    speedSeqActive = false;
-    programActive = false;
     cancelMotionPlayback();
     cancelSequencePlayback();
     stopMotor();
@@ -421,17 +312,8 @@ void processCommand(char* cmd) {
       Serial.println(F("Use: ROTATE <-100 to 100>"));
     }
   }
-  else if (startsWith(cmd, "TIMESCALE")) {
-    int space = findChar(cmd, ' ', 0);
-    if (space > 0) {
-      uint16_t val = (uint16_t)atoi(cmd + space + 1);
-      if (val < 1) val = 1;
-      timeMultiplier = val;
-      Serial.print(F("Time multiplier set to ")); Serial.println(timeMultiplier);
-    } else {
-      Serial.print(F("TIMESCALE: ")); Serial.println(timeMultiplier);
-    }
-  }
+  // TIMESCALE removed in servo-voc — it only scaled legacy PLAY/SPLAY timing.
+  // Schema-v1 Motions/Sequences author their timing directly in the browser.
   else if (startsWith(cmd, "BOARDID")) {
     const char* rest = cmd + 7; while (*rest == ' ') rest++;
     if (*rest == '\0') {
@@ -466,9 +348,7 @@ void processCommand(char* cmd) {
 // locally. Per-servo pokes (S0 90, P1 ...) stay local-only on purpose.
 // Compared after trim+uppercase.
 inline bool shouldMirrorCommand(const char* upperCmd) {
-  return startsWith(upperCmd, "PLAY ") || strcmp(upperCmd, "PLAY") == 0
-      || startsWith(upperCmd, "SPLAY ") || strcmp(upperCmd, "SPLAY") == 0
-      || startsWith(upperCmd, "MOTION ") || strcmp(upperCmd, "MOTION") == 0
+  return startsWith(upperCmd, "MOTION ") || strcmp(upperCmd, "MOTION") == 0
       // RUN (both legacy numeric and schema-v1 id forms) is mirrored
       // so all boards start the same sequence in lock-step. Per-step
       // target filtering happens inside each board's runner.

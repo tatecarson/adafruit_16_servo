@@ -10,3 +10,10 @@ Secrets.h
 
 # Arduino IDE build output
 adafruit_16_servo/build/
+
+# Compiled host-test binaries (built by test/Makefile)
+test/run_tests
+test/run_storage_tests
+test/run_motion_tests
+test/run_sequence_tests
+test/run_setlist_tests

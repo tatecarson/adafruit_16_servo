@@ -40,31 +40,9 @@ struct ServoState {
   bool linearMove;
 };
 
-struct Keyframe {
-  uint8_t servo;
-  uint16_t degrees;
-  uint16_t time;
-  uint16_t duration;
-};
-
-struct SpeedFrame {
-  uint8_t servo;
-  int8_t speed;
-  uint16_t time;
-  uint16_t rampMs;
-};
-
-struct ProgramSequenceStep {
-  uint8_t sequenceNumber;
-  uint16_t repeatCount;
-};
-
-struct SequenceProgramDefinition {
-  const ProgramSequenceStep* positionSteps;
-  uint8_t positionLength;
-  const ProgramSequenceStep* speedSteps;
-  uint8_t speedLength;
-};
+// Legacy numbered PLAY/SPLAY/RUN-n sequence types removed in servo-voc
+// (reclaim OTA flash; schema-v1 Motions/Sequences/Setlists are the only
+// playback path now). See docs/PROGRESS.md.
 
 #define MOTION_ID_MAX_LEN 32
 #define MOTION_MAX_TRACKS 17
@@ -128,33 +106,9 @@ extern Adafruit_PWMServoDriver pwm;
 extern ServoConfig servoConfig[NUM_SERVOS];
 extern ServoState servoState[NUM_SERVOS];
 
-// WAVE globals removed (servo-dz7). See animation_engine.h.
+// WAVE globals removed (servo-dz7). Legacy PLAY/SPLAY/RUN-n + TIMESCALE
+// (timeMultiplier) state removed in servo-voc.
 
-extern uint16_t timeMultiplier;
-
-extern bool sequenceActive;
-extern bool sequenceLoop;
-extern const Keyframe* currentSequence;
-extern uint8_t currentSequenceLength;
-extern unsigned long sequenceStartTime;
-extern uint8_t lastTriggeredKeyframe;
-
-extern bool speedSeqActive;
-extern bool speedSeqLoop;
-extern const SpeedFrame* currentSpeedSeq;
-extern uint8_t currentSpeedSeqLength;
-extern unsigned long speedSeqStartTime;
-extern uint8_t lastTriggeredSpeedFrame;
-
-extern bool programActive;
-extern bool programLoop;
-extern const SequenceProgramDefinition* currentProgram;
-extern bool programPositionDone;
-extern bool programSpeedDone;
-extern uint8_t currentProgramPositionStepIndex;
-extern uint16_t currentProgramPositionIteration;
-extern uint8_t currentProgramSpeedStepIndex;
-extern uint16_t currentProgramSpeedIteration;
 extern MotionRuntime motionRuntime;
 extern SequenceRuntime sequenceRunner;
 
@@ -182,16 +136,12 @@ void moveServoPercentUp(uint8_t servo, uint8_t percentUp, uint32_t duration);
 void setAllProtectedWinchesPercent(bool percentUp, uint8_t percent);
 void moveAllProtectedWinchesPercent(bool percentUp, uint8_t percent, uint32_t duration);
 void setTestPulse(uint16_t pulse);
-bool startPositionSequence(uint8_t seqNum, bool loop, bool announce);
-bool startSpeedSequence(uint8_t seqNum, bool loop, bool announce);
-bool startSequenceProgram(uint8_t programNum, bool loop);
 bool startMotionFromStorage(const char* motionId, bool announce);
 void cancelMotionPlayback();
 void updateMotion();
 bool startSequenceFromStorage(const char* sequenceId, bool loop, bool announce);
 void cancelSequencePlayback();
 void updateSequenceRunner();
-void updateSequenceProgram();
 void servoOff(uint8_t servo);
 void releaseServo(uint8_t servo);
 
@@ -202,5 +152,3 @@ void showHelp();
 void processCommand(char* cmd);
 void updateAnimations();
 void updateSpeedRamps();
-void updateSequence();
-void updateSpeedSequence();

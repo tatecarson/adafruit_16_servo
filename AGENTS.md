@@ -52,7 +52,6 @@ adafruit_16_servo/
 ├── adafruit_16_servo.ino    # Main Arduino sketch (core logic)
 ├── motion_engine.h          # Browser-baked Motion parser/playback engine
 ├── servo_setup.h            # Installation-specific per-servo setup
-├── sequence_setup.h         # Installation-specific animation sequence setup
 ├── README.md                 # User documentation
 ├── AGENTS.md                 # This file - AI context
 └── docs/
@@ -68,7 +67,7 @@ The sketch is split into small headers included by `adafruit_16_servo.ino`:
 1. **Sketch shell** (`adafruit_16_servo.ino`): Wi-Fi/OTA/web setup, global runtime state, `setup()`, and `loop()`
 2. **Runtime model** (`servo_runtime.h`): `ServoConfig`, `ServoState`, sequence structs, and browser-baked `MotionRuntime`
 3. **Servo/DC control** (`servo_control.h`, `dc_motor.h`): calibrated servo writes, eased moves, percent travel commands, and motor speed/ramp helpers
-4. **Animation engines** (`animation_engine.h`, `motion_engine.h`, `sequence_engine.h`): `PLAY`, `SPLAY`, legacy `RUN <n>`, baked `MOTION <id>`, and baked `RUN <id>` Sequence dispatch (WAVE removed in servo-dz7 for OTA partition headroom)
+4. **Animation engines** (`animation_engine.h`, `motion_engine.h`, `sequence_engine.h`): eased `MOVE`, baked `MOTION <id>`, and baked `RUN <id>` Sequence dispatch (WAVE removed in servo-dz7; legacy `PLAY`/`SPLAY`/`RUN <n>` + `TIMESCALE` removed in servo-voc, both for OTA partition headroom)
 5. **Command interface** (`command_interface.h`): `showHelp()`, `processCommand()`, and mirrored command dispatch
 6. **Persistence/web** (`storage.h`, `bake_validate.h`, `Web.cpp`): EEPROM bake slots, schema validation, boardId, and HTTP endpoints
 
@@ -96,8 +95,7 @@ Per-servo setup and runtime state is tracked in two arrays of structs:
 - `MOVE <n> <deg> <ms>` - Smooth eased movement
 - `LMOVE <n> <pct> <ms>` - Smooth eased move to percent of travel
 - `MOTION <id>` - Play a browser-baked Motion from EEPROM
-- `PLAY <n> [LOOP]` - Play keyframe sequence
-- `RUN <n> [LOOP]` - Run a chained program of sequences
+- `RUN <id> [LOOP]` - Run a browser-baked Sequence from EEPROM (schema v1)
 - `STOP` - Stop all animations
 
 ### Continuous Servo Mode

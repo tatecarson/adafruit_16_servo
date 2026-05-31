@@ -10,15 +10,14 @@ FQBN       = arduino:renesas_uno:unor4wifi
 BUILD_DIR  = /tmp/adafruit-16-servo-build
 SKETCH_DIR = ../adafruit_16_servo
 
-.PHONY: all test clean size ota-budget
+.PHONY: all test clean size ota-budget storage motion sequence
 
 all: test
 
-test: $(TARGET)
-	./$(TARGET)
-
-$(TARGET): test_time_multiplier.cpp mock/Arduino.h mock/Wire.h mock/Adafruit_PWMServoDriver.h mock/WiFiS3.h mock/avr/pgmspace.h
-	$(CXX) $(CXXFLAGS) -o $@ $<
+# Aggregate run of every host suite. The legacy time-multiplier suite was
+# removed in servo-voc along with the legacy PLAY/SPLAY/RUN-n engine it tested.
+# (The setlist suite is added to this aggregate when servo-dos merges.)
+test: storage motion sequence
 
 run_storage_tests: test_storage.cpp mock/Arduino.h mock/EEPROM.h
 	$(CXX) $(CXXFLAGS) -o $@ $<
@@ -73,4 +72,4 @@ ota-budget:
 	fi
 
 clean:
-	rm -f $(TARGET) run_storage_tests run_motion_tests run_sequence_tests
+	rm -f run_storage_tests run_motion_tests run_sequence_tests run_setlist_tests

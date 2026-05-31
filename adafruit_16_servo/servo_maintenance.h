@@ -45,7 +45,6 @@ void setCalibration(uint8_t servo, uint16_t minVal, uint16_t maxVal) {
 
 void showStatus() {
   Serial.println(F("\n--- Servo Status ---"));
-  Serial.print(F("Time multiplier: ")); Serial.println(timeMultiplier);
   for (uint8_t i = 0; i < NUM_SERVOS; i++) {
     Serial.print(F("Servo ")); Serial.print(i);
     Serial.print(F(": min=")); Serial.print(servoConfig[i].minPulse);

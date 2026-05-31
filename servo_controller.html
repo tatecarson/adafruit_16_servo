@@ -1465,41 +1465,14 @@
   <div class="panel cmdbar">
     <span class="panel-corner-bl"></span><span class="panel-corner-br"></span>
 
-    <div class="group">
-      <div class="gname">Position <span class="key">PLAY</span></div>
-      <div class="btns">
-        <button class="cmd" data-cmd="PLAY 7">PLAY 7</button>
-        <button class="cmd" data-cmd="PLAY 8">PLAY 8</button>
-        <button class="cmd compact" data-cmd="PLAY 7 LOOP">7 ↺</button>
-        <button class="cmd compact" data-cmd="PLAY 8 LOOP">8 ↺</button>
-      </div>
-    </div>
-
-    <div class="group">
-      <div class="gname">Speed <span class="key">SPLAY</span></div>
-      <div class="btns">
-        <button class="cmd" data-cmd="SPLAY 1">SPLAY 1</button>
-        <button class="cmd" data-cmd="SPLAY 2">SPLAY 2</button>
-        <button class="cmd" data-cmd="SPLAY 3">SPLAY 3</button>
-        <button class="cmd compact" data-cmd="SPLAY 1 LOOP">1 ↺</button>
-        <button class="cmd compact" data-cmd="SPLAY 2 LOOP">2 ↺</button>
-        <button class="cmd compact" data-cmd="SPLAY 3 LOOP">3 ↺</button>
-      </div>
-    </div>
-
+    <!-- Legacy PLAY/SPLAY/RUN-n quick-play groups + TIMESCALE removed in
+         servo-voc. Schema-v1 playback lives in // 03–// 06; the free terminal
+         below sends any command. -->
     <div class="group">
       <div class="gname">Master</div>
       <div class="btns">
-        <button class="cmd" data-cmd="RUN 2">RUN 2</button>
-        <button class="cmd" data-cmd="RUN 3">RUN 3</button>
-        <button class="cmd compact" data-cmd="RUN 2 LOOP">2 ↺</button>
-        <button class="cmd compact" data-cmd="RUN 3 LOOP">3 ↺</button>
         <button class="cmd alert" data-cmd="STOP">STOP</button>
         <button class="cmd amber" data-cmd="STATUS">STATUS</button>
-        <button class="cmd" data-cmd="TIMESCALE 1">×1</button>
-        <button class="cmd" data-cmd="TIMESCALE 2">×2</button>
-        <button class="cmd" data-cmd="TIMESCALE 4">×4</button>
-        <button class="cmd" data-cmd="TIMESCALE 8">×8</button>
       </div>
     </div>
 
@@ -2228,15 +2201,16 @@ function renderInstruments(servos, motor, motion, seq, ip) {
 }
 
 function renderPills(s) {
-  const seq = s.sequence, ssq = s.speedSeq, motion = s.motion, motor = s.motor;
+  const motion = s.motion, motor = s.motor, runseq = s.runseq;
   const out = [];
   if (s.otaInProgress) out.push(`<span class="pill alert">OTA UPLOAD</span>`);
-  out.push(seq.active
-    ? `<span class="pill on">SEQ <span class="v">${seq.len}</span>${seq.loop ? ' ↺' : ''}</span>`
-    : `<span class="pill">SEQ <span class="v">idle</span></span>`);
-  out.push(ssq.active
-    ? `<span class="pill on">SPEED <span class="v">${ssq.len}</span>${ssq.loop ? ' ↺' : ''}</span>`
-    : `<span class="pill">SPEED <span class="v">idle</span></span>`);
+  // Legacy SEQ/SPEED pills (PLAY/SPLAY) removed in servo-voc. Show the
+  // schema-v1 Sequence runner (RUN <id>) state instead.
+  if (runseq) {
+    out.push(runseq.active
+      ? `<span class="pill on">RUN <span class="v">${runseq.id || '—'}</span>${runseq.loop ? ' ↺' : ''}</span>`
+      : `<span class="pill">RUN <span class="v">idle</span></span>`);
+  }
   // Motion replaces what used to be the WAVE pill — same shape, different
   // engine (browser-baked MOTION instead of in-firmware sine sweep).
   if (motion) {
@@ -2254,20 +2228,7 @@ function renderPills(s) {
   return out.join("");
 }
 
-function renderProgress(label, body) {
-  const active = body && body.active;
-  const len = body?.len || 0;
-  const elapsed = body?.startedMs || 0;
-  // We don't know absolute sequence duration on the client, so render a
-  // running indeterminate "tape" — fill grows then resets when sequence
-  // looks like it cycled. Use elapsed % (len * 1000) as a heuristic floor.
-  const cycleMs = Math.max(1, len * 800);
-  const pct = active ? Math.min(100, ((elapsed % cycleMs) / cycleMs) * 100) : 0;
-  return `<div class="progress${active ? '' : ' idle'}">
-    <div class="head"><span>${label}</span><span class="v">${active ? fmtUptime(elapsed) : 'idle'}${active && len ? ' · ' + len + ' frames' : ''}</span></div>
-    <div class="bar"><div class="fill" style="width:${pct}%"></div></div>
-  </div>`;
-}
+// renderProgress (legacy Position/Speed sequence tape) removed in servo-voc.
 
 function renderBoardCard(ip, idx, status, online) {
   const id = status?.node ?? "—";
@@ -2278,8 +2239,7 @@ function renderBoardCard(ip, idx, status, online) {
   let dataState = "offline";
   if (online) dataState = status?.otaInProgress ? "ota" : "online";
 
-  const ts = status?.timescale ?? 1;
-  const tsCls = ts > 1 ? "warn" : "";
+  // Legacy timescale telemetry removed in servo-voc.
 
   const instruments = renderInstruments(
     status?.servos, status?.motor, status?.motion, status?.sequence, ip
@@ -2306,13 +2266,7 @@ function renderBoardCard(ip, idx, status, online) {
 
       <section class="telemetry">
         ${ status ? `<div class="pills">${renderPills(status)}</div>` : `<div class="pills"><span class="pill alert">NO SIGNAL</span></div>` }
-        ${ status ? renderProgress("Position sequence", status.sequence) : '' }
-        ${ status ? renderProgress("Speed sequence", status.speedSeq) : '' }
-        <div class="timescale ${tsCls}">
-          <span class="k">timescale</span>
-          <span class="v">×${ts}</span>
-          <span class="k" style="margin-left:auto">period multiplier</span>
-        </div>
+        <!-- Legacy Position/Speed sequence progress + timescale removed (servo-voc). -->
       </section>
 
       <section class="channels">
