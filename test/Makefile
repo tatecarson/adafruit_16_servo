@@ -10,14 +10,13 @@ FQBN       = arduino:renesas_uno:unor4wifi
 BUILD_DIR  = /tmp/adafruit-16-servo-build
 SKETCH_DIR = ../adafruit_16_servo
 
-.PHONY: all test clean size ota-budget storage motion sequence
+.PHONY: all test clean size ota-budget storage motion sequence setlist
 
 all: test
 
 # Aggregate run of every host suite. The legacy time-multiplier suite was
 # removed in servo-voc along with the legacy PLAY/SPLAY/RUN-n engine it tested.
-# (The setlist suite is added to this aggregate when servo-dos merges.)
-test: storage motion sequence
+test: storage motion sequence setlist
 
 run_storage_tests: test_storage.cpp mock/Arduino.h mock/EEPROM.h
 	$(CXX) $(CXXFLAGS) -o $@ $<
@@ -36,6 +35,12 @@ run_sequence_tests: test_sequence_engine.cpp mock/Arduino.h mock/EEPROM.h mock/A
 
 sequence: run_sequence_tests
 	./run_sequence_tests
+
+run_setlist_tests: test_setlist_scheduler.cpp $(SKETCH_DIR)/setlist_scheduler.h $(SKETCH_DIR)/sequence_engine.h $(SKETCH_DIR)/servo_runtime.h mock/Arduino.h mock/EEPROM.h mock/Adafruit_PWMServoDriver.h
+	$(CXX) $(CXXFLAGS) -o $@ $<
+
+setlist: run_setlist_tests
+	./run_setlist_tests
 
 # OTA budget guard — compile the sketch and fail loud if the resulting
 # binary exceeds the OTA partition limit. Catches the kind of accidental

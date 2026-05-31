@@ -137,7 +137,11 @@ void processCommand(char* cmd) {
   }
   else if (startsWith(cmd, "RUN")) {
     int space = findChar(cmd, ' ', 0);
-    if (space > 0 && cmd[space + 1] != '\0') {
+    if (space > 0 && strcmp(cmd + space + 1, "AUTO") == 0) {
+      // RUN AUTO — run the active Setlist forever (servo-dos). Leader-gated
+      // inside startActiveSetlist; followers ride the mirrored RUN/STOP.
+      startActiveSetlist();
+    } else if (space > 0 && cmd[space + 1] != '\0') {
       // Schema-v1 only (legacy RUN <n> program runner removed in servo-voc):
       //   RUN evening-arc → Sequence from active EEPROM bake
       // Trailing " LOOP" loops the sequence.
@@ -157,7 +161,7 @@ void processCommand(char* cmd) {
       }
       startSequenceFromStorage(idBuf, loop, true);
     } else {
-      Serial.println(F("Use: RUN <id> [LOOP]"));
+      Serial.println(F("Use: RUN <id> [LOOP] | RUN AUTO"));
     }
   }
   else if (startsWith(cmd, "TPULSE")) {
@@ -294,6 +298,7 @@ void processCommand(char* cmd) {
   else if (strcmp(cmd, "STOP") == 0 || strcmp(cmd, "STOP ALL") == 0) {
     cancelMotionPlayback();
     cancelSequencePlayback();
+    cancelSetlistPlayback();   // RUN AUTO halts cleanly on STOP (servo-dos)
     stopMotor();
     for (uint8_t i = 0; i < NUM_SERVOS; i++) {
       servoState[i].moving = false;

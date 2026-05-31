@@ -67,7 +67,7 @@ The sketch is split into small headers included by `adafruit_16_servo.ino`:
 1. **Sketch shell** (`adafruit_16_servo.ino`): Wi-Fi/OTA/web setup, global runtime state, `setup()`, and `loop()`
 2. **Runtime model** (`servo_runtime.h`): `ServoConfig`, `ServoState`, sequence structs, and browser-baked `MotionRuntime`
 3. **Servo/DC control** (`servo_control.h`, `dc_motor.h`): calibrated servo writes, eased moves, percent travel commands, and motor speed/ramp helpers
-4. **Animation engines** (`animation_engine.h`, `motion_engine.h`, `sequence_engine.h`): eased `MOVE`, baked `MOTION <id>`, and baked `RUN <id>` Sequence dispatch (WAVE removed in servo-dz7; legacy `PLAY`/`SPLAY`/`RUN <n>` + `TIMESCALE` removed in servo-voc, both for OTA partition headroom)
+4. **Animation engines** (`animation_engine.h`, `motion_engine.h`, `sequence_engine.h`, `setlist_scheduler.h`): eased `MOVE`, baked `MOTION <id>`, baked `RUN <id>` Sequence dispatch, and baked `RUN AUTO` Setlist scheduling (WAVE removed in servo-dz7; legacy `PLAY`/`SPLAY`/`RUN <n>` + `TIMESCALE` removed in servo-voc, both for OTA partition headroom)
 5. **Command interface** (`command_interface.h`): `showHelp()`, `processCommand()`, and mirrored command dispatch
 6. **Persistence/web** (`storage.h`, `bake_validate.h`, `Web.cpp`): EEPROM bake slots, schema validation, boardId, and HTTP endpoints
 

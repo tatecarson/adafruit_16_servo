@@ -1068,6 +1068,25 @@ After OTA-flashing, confirm the surviving commands still work and the removed on
 3. `STATUS` / `HELP` print without referencing PLAY/SPLAY/TIMESCALE. **[ ] Pass [ ] Fail —**
 4. Browser // 02 board cards render (RUN/MOTION pills, no Position/Speed-sequence bars, no timescale row). **[ ] Pass [ ] Fail —**
 
+**2026-05-31 (servo-dos setlist scheduler / RUN AUTO — rebased onto servo-voc):**
+- [x] `make -C test` — storage 22/22, motion 6/6, sequence 8/8, setlist 10/10 (setlist suite: parse ordered/shuffle, ordered playback + repeat + loop, gap STOP + dwell, leader gate, user STOP cancels + internal STOP guarded, shuffle determinism for seed, minGapEntries honored, bad seqId advances without hanging)
+- [x] `make -C test size` — see the servo-dos rebase commit (post-legacy-removal headroom, well above the pre-rebase +304B)
+
+### Manual hardware test: RUN AUTO setlist scheduler (servo-dos)
+
+Requires OTA-flashing the new firmware to all 3 boards. Bake a library with at
+least one Setlist (an `ordered` one with 2+ entries, distinct `gapMs`, one entry
+`repeat`>1) and set it active.
+
+1. **Leader runs, cluster follows.** On the leader board's Serial (or `/cmd?c=RUN%20AUTO`), send `RUN AUTO`. Expect: leader prints `Running setlist <id>`; the first sequence plays on all boards (mirrored `RUN <seqId>`); after it finishes the next entry plays; an entry with `repeat:2` plays twice; `gapMs` produces a silent gap (mirrored `STOP`) before the next entry; the setlist loops at the end.
+   - Expected: `[ ] Pass  [ ] Fail —`
+2. **STOP halts cleanly.** During playback send `STOP`. Expect: all motion stops on every board and the scheduler does not resume on its own.
+   - Expected: `[ ] Pass  [ ] Fail —`
+3. **Non-leader no-op.** Send `RUN AUTO` directly to a follower (boardId ≠ leaderBoardId). Expect: it does nothing locally (no `Running setlist`); it still follows when the leader schedules.
+   - Expected: `[ ] Pass  [ ] Fail —`
+4. **Shuffle (optional).** Activate a `shuffle` setlist with `seed` set; confirm entries don't repeat within `minGapEntries` and the order is reproducible across two `RUN AUTO` runs with the same seed.
+   - Expected: `[ ] Pass  [ ] Fail —`
+
 ---
 
 ## Servo Calibration Notes

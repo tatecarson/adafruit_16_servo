@@ -24,6 +24,7 @@
       RIG <UP|DOWN> <pct> <spd> [ms] - Manual winch + DC motor test
       MOTION <id>       - Play baked browser Motion by id
       RUN <id> [LOOP]    - Run a baked browser Sequence by id
+      RUN AUTO           - Run the active baked Setlist (leader schedules)
       STOP [n]           - Stop all motion or hold one servo
       ROTATE <spd>       - Set DC motor rotation speed
       HELP               - Show commands
@@ -49,6 +50,7 @@
 #include "sequence_engine.h"
 #include "animation_engine.h"
 #include "servo_maintenance.h"
+#include "setlist_scheduler.h"
 #include "command_interface.h"
 
 // Wi-Fi / OTA state. otaReady gates syncPoll() so we don't UDP before the
@@ -267,6 +269,9 @@ MotionRuntime motionRuntime;
 // Browser-baked Sequence runner state (servo-3a9)
 SequenceRuntime sequenceRunner;
 
+// Setlist scheduler state — RUN AUTO (servo-dos)
+SetlistRuntime setlistScheduler;
+
 // Default calibration values
 #define DEFAULT_MIN 150
 #define DEFAULT_MAX 600
@@ -409,6 +414,7 @@ void loop() {
     updateSpeedRamps();
     updateMotion();
     updateSequenceRunner();
+    updateSetlistScheduler();
     tAnim = millis() - s;
   }
 

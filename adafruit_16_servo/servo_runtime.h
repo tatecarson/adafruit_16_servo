@@ -101,6 +101,40 @@ struct SequenceRuntime {
   SequenceStep steps[SEQ_MAX_STEPS];
 };
 
+// ---- Setlist scheduler (servo-dos, schema §4) --------------------
+// RUN AUTO runs the active Setlist forever: pick the next entry per mode,
+// play its sequence `repeat` times, dwell `gapMs`, repeat. Only the leader
+// board runs the scheduler; followers ride the existing RUN/STOP command
+// mirror. Sized for the UNO R4's RAM budget.
+#define SETLIST_ID_MAX_LEN 32
+#define SETLIST_MAX_ENTRIES 12
+#define SETLIST_PHASE_PLAYING 0
+#define SETLIST_PHASE_GAP 1
+
+struct SetlistEntry {
+  char     seqId[SEQ_ID_MAX_LEN + 1];
+  uint16_t repeat;   // >= 1
+  uint32_t gapMs;
+  uint16_t weight;   // >= 1 (shuffle only; ignored in ordered)
+};
+
+struct SetlistRuntime {
+  char     id[SETLIST_ID_MAX_LEN + 1];
+  uint8_t  entryCount;
+  SetlistEntry entries[SETLIST_MAX_ENTRIES];
+  bool     shuffle;          // mode == "shuffle"
+  uint8_t  minGapEntries;
+  uint32_t rngState;         // xorshift32 PRNG state
+  bool     active;
+  uint8_t  currentEntry;
+  uint16_t playsDone;        // repeats completed for currentEntry
+  uint8_t  phase;            // SETLIST_PHASE_PLAYING | SETLIST_PHASE_GAP
+  unsigned long gapStartMs;
+  uint8_t  recent[SETLIST_MAX_ENTRIES];  // ring buffer of recent picks
+  uint8_t  recentCount;
+  uint8_t  recentHead;
+};
+
 extern Adafruit_PWMServoDriver pwm;
 
 extern ServoConfig servoConfig[NUM_SERVOS];
@@ -111,6 +145,7 @@ extern ServoState servoState[NUM_SERVOS];
 
 extern MotionRuntime motionRuntime;
 extern SequenceRuntime sequenceRunner;
+extern SetlistRuntime setlistScheduler;
 
 void initServoDefaults();
 
