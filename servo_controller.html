@@ -2379,12 +2379,11 @@ $("#saveBoards").addEventListener("click", () => {
 autoPollEl.addEventListener("change", startPolling);
 pollMsEl.addEventListener("change", () => { metaPoll.textContent = `${pollMsEl.value} ms`; startPolling(); });
 
-// keyboard shortcut: ESC = STOP, 7/8 = PLAY n, S = SPLAY 1
+// keyboard shortcut: ESC = STOP. (Legacy 7/8 = PLAY n and S = SPLAY 1 shortcuts
+// removed in servo-voc — those firmware commands no longer exist.)
 window.addEventListener("keydown", e => {
   if (e.target.tagName === "INPUT" || e.target.tagName === "SELECT") return;
   if (e.key === "Escape") { broadcastCommand("STOP"); }
-  else if (/^[78]$/.test(e.key)) { broadcastCommand("PLAY " + e.key); }
-  else if (e.key === "s" || e.key === "S") { broadcastCommand("SPLAY 1"); }
 });
 
 // ============================================================
@@ -4130,21 +4129,11 @@ function formatMs(ms) {
   return `${s.toFixed(s % 1 ? 1 : 0)}s`;
 }
 
+// Step-command suggestions. Legacy PLAY/SPLAY/RUN-n + TIMESCALE were removed
+// (servo-voc) — the firmware no longer accepts them, so don't offer them as
+// steps. Baked Motion ids (MOTION <id>) and Sequence ids (RUN <id>) are
+// appended dynamically from the library by commandOptions().
 const SEQUENCE_COMMAND_PRESETS = [
-  "PLAY 7",
-  "PLAY 8",
-  "PLAY 7 LOOP",
-  "PLAY 8 LOOP",
-  "SPLAY 1",
-  "SPLAY 2",
-  "SPLAY 3",
-  "SPLAY 1 LOOP",
-  "SPLAY 2 LOOP",
-  "SPLAY 3 LOOP",
-  "RUN 2",
-  "RUN 3",
-  "RUN 2 LOOP",
-  "RUN 3 LOOP",
   "ROTATE -100",
   "ROTATE -75",
   "ROTATE -50",
@@ -4162,9 +4151,6 @@ const SEQUENCE_COMMAND_PRESETS = [
   "S0 90",
   "S1 90",
   "S2 90",
-  "TIMESCALE 1",
-  "TIMESCALE 2",
-  "MOTION tidal-drift",
   "STATUS",
   "STOP",
 ];
