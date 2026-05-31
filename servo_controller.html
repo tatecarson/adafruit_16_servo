@@ -1609,7 +1609,7 @@
           <tr>
             <th></th>
             <th>#</th>
-            <th>cmd</th>
+            <th>cmd <span id="seqCmdHelp" title="" style="cursor:help;color:var(--ink-mute);font-weight:400">&#9432;</span></th>
             <th>duration</th>
             <th>target</th>
             <th>label</th>
@@ -1620,6 +1620,7 @@
         </thead>
         <tbody id="seqSteps"></tbody>
       </table>
+      <datalist id="seqCmdSuggest"></datalist>
     </div>
 
     <div class="seq-tools">
@@ -2396,6 +2397,17 @@ pollMsEl.addEventListener("change", () => { metaPoll.textContent = `${pollMsEl.v
 window.addEventListener("keydown", e => {
   if (e.target.tagName === "INPUT" || e.target.tagName === "SELECT") return;
   if (e.key === "Escape") { broadcastCommand("STOP"); }
+});
+
+// Double-click any text field to select all its contents. Native double-click
+// only selects a word, which is awkward for multi-token values like
+// "MOTION tidal-drift" or "RIG UP 80 35 3000" — select-all lets you retype.
+document.addEventListener("dblclick", (e) => {
+  const el = e.target;
+  if (!el) return;
+  if (el.tagName === "TEXTAREA" || (el.tagName === "INPUT" && typeof el.select === "function")) {
+    try { el.select(); } catch { /* some input types (e.g. number) disallow select(); ignore */ }
+  }
 });
 
 // ============================================================
@@ -4135,44 +4147,50 @@ function markSeqDirty() {
   seqStatusEl.textContent = "edited";
 }
 
+// When a step's command is (re)selected as MOTION <id>, set that step's
+// duration to the motion's full length so it plays to completion before the
+// next step fires. Fires only on the cmd-change event, so a manual duration
+// edit afterward is preserved. Returns true if it changed a duration.
+function autofillMotionStepDuration(cmdEl) {
+  if (!cmdEl || cmdEl.dataset.field !== "cmd") return false;
+  const match = /^MOTION\s+(\S+)/.exec(cmdEl.value || "");
+  if (!match) return false;
+  const motion = (sequenceLibrary().motions || []).find(m => m.id === match[1]);
+  if (!motion || motion.durationMs == null) return false;   // unknown id → leave as-is
+  const row = cmdEl.closest("tr[data-index]");
+  const durInput = row && row.querySelector("[data-field=durationMs]");
+  if (!durInput) return false;
+  const dur = Math.max(0, parseInt(motion.durationMs, 10) || 0);
+  if (String(dur) === durInput.value) return false;
+  durInput.value = dur;
+  markSeqDirty();
+  const seq = readSequenceFromDom();
+  seqTotalEl.textContent = `total ${formatMs(seq.steps.reduce((s, st) => s + st.durationMs, 0))}`;
+  return true;
+}
+
 function formatMs(ms) {
   if (ms < 1000) return `${ms}ms`;
   const s = ms / 1000;
   return `${s.toFixed(s % 1 ? 1 : 0)}s`;
 }
 
-// Step-command suggestions. Legacy PLAY/SPLAY/RUN-n + TIMESCALE were removed
-// (servo-voc) — the firmware no longer accepts them, so don't offer them as
-// steps. Baked Motion ids (MOTION <id>) and Sequence ids (RUN <id>) are
-// appended dynamically from the library by commandOptions().
-const SEQUENCE_COMMAND_PRESETS = [
-  "ROTATE -100",
-  "ROTATE -75",
-  "ROTATE -50",
-  "ROTATE -30",
-  "ROTATE -15",
-  "ROTATE 0",
-  "ROTATE 15",
-  "ROTATE 30",
-  "ROTATE 50",
-  "ROTATE 75",
-  "ROTATE 100",
-  "RIG UP 80 35 3000",
-  "RIG DOWN 20 -25",
-  "MOVE 0 90 1000",
-  "S0 90",
-  "S1 90",
-  "S2 90",
-  "STATUS",
-  "STOP",
-];
+// The step command field is an editable combobox (servo-vy6): the datalist
+// suggests the library's baked Motions (the clean, motion-first default), but
+// any firmware command can be typed freely — fixing the old closed <select>
+// that couldn't represent non-preset commands (e.g. ROTATE 24) and silently
+// rewrote them on save. CMD_HELP is the hover reference for what's typeable.
+const CMD_HELP =
+  "Type any command — the list suggests your baked motions. " +
+  "Common: MOTION <id> · RUN <id> · ROTATE <-100..100> · MOVE <ch> <deg> <ms> · " +
+  "DMOVE/UMOVE <ch> <pct> <ms> · DOWN/UP <ch> <pct> · S<ch> <deg> · STOP";
 
-function commandOptions(selected) {
-  const current = String(selected || "").trim();
-  const presets = Array.from(new Set([...SEQUENCE_COMMAND_PRESETS, ...motionOptionsForCommands()]));
-  return presets.map(cmd =>
-    `<option value="${escapeHtml(cmd)}"${cmd === current ? " selected" : ""}>${escapeHtml(cmd)}</option>`
-  ).join("");
+function cmdSuggestOptions() {
+  // Datalist <option>s = baked Motion ids only (MOTION <id>). Everything else
+  // is typed by hand; the firmware sequence runner accepts any command string.
+  return motionOptionsForCommands()
+    .map(cmd => `<option value="${escapeHtml(cmd)}"></option>`)
+    .join("");
 }
 
 function targetOptions(selected) {
@@ -4189,6 +4207,11 @@ function renderSequencer() {
   const lib = sequenceLibrary();
   const seq = getCurrentSequence(lib);
   if (!seq) return;
+  // Refresh the step-command suggestions (baked motions) + the hover help.
+  const cmdSuggestEl = $("#seqCmdSuggest");
+  if (cmdSuggestEl) cmdSuggestEl.innerHTML = cmdSuggestOptions();
+  const cmdHelpEl = $("#seqCmdHelp");
+  if (cmdHelpEl) cmdHelpEl.title = CMD_HELP;
   seqSelectEl.innerHTML = lib.sequences.map(s =>
     `<option value="${escapeHtml(s.id)}"${s.id === seq.id ? " selected" : ""}>${escapeHtml(s.name || s.id)}</option>`
   ).join("");
@@ -4210,7 +4233,7 @@ function renderSequencer() {
     return `<tr data-index="${index}" draggable="true"${active ? ' class="active"' : ''}>
       <td class="seq-drag" title="Drag to reorder">=</td>
       <td class="seq-index">${pad2(index + 1)}</td>
-      <td><select data-field="cmd">${commandOptions(step.cmd)}</select></td>
+      <td><input data-field="cmd" type="text" list="seqCmdSuggest" spellcheck="false" autocomplete="off" value="${escapeHtml(step.cmd)}" title="${escapeHtml(CMD_HELP)}"></td>
       <td><input data-field="durationMs" type="number" min="0" step="100" value="${step.durationMs}"></td>
       <td><select data-field="target">${targetOptions(step.target)}</select></td>
       <td><input data-field="label" type="text" value="${escapeHtml(step.label)}" spellcheck="false"></td>
@@ -5129,7 +5152,8 @@ seqStepsEl.addEventListener("input", () => {
   const total = seq.steps.reduce((sum, step) => sum + step.durationMs, 0);
   seqTotalEl.textContent = `total ${formatMs(total)}`;
 });
-seqStepsEl.addEventListener("change", () => {
+seqStepsEl.addEventListener("change", (e) => {
+  autofillMotionStepDuration(e.target);   // MOTION <id> → motion's full duration
   if (seqDirty) saveCurrentSequence(readSequenceFromDom());
 });
 seqStepsEl.addEventListener("click", async e => {
