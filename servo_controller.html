@@ -1941,11 +1941,23 @@ async function refreshBoardIdMap() {
         if (boardIdByIp.has(ip)) next.set(ip, boardIdByIp.get(ip));
       }
     }));
+    // Only re-render the editor sections when the boardId↔IP mapping actually
+    // changed. pollOnce() calls this every ~800ms; re-rendering unconditionally
+    // rebuilt every <select>'s DOM and closed any dropdown the operator had
+    // open mid-selection (the target/cmd pickers in // 04–// 06).
+    let changed = next.size !== boardIdByIp.size;
+    if (!changed) {
+      for (const [ip, id] of next) {
+        if (boardIdByIp.get(ip) !== id) { changed = true; break; }
+      }
+    }
     boardIdByIp.clear();
     next.forEach((id, ip) => boardIdByIp.set(ip, id));
-    renderMotionEditor();
-    renderSequencer();
-    renderSetlist();
+    if (changed) {
+      renderMotionEditor();
+      renderSequencer();
+      renderSetlist();
+    }
   })().finally(() => { refreshBoardIdsInFlight = null; });
   return refreshBoardIdsInFlight;
 }
