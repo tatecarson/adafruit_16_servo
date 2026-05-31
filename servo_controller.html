@@ -4135,6 +4135,28 @@ function markSeqDirty() {
   seqStatusEl.textContent = "edited";
 }
 
+// When a step's command is (re)selected as MOTION <id>, set that step's
+// duration to the motion's full length so it plays to completion before the
+// next step fires. Fires only on the cmd-change event, so a manual duration
+// edit afterward is preserved. Returns true if it changed a duration.
+function autofillMotionStepDuration(cmdEl) {
+  if (!cmdEl || cmdEl.dataset.field !== "cmd") return false;
+  const match = /^MOTION\s+(\S+)/.exec(cmdEl.value || "");
+  if (!match) return false;
+  const motion = (sequenceLibrary().motions || []).find(m => m.id === match[1]);
+  if (!motion || motion.durationMs == null) return false;   // unknown id → leave as-is
+  const row = cmdEl.closest("tr[data-index]");
+  const durInput = row && row.querySelector("[data-field=durationMs]");
+  if (!durInput) return false;
+  const dur = Math.max(0, parseInt(motion.durationMs, 10) || 0);
+  if (String(dur) === durInput.value) return false;
+  durInput.value = dur;
+  markSeqDirty();
+  const seq = readSequenceFromDom();
+  seqTotalEl.textContent = `total ${formatMs(seq.steps.reduce((s, st) => s + st.durationMs, 0))}`;
+  return true;
+}
+
 function formatMs(ms) {
   if (ms < 1000) return `${ms}ms`;
   const s = ms / 1000;
@@ -5129,7 +5151,8 @@ seqStepsEl.addEventListener("input", () => {
   const total = seq.steps.reduce((sum, step) => sum + step.durationMs, 0);
   seqTotalEl.textContent = `total ${formatMs(total)}`;
 });
-seqStepsEl.addEventListener("change", () => {
+seqStepsEl.addEventListener("change", (e) => {
+  autofillMotionStepDuration(e.target);   // MOTION <id> → motion's full duration
   if (seqDirty) saveCurrentSequence(readSequenceFromDom());
 });
 seqStepsEl.addEventListener("click", async e => {
