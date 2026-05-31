@@ -52,108 +52,11 @@ Interactive Serial interface for the Adafruit PCA9685 16-channel PWM/Servo drive
 | `UMOVE <n> <pct> <ms>` | `UMOVE 0 80 3000` | Smooth animated move to absolute percent up |
 | `DMOVE <n> <pct> <ms>` | `DMOVE 0 30 3000` | Smooth animated move to absolute percent down |
 | `MOTION <id>` | `MOTION tidal-drift` | Play a browser-baked Motion from EEPROM |
-| `PLAY <n> [LOOP]` | `PLAY 1 LOOP` | Play keyframe sequence |
-| `SPLAY <n> [LOOP]` | `SPLAY 1 LOOP` | Play speed sequence (continuous servos) |
-| `RUN <n> [LOOP]` | `RUN 1 LOOP` | Run a chained program made from existing `PLAY`/`SPLAY` sequences |
 | `RUN <id> [LOOP]` | `RUN evening-arc` | Run a browser-baked Sequence by id (schema v1) |
-| `TIMESCALE [n]` | `TIMESCALE 2` | Show or set the global sequence slowdown multiplier |
 | `STOP` | `STOP` | Stop all active motion and sequences |
 | `STOP <n>` | `STOP 0` | Stop and hold one servo at its current position |
 | `MODE <n> STD\|CONT` | `MODE 2 CONT` | Set servo to standard or continuous |
 | `ROTATE <spd>` | `ROTATE 50` | Set installation rotation speed (-100 to 100) |
-
-### Creating Custom Sequences
-
-Edit `sequence_setup.h` to define your own keyframe animations. Sequences are stored in PROGMEM (flash memory) to save RAM:
-
-```cpp
-const Keyframe sequence1[] PROGMEM = {
-  {servo, degrees, time_ms, duration_ms},
-  // ...
-  {255, 0, end_time_ms, 0}  // End marker
-};
-```
-
-- `servo`: Which servo (0-15)
-- `degrees`: Target position in the servo's configured sequence travel range (`downDegrees` if set, otherwise `totalDegrees`)
-- `time_ms`: When to start this move (ms from sequence start)
-- `duration_ms`: How long the move takes
-
-Current `PLAY` sequences in this repo:
-
-- `PLAY 7`: progressive winch drop and reverse using dense keyframes
-- `PLAY 8`: progressive winch drop and reverse using compact keyframes
-
-### Speed Sequences (Continuous Servos)
-
-Speed sequences choreograph continuous servos with timed speed changes and ramping:
-
-```
-SPLAY 1        # Play speed sequence 1 once
-SPLAY 1 LOOP   # Loop speed sequence 1
-STOP           # Stop sequence
-```
-
-Edit `sequence_setup.h` to define speed sequences (also stored in PROGMEM):
-
-```cpp
-const SpeedFrame speedSeq1[] PROGMEM = {
-  {servo, speed, time_ms, ramp_ms},
-  // ...
-  {255, 0, end_time_ms, 0}  // End marker
-};
-```
-
-- `servo`: Which continuous servo (0-15)
-- `speed`: Target speed (-100 to 100, 0 = stop)
-- `time_ms`: When to start this speed change (ms from sequence start)
-- `ramp_ms`: How long to ramp to the target speed (0 = instant)
-
-Current `SPLAY` sequences in this repo:
-
-- `SPLAY 1`: demo rotation
-- `SPLAY 2`: drift rotation with a faster peak and shorter ramp
-- `SPLAY 3`: slower drift rotation with a lower peak speed and longer ramp
-
-### Chained Programs
-
-Programs let you stitch existing `PLAY` and `SPLAY` sequences into a longer-running show:
-
-```text
-RUN 1        # Run program 1 once
-RUN 1 LOOP   # Loop program 1 continuously
-STOP         # Stop the active program
-```
-
-In `sequence_setup.h`, programs define independent position and speed tracks that start from the same `RUN` command:
-
-```cpp
-const ProgramSequenceStep program1PositionTrack[] PROGMEM = {
-  {2, 2},
-  {4, 4},
-};
-
-const ProgramSequenceStep program1SpeedTrack[] PROGMEM = {
-  {1, 1},
-};
-
-const SequenceProgramDefinition program1 = {
-  program1PositionTrack,
-  sizeof(program1PositionTrack) / sizeof(program1PositionTrack[0]),
-  program1SpeedTrack,
-  sizeof(program1SpeedTrack) / sizeof(program1SpeedTrack[0]),
-};
-```
-
-- `positionSteps`: `PLAY` sequence IDs for the winch/positional track
-- `speedSteps`: `SPLAY` sequence IDs for the continuous-rotation track
-- `repeatCount`: How many times to run that track step before advancing
-- `RUN 1 LOOP` makes both tracks loop independently, so rotation can continue while the positional track changes sequences
-
-Current `RUN` programs in this repo:
-
-- `RUN 2`: drift program using sequence 8 with `SPLAY 2`
-- `RUN 3`: slow drift program using sequence 8 with `SPLAY 3`
 
 ### Browser-Baked Motions
 
@@ -168,7 +71,7 @@ STOP
 - Servo tracks interpolate linearly between absolute percent-down keyframes and map through each channel's calibrated travel before writing PCA9685 pulses every loop tick
 - DC tracks interpolate signed speed values from `-100` to `100`
 - Each board executes only its local sliced tracks; if a baked track still has `boardId`, mismatched boards skip it
-- Manual servo/DC commands, `PLAY`, `SPLAY`, `RUN`, or `STOP` cancel the active Motion cleanly
+- Manual servo/DC commands, `RUN <id>`, `MOTION`, or `STOP` cancel the active Motion cleanly
 - For the current goBILDA 5-turn winches, see `docs/sequencer-schema.md` for measured slew-rate limits: full-range moves physically bottom out around `7.7s`, while very slow full-range moves can become visibly staccato.
 
 ### Browser Sequence Editor
@@ -181,25 +84,6 @@ Open `servo_controller.html` to author schema v1 Sequences in the browser librar
 - Section `// 03 Sequencer Bake` still imports, exports, slices, and POSTs the same library to the boards
 - **Pull from Boards** reads the baked library back from every reachable board (`GET /sequences`) and rebuilds the editor library: motion tracks are unioned by board, and the full-library fields (sequences/setlists/active/scheduler) must match across boards or the operator is asked to pick a source-of-truth board. Use it to recover the library on a fresh machine, after a branch swap, or after a cleared cache — it reflects what's physically baked on the boards. It never overwrites a non-empty local library without confirmation.
 
-### Sequence Time Scaling
-
-Use `TIMESCALE` to slow down all sequence-driven timing without editing `sequence_setup.h`:
-
-```text
-TIMESCALE     # show the current multiplier
-TIMESCALE 2   # run sequences 2x slower
-TIMESCALE 10  # run sequences 10x slower
-TIMESCALE 1   # restore normal timing
-```
-
-- Higher values are slower
-- Default is `1`
-- Values below `1` are clamped to `1`
-- The multiplier applies globally to `PLAY`, `SPLAY`, and `RUN`
-- For positional sequences, both `time_ms` and `duration_ms` are multiplied
-- For speed sequences, both `time_ms` and `ramp_ms` are multiplied
-
-This is useful for rehearsing motion at a safer pace or stretching an existing show without changing the stored keyframes.
 
 ## Percent-of-Travel Commands
 
@@ -236,7 +120,7 @@ RIG UP 80 35 3000    # winches go 80% up while rotation ramps to 35%
 RIG DOWN 20 -25      # winches go 20% down while rotation immediately runs reverse
 ```
 
-`RIG` is a manual integration-testing command. It targets all protected non-continuous winches plus the first configured continuous servo, and stays separate from `PLAY` / `SPLAY`.
+`RIG` is a manual integration-testing command. It targets all protected non-continuous winches plus the first configured continuous servo, for live testing outside of baked Motion/Sequence playback.
 
 `RIG` parameters:
 

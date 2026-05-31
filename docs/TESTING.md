@@ -1055,6 +1055,19 @@ Requires OTA-flashing the new firmware to the cluster first (`make -C test size`
 5. **Conflict path (optional).** Bake different sequences to board 1 vs board 2, clear localStorage, reload → a prompt should name the divergent field(s) and let you pick which board to trust.
    - Expected: `[ ] Pass  [ ] Fail —`
 
+**2026-05-31 (servo-voc remove legacy PLAY/SPLAY/RUN-n + TIMESCALE):**
+- [x] `make -C test` — storage 22/22, motion 6/6, sequence 8/8 (legacy time-multiplier suite removed)
+- [x] `make -C test size` — 115076 / 122880 bytes (**+7804 headroom**, reclaimed ~5.1 KB vs the 120200 baseline)
+- [x] Webpage verified in preview against a mocked status.json with no legacy `sequence`/`speedSeq`/`timescale` fields: `renderPills`/`renderBoardCard` raise no errors, RUN + MOTION pills render, the // 01 PLAY/SPLAY/RUN-n + TIMESCALE buttons are gone, STOP/STATUS remain, console clean.
+
+### Manual hardware test: legacy removal regression (servo-voc)
+
+After OTA-flashing, confirm the surviving commands still work and the removed ones fail gracefully:
+1. `MOTION <id>` and `RUN <id>` (baked) still play; `STOP` halts. **[ ] Pass [ ] Fail —**
+2. `PLAY 1`, `SPLAY 1`, `RUN 1`, `TIMESCALE 2` now print the usage/unknown response instead of executing (no crash). **[ ] Pass [ ] Fail —**
+3. `STATUS` / `HELP` print without referencing PLAY/SPLAY/TIMESCALE. **[ ] Pass [ ] Fail —**
+4. Browser // 02 board cards render (RUN/MOTION pills, no Position/Speed-sequence bars, no timescale row). **[ ] Pass [ ] Fail —**
+
 ---
 
 ## Servo Calibration Notes

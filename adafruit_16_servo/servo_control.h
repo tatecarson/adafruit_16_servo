@@ -153,9 +153,7 @@ void moveServoPercentUp(uint8_t servo, uint8_t percentUp, uint32_t duration) {
 }
 
 void stopActivePatterns() {
-  sequenceActive = false;
-  speedSeqActive = false;
-  programActive = false;
+  // Legacy sequence/speedSeq/program flags removed in servo-voc.
   cancelMotionPlayback();
   cancelSequencePlayback();
 }

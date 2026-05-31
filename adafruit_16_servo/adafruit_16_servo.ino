@@ -23,12 +23,9 @@
       ALLDOWN <pct> [ms] - Move all protected winch servos down together
       RIG <UP|DOWN> <pct> <spd> [ms] - Manual winch + DC motor test
       MOTION <id>       - Play baked browser Motion by id
-      PLAY <n> [LOOP]    - Play keyframe sequence
-      SPLAY <n> [LOOP]   - Play speed sequence (DC motor)
-      RUN <n> [LOOP]     - Run a chained program of sequences
+      RUN <id> [LOOP]    - Run a baked browser Sequence by id
       STOP [n]           - Stop all motion or hold one servo
       ROTATE <spd>       - Set DC motor rotation speed
-      TIMESCALE <n>      - Scale sequence timing n times slower
       HELP               - Show commands
  ****************************************************/
 
@@ -46,7 +43,6 @@
 #include "storage.h"
 #include "servo_calibration.h"
 #include "servo_setup.h"
-#include "sequence_setup.h"
 
 #include "servo_control.h"
 #include "motion_engine.h"
@@ -159,16 +155,7 @@ void writeStatusJson(WiFiClient& client) {
   s += F(",\"ip\":\"");          s += ipBuf; s += '"';
   s += F(",\"uptimeMs\":");      s += millis();
   s += F(",\"otaInProgress\":"); s += (otaInProgress ? F("true") : F("false"));
-  s += F(",\"sequence\":{\"active\":"); s += (sequenceActive ? F("true") : F("false"));
-  s += F(",\"loop\":");          s += (sequenceLoop ? F("true") : F("false"));
-  s += F(",\"len\":");           s += currentSequenceLength;
-  s += F(",\"startedMs\":");     s += (sequenceActive ? (millis() - sequenceStartTime) : 0UL);
-  s += '}';
-  s += F(",\"speedSeq\":{\"active\":"); s += (speedSeqActive ? F("true") : F("false"));
-  s += F(",\"loop\":");          s += (speedSeqLoop ? F("true") : F("false"));
-  s += F(",\"len\":");           s += currentSpeedSeqLength;
-  s += F(",\"startedMs\":");     s += (speedSeqActive ? (millis() - speedSeqStartTime) : 0UL);
-  s += '}';
+  // Legacy sequence/speedSeq telemetry removed in servo-voc.
   s += F(",\"motion\":{\"active\":"); s += (motionRuntime.active ? F("true") : F("false"));
   // motionRuntime.id is emitted unescaped: motionCopyString() (motion_engine.h)
   // rejects '"' and '\\' at parse time, and the schema id regex
@@ -187,9 +174,8 @@ void writeStatusJson(WiFiClient& client) {
   s += F(",\"loop\":");          s += (sequenceRunner.loop ? F("true") : F("false"));
   s += F(",\"stepMs\":");        s += (sequenceRunner.active ? (millis() - sequenceRunner.stepStartMs) : 0UL);
   s += '}';
-  // WAVE removed (servo-dz7); browser clients should treat absence of the
-  // "wave" key as wave-not-supported on this firmware build.
-  s += F(",\"timescale\":");     s += timeMultiplier;
+  // WAVE removed (servo-dz7); TIMESCALE removed (servo-voc). Browser clients
+  // should treat absence of the "wave"/"timescale" keys as not-supported.
   s += F(",\"servos\":[");
   for (uint8_t i = 0; i < NUM_SERVOS; i++) {
     if (i) s += ',';
@@ -272,36 +258,8 @@ MotorState motorState;
 
 // WAVE pattern state removed (servo-dz7). See animation_engine.h.
 
-// Time multiplier for scaling sequence durations (1 = no scaling, 60 = 60x slower)
-// Set via serial command: TIMESCALE <n>
-uint16_t timeMultiplier = 1;
-
-// Sequence playback state (pointers to PROGMEM arrays)
-bool sequenceActive = false;
-bool sequenceLoop = false;
-const Keyframe* currentSequence = nullptr;
-uint8_t currentSequenceLength = 0;
-unsigned long sequenceStartTime = 0;
-uint8_t lastTriggeredKeyframe = 0;
-
-// Speed sequence playback state (pointers to PROGMEM arrays)
-bool speedSeqActive = false;
-bool speedSeqLoop = false;
-const SpeedFrame* currentSpeedSeq = nullptr;
-uint8_t currentSpeedSeqLength = 0;
-unsigned long speedSeqStartTime = 0;
-uint8_t lastTriggeredSpeedFrame = 0;
-
-// Chained program playback state
-bool programActive = false;
-bool programLoop = false;
-const SequenceProgramDefinition* currentProgram = nullptr;
-bool programPositionDone = true;
-bool programSpeedDone = true;
-uint8_t currentProgramPositionStepIndex = 0;
-uint16_t currentProgramPositionIteration = 0;
-uint8_t currentProgramSpeedStepIndex = 0;
-uint16_t currentProgramSpeedIteration = 0;
+// Legacy PLAY/SPLAY/RUN-n + TIMESCALE playback state removed in servo-voc.
+// Schema-v1 Motions/Sequences/Setlists are the only playback path.
 
 // Browser-baked Motion playback state
 MotionRuntime motionRuntime;
@@ -451,9 +409,6 @@ void loop() {
     updateSpeedRamps();
     updateMotion();
     updateSequenceRunner();
-    updateSequence();
-    updateSpeedSequence();
-    updateSequenceProgram();
     tAnim = millis() - s;
   }
 

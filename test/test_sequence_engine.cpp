@@ -19,28 +19,7 @@ ServoConfig servoConfig[NUM_SERVOS];
 ServoState servoState[NUM_SERVOS];
 MotorState motorState;
 
-uint16_t timeMultiplier = 1;
-bool sequenceActive = false;
-bool sequenceLoop = false;
-const Keyframe* currentSequence = nullptr;
-uint8_t currentSequenceLength = 0;
-unsigned long sequenceStartTime = 0;
-uint8_t lastTriggeredKeyframe = 0;
-bool speedSeqActive = false;
-bool speedSeqLoop = false;
-const SpeedFrame* currentSpeedSeq = nullptr;
-uint8_t currentSpeedSeqLength = 0;
-unsigned long speedSeqStartTime = 0;
-uint8_t lastTriggeredSpeedFrame = 0;
-bool programActive = false;
-bool programLoop = false;
-const SequenceProgramDefinition* currentProgram = nullptr;
-bool programPositionDone = true;
-bool programSpeedDone = true;
-uint8_t currentProgramPositionStepIndex = 0;
-uint16_t currentProgramPositionIteration = 0;
-uint8_t currentProgramSpeedStepIndex = 0;
-uint16_t currentProgramSpeedIteration = 0;
+// Legacy PLAY/SPLAY/RUN-n globals removed in servo-voc.
 MotionRuntime motionRuntime;
 SequenceRuntime sequenceRunner;
 
