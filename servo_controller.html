@@ -2399,6 +2399,17 @@ window.addEventListener("keydown", e => {
   if (e.key === "Escape") { broadcastCommand("STOP"); }
 });
 
+// Double-click any text field to select all its contents. Native double-click
+// only selects a word, which is awkward for multi-token values like
+// "MOTION tidal-drift" or "RIG UP 80 35 3000" — select-all lets you retype.
+document.addEventListener("dblclick", (e) => {
+  const el = e.target;
+  if (!el) return;
+  if (el.tagName === "TEXTAREA" || (el.tagName === "INPUT" && typeof el.select === "function")) {
+    try { el.select(); } catch { /* some input types (e.g. number) disallow select(); ignore */ }
+  }
+});
+
 // ============================================================
 // OTA UPLOAD
 // ============================================================
