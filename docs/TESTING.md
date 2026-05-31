@@ -1030,6 +1030,31 @@ when baked should be run once servo-67d lands.
 - [x] `make -C test size` — 119976 / 122880 bytes (+2904 headroom)
 - [ ] Hardware reconnect smoke — not run in this session. Test by letting a board appear online in the router after Wi-Fi loss/rejoin, then confirming `GET /status.json`, `GET /boardId`, browser cards, OTA, and UDP sync recover without power-cycling.
 
+**2026-05-30 (servo-7mn library hydration / `GET /sequences`):**
+- [x] `make -C test` — 7/7 time multiplier
+- [x] `make -C test motion` — 6/6 motion engine
+- [x] `make -C test storage` — 22/22 storage / CRC / bake validation (covers `storageReadActive` round-trip the new endpoint relies on)
+- [x] `make -C test size` — 120200 / 122880 bytes (+2680 headroom)
+- [x] Browser logic verified in preview against mocked `fetch`: track-union reconcile across boards, conflict detection + source-board pick (defaults to leader), 204 (no-bake) boards skipped, and the no-clobber guard (a declined manual pull leaves an existing draft untouched).
+- Note: auto-pull-on-empty-load was removed per operator decision (2026-05-31) — hydration is manual-only via the "Pull from Boards" button. Deviates from the issue's "page load with empty library" acceptance criterion by choice.
+
+### Manual hardware test: `GET /sequences` read-back + browser Pull (servo-7mn)
+
+Requires OTA-flashing the new firmware to the cluster first (`make -C test size` already passed the OTA budget guard).
+
+1. **Endpoint returns the baked payload.** Bake any library from the browser (// 03 → Bake to Boards), then on a board IP run:
+   - `curl -s http://<board-ip>/sequences/info` → note `bytesUsed`.
+   - `curl -s http://<board-ip>/sequences | wc -c` → byte count must equal `bytesUsed`, and the body must be the exact minified JSON that was baked (same `schemaVersion`, motions sliced to this board's `boardId`).
+   - **[x] Pass** (2026-05-31, board 1 @ 192.168.8.198): `bytesUsed` 3618 == `wc -c` 3618; `schemaVersion: 1`; track boardIds `[1]` only (correctly sliced).
+2. **Empty/unbaked board returns 204.** On a board that has never been baked (or right after a factory clear), `curl -i http://<board-ip>/sequences` → `HTTP/1.1 204 No Content`, empty body.
+   - Expected: `[ ] Pass  [ ] Fail —`
+3. **Manual Pull rebuilds an empty library.** With the cluster baked, open the browser console on `servo_controller.html`, run `localStorage.removeItem('servoCluster.library')`, reload (sections show empty — expected, hydration is manual). Click **Pull from Boards**: // 03 summary repopulates, // 04 / // 05 render the recovered sequences/setlists, and the bake log shows `hydrated: N motion(s) ...`.
+   - Expected: `[ ] Pass  [ ] Fail —`
+4. **Manual Pull does not clobber a draft.** With a non-empty library, click **Pull from Boards** and cancel the confirm → library unchanged. Accept it → library replaced by what's on the boards.
+   - Expected: `[ ] Pass  [ ] Fail —`
+5. **Conflict path (optional).** Bake different sequences to board 1 vs board 2, clear localStorage, reload → a prompt should name the divergent field(s) and let you pick which board to trust.
+   - Expected: `[ ] Pass  [ ] Fail —`
+
 ---
 
 ## Servo Calibration Notes

@@ -157,6 +157,30 @@ static void handleSequencesInfo(WiFiClient& client) {
     client.println("}");
 }
 
+// Read-back of the active baked blob so the browser can hydrate its library
+// from what's physically on the boards (servo-7mn). Streams the raw stored
+// payload bytes verbatim — they are exactly the JSON the browser POSTed. An
+// empty/invalid active slot answers 204 No Content so the browser can tell
+// "this board has nothing baked" from "this board returned a library".
+static void handleSequencesGet(WiFiClient& client) {
+    uint8_t* buf = storageScratchBuffer();
+    int n = storageReadActive(buf, STORAGE_PAYLOAD_MAX);
+    if (n <= 0) {
+        client.println("HTTP/1.1 204 No Content");
+        client.println("Connection: close");
+        client.println("Access-Control-Allow-Origin: *");
+        client.println();
+        return;
+    }
+    client.println("HTTP/1.1 200 OK");
+    client.println("Connection: close");
+    client.println("Access-Control-Allow-Origin: *");
+    client.println("Content-Type: application/json");
+    client.print("Content-Length: "); client.println(n);
+    client.println();
+    client.write(buf, n);
+}
+
 static void handleBoardIdGet(WiFiClient& client) {
     client.println("HTTP/1.1 200 OK");
     client.println("Connection: close");
@@ -350,6 +374,11 @@ void webPoll() {
   }
   if (method == "GET" && (path == "/sequences/info" || path.startsWith("/sequences/info?"))) {
     handleSequencesInfo(client);
+    delay(5); client.stop();
+    return;
+  }
+  if (method == "GET" && (path == "/sequences" || path.startsWith("/sequences?"))) {
+    handleSequencesGet(client);
     delay(5); client.stop();
     return;
   }
