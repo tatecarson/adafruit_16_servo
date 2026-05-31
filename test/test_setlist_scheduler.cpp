@@ -147,6 +147,29 @@ static void test_parse_active_id_and_leader() {
   ASSERT_EQ(schedulerLeaderBoardId((const uint8_t*)kBlob, strlen(kBlob)), 1);
 }
 
+// Out-of-range numeric fields must fail the load rather than wrap on narrowing
+// (servo-dos review): repeat/weight > 65535, minGapEntries > 255.
+static void test_parse_rejects_oversized_numeric_fields() {
+  reset_state();
+  SetlistRuntime out;
+  const char* error = nullptr;
+  const char* repeatBlob =
+    "{\"schemaVersion\":1,\"motions\":[],\"sequences\":[],"
+    "\"setlists\":[{\"id\":\"x\",\"name\":\"X\",\"mode\":\"ordered\","
+      "\"entries\":[{\"seqId\":\"a\",\"repeat\":70000,\"gapMs\":0}]}],"
+    "\"activeSetlistId\":\"x\",\"schedulerConfig\":{}}";
+  ASSERT_FALSE(setlistLoadFromBuffer((const uint8_t*)repeatBlob, strlen(repeatBlob), "x", out, &error));
+
+  const char* gapBlob =
+    "{\"schemaVersion\":1,\"motions\":[],\"sequences\":[],"
+    "\"setlists\":[{\"id\":\"y\",\"name\":\"Y\",\"mode\":\"shuffle\","
+      "\"entries\":[{\"seqId\":\"a\",\"repeat\":1,\"gapMs\":0,\"weight\":1}],"
+      "\"shuffleRules\":{\"minGapEntries\":256}}],"
+    "\"activeSetlistId\":\"y\",\"schedulerConfig\":{}}";
+  ASSERT_FALSE(setlistLoadFromBuffer((const uint8_t*)gapBlob, strlen(gapBlob), "y", out, &error));
+  ASSERT_STREQ(error, "bad-shuffle-rules");
+}
+
 // ---- Cycle 2: playback -------------------------------------------
 
 // Helper: simulate the currently-playing sequence finishing.
@@ -290,6 +313,7 @@ int main() {
   RUN(parse_shuffle_setlist_rules);
   RUN(parse_missing_setlist);
   RUN(parse_active_id_and_leader);
+  RUN(parse_rejects_oversized_numeric_fields);
   RUN(ordered_plays_in_order_with_repeat_and_loop);
   RUN(non_leader_does_not_schedule);
   RUN(user_stop_cancels_scheduler);

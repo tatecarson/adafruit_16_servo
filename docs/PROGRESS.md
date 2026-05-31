@@ -178,10 +178,6 @@ adafruit_16_servo/
 
 30. `fix: restart network services after wifi reconnect`
 
-## Git Commits (Setlist Scheduler)
-
-33. `feat: setlist scheduler — RUN AUTO (servo-dos)` — leader-gated scheduler that runs the active Setlist forever: ordered or weighted-shuffle (minGapEntries, per-entry repeat/gapMs), riding the existing RUN/STOP command mirror so followers stay in lock-step. New `setlist_scheduler.h` + `test_setlist_scheduler.cpp` (10 tests). avoidSameTag/moodArc deferred (schema v2, servo-yxd). Rebased onto servo-voc (legacy removal), so OTA headroom is healthy again (see the rebase build).
-
 ## Git Commits (Library Hydration)
 
 31. `feat: hydrate browser library from boards' baked EEPROM (servo-7mn)` — adds firmware `GET /sequences` (streams the active baked payload), a browser "Pull from Boards" button, and empty-on-load auto-pull. Reconciles per-board slices: motion tracks union by board, full-library fields must match across boards or the operator picks a source-of-truth board. Also fixes a latent `normalizeKeyframes` crash on sliced (partial-track) motions.
@@ -189,6 +185,10 @@ adafruit_16_servo/
 ## Git Commits (Legacy Removal)
 
 32. `refactor: remove legacy PLAY/SPLAY/RUN-n sequence engine + TIMESCALE (servo-voc)` — deletes `sequence_setup.h`, the legacy playback engines (`updateSequence`/`updateSpeedSequence`/`updateSequenceProgram` + start/select helpers), their runtime structs/globals, the `PLAY`/`SPLAY`/`RUN <n>`/`TIMESCALE` command handlers, and the matching browser controls (// 01 quick-play buttons, // 02 Position/Speed-sequence telemetry + timescale, status.json `sequence`/`speedSeq`/`timescale` fields). Schema-v1 `MOTION <id>` / `RUN <id>` are the only playback path. Reclaimed ~5.1 KB OTA flash: 120200 → 115076 (+7804 headroom). Webpage verified (renderPills now shows RUN/MOTION; no console errors). Legacy time-multiplier host suite removed; `make -C test` now aggregates storage/motion/sequence.
+
+## Git Commits (Setlist Scheduler)
+
+33. `feat: setlist scheduler — RUN AUTO (servo-dos)` — leader-gated scheduler that runs the active Setlist forever: ordered or weighted-shuffle (minGapEntries, per-entry repeat/gapMs), riding the existing RUN/STOP command mirror so followers stay in lock-step. New `setlist_scheduler.h` + `test_setlist_scheduler.cpp` (10 tests). avoidSameTag/moodArc deferred (schema v2, servo-yxd). Rebased onto servo-voc (legacy removal), so OTA headroom is healthy again (see the rebase build).
 
 ## Future Features
 

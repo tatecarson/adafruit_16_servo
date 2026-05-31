@@ -30,10 +30,12 @@ Deferred (filed as follow-ups):
 `command_interface.h` already mirrors `RUN <id>` and `STOP` to peers over UDP
 (`shouldMirrorCommand`, Sync.cpp). So the scheduler needs no new networking:
 
-- The leader fires an entry with `processCommand("RUN <seqId>")` — this runs the
-  sequence locally **and** mirrors `RUN <seqId>` to followers, so the cluster
-  plays in lock-step.
-- Between entries / on stop, the leader dispatches `STOP`, which likewise mirrors.
+- The leader fires an entry with `dispatchCommand("RUN <seqId>", false)` — this
+  runs the sequence locally **and** mirrors `RUN <seqId>` to followers, so the
+  cluster plays in lock-step. (Note: it must be `dispatchCommand`, not
+  `processCommand` — only `dispatchCommand` performs the UDP mirror.)
+- Between entries / on stop, the leader dispatches `STOP` the same way, which
+  likewise mirrors.
 
 Tighter Motion-level timing sync remains servo-vna's job; servo-dos does not
 depend on it.
@@ -93,7 +95,7 @@ seqId. Else broadcast `STOP`, set `phase=GAP`, `gapStartMs=millis()`.
 `playsDone=0`, record it in `recent`, fire `RUN <seqId>`, `phase=PLAYING`.
 
 Re-entry guard: a module-static `setlistInternalDispatch` flag wraps the
-scheduler's own `processCommand` calls so the `STOP`/`RUN` it issues doesn't
+scheduler's own `dispatchCommand` calls so the `STOP`/`RUN` it issues doesn't
 cancel the scheduler. A *user* `STOP` (flag clear) cancels normally.
 
 Bad seqId: if firing leaves `sequenceRunner.active == false`, count the play as
@@ -117,7 +119,7 @@ the candidate set is empty (over-constrained), relax to all entries.
 
 ## Tests (test/test_setlist_scheduler.cpp, mirrors test_sequence_engine.cpp)
 
-Stub `processCommand` to record dispatched cmds and simulate the sequence
+Stub `dispatchCommand` to record dispatched cmds and simulate the sequence
 runner (set `sequenceRunner.active=true` on `RUN <id>`; test toggles it false to
 simulate completion). Cases:
 
