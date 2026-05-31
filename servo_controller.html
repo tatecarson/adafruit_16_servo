@@ -4873,24 +4873,21 @@ function reconcileBoardBlobs(entries) {
   return { motions: [...motionMap.values()], conflicts };
 }
 
-async function pullFromBoards({ auto = false } = {}) {
-  if (!boards.length) { if (!auto) bakeLog("no boards configured", "alert"); return; }
+async function pullFromBoards() {
+  if (!boards.length) { bakeLog("no boards configured", "alert"); return; }
   const existing = loadLibrary();
   const nonEmpty = existing && ((existing.motions || []).length || (existing.sequences || []).length || (existing.setlists || []).length);
-  // Never silently clobber unbaked drafts (servo-7mn). Auto-pull runs only on
-  // an empty library; a manual pull over a non-empty library asks first.
-  if (nonEmpty) {
-    if (auto) return;
-    if (!confirm("Pull from Boards REPLACES the current browser library with what's baked on the boards.\n\nUnbaked edits will be lost. Continue?")) {
-      bakeLog("pull cancelled", "amber");
-      return;
-    }
+  // Never silently clobber unbaked drafts (servo-7mn): a pull over a non-empty
+  // library asks first.
+  if (nonEmpty && !confirm("Pull from Boards REPLACES the current browser library with what's baked on the boards.\n\nUnbaked edits will be lost. Continue?")) {
+    bakeLog("pull cancelled", "amber");
+    return;
   }
 
   bakePullEl.disabled = true;
   const wasPolling = !!pollHandle;
   stopPolling();
-  bakeLog(auto ? "library empty — pulling from boards..." : `pulling library from ${boards.length} board(s)...`);
+  bakeLog(`pulling library from ${boards.length} board(s)...`);
   try {
     const results = await Promise.all(boards.map(async ip => {
       try {
@@ -5926,11 +5923,6 @@ renderLibSummary();
 render();
 refreshBoardIdMap();
 startPolling();
-
-// On an empty library, hydrate from whatever the boards still have baked
-// (servo-7mn). Fire-and-forget so init doesn't block on the network; the
-// pull no-ops if a library is already present and never clobbers drafts.
-if (!loadLibrary()) pullFromBoards({ auto: true });
 </script>
 </body>
 </html>
