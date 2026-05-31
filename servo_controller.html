@@ -1609,7 +1609,7 @@
           <tr>
             <th></th>
             <th>#</th>
-            <th>cmd</th>
+            <th>cmd <span id="seqCmdHelp" title="" style="cursor:help;color:var(--ink-mute);font-weight:400">&#9432;</span></th>
             <th>duration</th>
             <th>target</th>
             <th>label</th>
@@ -1620,6 +1620,7 @@
         </thead>
         <tbody id="seqSteps"></tbody>
       </table>
+      <datalist id="seqCmdSuggest"></datalist>
     </div>
 
     <div class="seq-tools">
@@ -4163,38 +4164,22 @@ function formatMs(ms) {
   return `${s.toFixed(s % 1 ? 1 : 0)}s`;
 }
 
-// Step-command suggestions. Legacy PLAY/SPLAY/RUN-n + TIMESCALE were removed
-// (servo-voc) — the firmware no longer accepts them, so don't offer them as
-// steps. Baked Motion ids (MOTION <id>) and Sequence ids (RUN <id>) are
-// appended dynamically from the library by commandOptions().
-const SEQUENCE_COMMAND_PRESETS = [
-  "ROTATE -100",
-  "ROTATE -75",
-  "ROTATE -50",
-  "ROTATE -30",
-  "ROTATE -15",
-  "ROTATE 0",
-  "ROTATE 15",
-  "ROTATE 30",
-  "ROTATE 50",
-  "ROTATE 75",
-  "ROTATE 100",
-  "RIG UP 80 35 3000",
-  "RIG DOWN 20 -25",
-  "MOVE 0 90 1000",
-  "S0 90",
-  "S1 90",
-  "S2 90",
-  "STATUS",
-  "STOP",
-];
+// The step command field is an editable combobox (servo-vy6): the datalist
+// suggests the library's baked Motions (the clean, motion-first default), but
+// any firmware command can be typed freely — fixing the old closed <select>
+// that couldn't represent non-preset commands (e.g. ROTATE 24) and silently
+// rewrote them on save. CMD_HELP is the hover reference for what's typeable.
+const CMD_HELP =
+  "Type any command — the list suggests your baked motions. " +
+  "Common: MOTION <id> · RUN <id> · ROTATE <-100..100> · MOVE <ch> <deg> <ms> · " +
+  "DMOVE/UMOVE <ch> <pct> <ms> · DOWN/UP <ch> <pct> · S<ch> <deg> · STOP";
 
-function commandOptions(selected) {
-  const current = String(selected || "").trim();
-  const presets = Array.from(new Set([...SEQUENCE_COMMAND_PRESETS, ...motionOptionsForCommands()]));
-  return presets.map(cmd =>
-    `<option value="${escapeHtml(cmd)}"${cmd === current ? " selected" : ""}>${escapeHtml(cmd)}</option>`
-  ).join("");
+function cmdSuggestOptions() {
+  // Datalist <option>s = baked Motion ids only (MOTION <id>). Everything else
+  // is typed by hand; the firmware sequence runner accepts any command string.
+  return motionOptionsForCommands()
+    .map(cmd => `<option value="${escapeHtml(cmd)}"></option>`)
+    .join("");
 }
 
 function targetOptions(selected) {
@@ -4211,6 +4196,11 @@ function renderSequencer() {
   const lib = sequenceLibrary();
   const seq = getCurrentSequence(lib);
   if (!seq) return;
+  // Refresh the step-command suggestions (baked motions) + the hover help.
+  const cmdSuggestEl = $("#seqCmdSuggest");
+  if (cmdSuggestEl) cmdSuggestEl.innerHTML = cmdSuggestOptions();
+  const cmdHelpEl = $("#seqCmdHelp");
+  if (cmdHelpEl) cmdHelpEl.title = CMD_HELP;
   seqSelectEl.innerHTML = lib.sequences.map(s =>
     `<option value="${escapeHtml(s.id)}"${s.id === seq.id ? " selected" : ""}>${escapeHtml(s.name || s.id)}</option>`
   ).join("");
@@ -4232,7 +4222,7 @@ function renderSequencer() {
     return `<tr data-index="${index}" draggable="true"${active ? ' class="active"' : ''}>
       <td class="seq-drag" title="Drag to reorder">=</td>
       <td class="seq-index">${pad2(index + 1)}</td>
-      <td><select data-field="cmd">${commandOptions(step.cmd)}</select></td>
+      <td><input data-field="cmd" type="text" list="seqCmdSuggest" spellcheck="false" autocomplete="off" value="${escapeHtml(step.cmd)}" title="${escapeHtml(CMD_HELP)}"></td>
       <td><input data-field="durationMs" type="number" min="0" step="100" value="${step.durationMs}"></td>
       <td><select data-field="target">${targetOptions(step.target)}</select></td>
       <td><input data-field="label" type="text" value="${escapeHtml(step.label)}" spellcheck="false"></td>
