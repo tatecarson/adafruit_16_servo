@@ -1099,15 +1099,15 @@ Requires OTA-flashing the new firmware. Bake a library with an active Setlist
 leader. `schedulerConfig.graceMs` is the grace window (default 10000).
 
 1. **Flag persists across reboot.** Send `GALLERY ON`, then `STORAGEINFO`. Expect `gallery=on`. Power-cycle the board, send `STORAGEINFO` again — still `gallery=on`. Send `GALLERY` alone to read it back. `GALLERY OFF` clears it.
-   - Expected: `[ ] Pass  [ ] Fail —` (not yet run)
+   - **[x] Pass** (2026-06-01, leader board over USB)
 2. **Auto RUN AUTO after grace.** With `gallery=on` and an active setlist, reboot. Expect serial prints `Gallery mode: auto RUN AUTO in 10000ms (send any command to cancel)` once WiFi/OTA come up; ~10 s later prints `Gallery mode: grace elapsed, starting RUN AUTO` followed by `Running setlist <id>` and the setlist begins. (Leader-gated: only the configured `leaderBoardId` schedules.)
-   - Expected: `[ ] Pass  [ ] Fail —` (not yet run)
+   - **[x] Pass** (2026-06-01, leader board over USB)
 3. **Browser intercept cancels the auto-run.** Reboot with `gallery=on`; before the grace window elapses, send any command (e.g. `STOP` over Serial or `/cmd?c=STOP`). Expect `Gallery mode: grace canceled by command` and **no** subsequent `RUN AUTO` — device waits for commands as normal.
-   - Expected: `[ ] Pass  [ ] Fail —` (not yet run)
+   - **[x] Pass** (2026-06-01, leader board over USB)
 4. **Off = no change.** With `gallery=off`, reboot. Expect no `Gallery mode:` lines and no auto-run; device idles awaiting commands as today.
-   - Expected: `[ ] Pass  [ ] Fail —` (not yet run)
+   - **[x] Pass** (2026-06-01, leader board over USB)
 5. **WiFi reconnect doesn't re-arm.** With `gallery=on`, let the grace fire (or cancel it), then drop and restore WiFi so `networkServicesBegin()` runs again. Expect the grace does **not** re-arm (one-shot) — no second `auto RUN AUTO in …` line.
-   - Expected: `[ ] Pass  [ ] Fail —` (not yet run)
+   - **[x] Pass** (2026-06-01, leader board over USB)
 
 ---
 
