@@ -46,7 +46,14 @@ while [[ $# -gt 0 ]]; do
     --serial|--sequential) PARALLEL=0; shift ;;
     -h|--help) usage; exit 0 ;;
     -*) echo "Unknown option: $1" >&2; usage >&2; exit 2 ;;
-    *) BOARDS+=("$1"); shift ;;
+    *)
+      # Accept either a bare IP/host or a full URL and normalize to host only,
+      # so `./ota-all.sh http://192.168.8.198/` doesn't build a bogus curl URL
+      # and a /tmp/ota-http://.../.log path that can't be created (servo-6lc).
+      board="$1"
+      board="${board#http://}"; board="${board#https://}"  # strip scheme
+      board="${board%%/*}"                                  # strip path/trailing slash
+      BOARDS+=("$board"); shift ;;
   esac
 done
 if [[ ${#BOARDS[@]} -eq 0 ]]; then
