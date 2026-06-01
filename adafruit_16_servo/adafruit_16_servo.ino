@@ -25,6 +25,7 @@
       MOTION <id>       - Play baked browser Motion by id
       RUN <id> [LOOP]    - Run a baked browser Sequence by id
       RUN AUTO           - Run the active baked Setlist (leader schedules)
+      GALLERY [ON|OFF]   - Get/set persistent gallery-mode boot auto-run
       STOP [n]           - Stop all motion or hold one servo
       ROTATE <spd>       - Set DC motor rotation speed
       HELP               - Show commands
@@ -51,6 +52,7 @@
 #include "animation_engine.h"
 #include "servo_maintenance.h"
 #include "setlist_scheduler.h"
+#include "gallery_mode.h"
 #include "command_interface.h"
 
 // Wi-Fi / OTA state. otaReady gates syncPoll() so we don't UDP before the
@@ -112,6 +114,10 @@ static void networkServicesBegin() {
   webBegin();
   syncBegin();
   otaReady = true;
+  // Gallery Mode: now that the browser can reach us, start the boot grace
+  // countdown before unattended auto-RUN AUTO (servo-4gl). One-shot, so the
+  // reconnect path that also calls this never restarts it.
+  galleryGraceArm();
 }
 
 static void wifiAndOtaBegin() {
@@ -272,6 +278,10 @@ SequenceRuntime sequenceRunner;
 // Setlist scheduler state — RUN AUTO (servo-dos)
 SetlistRuntime setlistScheduler;
 
+// Gallery Mode boot grace state — auto RUN AUTO after the grace window
+// (servo-4gl). Zero-initialized: not armed, not pending.
+GalleryGraceState galleryGrace;
+
 // Default calibration values
 #define DEFAULT_MIN 150
 #define DEFAULT_MAX 600
@@ -414,6 +424,7 @@ void loop() {
     updateSpeedRamps();
     updateMotion();
     updateSequenceRunner();
+    updateGalleryGrace();     // fires RUN AUTO when the boot grace elapses
     updateSetlistScheduler();
     tAnim = millis() - s;
   }

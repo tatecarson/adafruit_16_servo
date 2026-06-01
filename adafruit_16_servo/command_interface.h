@@ -10,7 +10,7 @@ void showHelp() {
   Serial.println(F("CAL_GET/CAL_SET/CAL_RESET/CAL_PULSE (persisted calibration)"));
   Serial.println(F("UP/DOWN/UMOVE/DMOVE/ROTATE"));
   Serial.println(F("MOTION <id>/RUN <id>/STOP"));
-  Serial.println(F("STORAGEINFO/BOARDID. See README for syntax."));
+  Serial.println(F("STORAGEINFO/BOARDID/GALLERY. See README for syntax."));
 }
 
 // Helper: trim leading/trailing whitespace in place
@@ -331,10 +331,29 @@ void processCommand(char* cmd) {
     }
     return;
   }
+  else if (startsWith(cmd, "GALLERY")) {
+    // GALLERY            → print the persistent gallery_mode flag
+    // GALLERY ON|OFF|1|0 → set it. Takes effect on the next boot's grace
+    // window (servo-4gl). Mirror of the BOARDID handler.
+    const char* rest = cmd + 7; while (*rest == ' ') rest++;
+    if (*rest == '\0') {
+      Serial.print(F("gallery=")); Serial.println(storageGalleryMode() ? F("on") : F("off"));
+    } else if (strcmp(rest, "ON") == 0 || strcmp(rest, "1") == 0) {
+      storageSetGalleryMode(true);
+      Serial.println(F("gallery=on (auto RUN AUTO after grace on next boot)"));
+    } else if (strcmp(rest, "OFF") == 0 || strcmp(rest, "0") == 0) {
+      storageSetGalleryMode(false);
+      Serial.println(F("gallery=off"));
+    } else {
+      Serial.println(F("Use: GALLERY [ON|OFF]"));
+    }
+    return;
+  }
   else if (startsWith(cmd, "STORAGEINFO")) {
     Serial.print(F("boardId=")); Serial.println(storageBoardId());
     Serial.print(F("hasActive=")); Serial.println(storageHasActive() ? F("yes") : F("no"));
     Serial.print(F("hasPrevious=")); Serial.println(storageHasPrevious() ? F("yes") : F("no"));
+    Serial.print(F("gallery=")); Serial.println(storageGalleryMode() ? F("on") : F("off"));
     Serial.print(F("slotPayloadMax=")); Serial.println((int)STORAGE_PAYLOAD_MAX);
     return;
   }
@@ -369,6 +388,12 @@ inline bool shouldMirrorCommand(const char* upperCmd) {
 // command is in the mirror whitelist, broadcast its canonical form.
 void dispatchCommand(const char* cmd, bool fromNetwork) {
   if (cmd == nullptr || cmd[0] == '\0') return;
+
+  // Gallery Mode: any real command (serial, HTTP /cmd, or a peer's mirror)
+  // means someone is in control, so cancel a pending boot auto-run before it
+  // fires (servo-4gl). The scheduler's own RUN/STOP dispatch happens only
+  // after the grace window already cleared, so this never self-cancels.
+  galleryGraceCancel();
 
   // processCommand mutates its argument; keep an untouched canonical copy
   // for the broadcast payload + mirror check.

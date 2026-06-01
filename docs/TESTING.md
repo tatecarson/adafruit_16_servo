@@ -1088,6 +1088,27 @@ least one Setlist (an `ordered` one with 2+ entries, distinct `gapMs`, one entry
 4. **Shuffle (optional).** Activate a `shuffle` setlist with `seed` set; confirm entries don't repeat within `minGapEntries` and the order is reproducible across two `RUN AUTO` runs with the same seed.
    - Expected: `[ ] Pass  [ ] Fail —` (not yet run)
 
+**2026-06-01 (servo-4gl Gallery Mode boot flag + grace period):**
+- [x] `make -C test` — gallery 9/9 (persistent flag default-off + set/get survives re-init; `schedulerConfig.graceMs` parse default/custom/missing; grace doesn't arm when off; arms with config window when on; defaults window when unbaked; fires `RUN AUTO` after window; canceled by command skips auto-run; arm is one-shot across reconnect)
+- [x] `make -C test size` — 118292 / 122880 bytes (+4588 headroom)
+
+### Manual hardware test: Gallery Mode boot flag + grace (servo-4gl)
+
+Requires OTA-flashing the new firmware. Bake a library with an active Setlist
+(see RUN AUTO test above). The persistent flag is per-board; set it on the
+leader. `schedulerConfig.graceMs` is the grace window (default 10000).
+
+1. **Flag persists across reboot.** Send `GALLERY ON`, then `STORAGEINFO`. Expect `gallery=on`. Power-cycle the board, send `STORAGEINFO` again — still `gallery=on`. Send `GALLERY` alone to read it back. `GALLERY OFF` clears it.
+   - **[x] Pass** (2026-06-01, leader board over USB)
+2. **Auto RUN AUTO after grace.** With `gallery=on` and an active setlist, reboot. Expect serial prints `Gallery mode: auto RUN AUTO in 10000ms (send any command to cancel)` once WiFi/OTA come up; ~10 s later prints `Gallery mode: grace elapsed, starting RUN AUTO` followed by `Running setlist <id>` and the setlist begins. (Leader-gated: only the configured `leaderBoardId` schedules.)
+   - **[x] Pass** (2026-06-01, leader board over USB)
+3. **Browser intercept cancels the auto-run.** Reboot with `gallery=on`; before the grace window elapses, send any command (e.g. `STOP` over Serial or `/cmd?c=STOP`). Expect `Gallery mode: grace canceled by command` and **no** subsequent `RUN AUTO` — device waits for commands as normal.
+   - **[x] Pass** (2026-06-01, leader board over USB)
+4. **Off = no change.** With `gallery=off`, reboot. Expect no `Gallery mode:` lines and no auto-run; device idles awaiting commands as today.
+   - **[x] Pass** (2026-06-01, leader board over USB)
+5. **WiFi reconnect doesn't re-arm.** With `gallery=on`, let the grace fire (or cancel it), then drop and restore WiFi so `networkServicesBegin()` runs again. Expect the grace does **not** re-arm (one-shot) — no second `auto RUN AUTO in …` line.
+   - **[x] Pass** (2026-06-01, leader board over USB)
+
 ---
 
 ## Servo Calibration Notes

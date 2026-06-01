@@ -17,6 +17,7 @@ test/run_storage_tests
 test/run_motion_tests
 test/run_sequence_tests
 test/run_setlist_tests
+test/run_gallery_tests
 
 # Stray legacy beads export — canonical copy lives in .beads/ (servo-0p0)
 /issues.jsonl

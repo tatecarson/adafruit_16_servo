@@ -16,6 +16,7 @@
 #define STORAGE_OFF_MAGIC1 1
 #define STORAGE_OFF_ACTIVE 2
 #define STORAGE_OFF_BOARDID 3
+#define STORAGE_OFF_GALLERY 4   // gallery_mode boot flag (servo-4gl): 1 = on
 
 // Shared 4 KB scratch buffer in BSS. Used by storageHasPrevious() for its
 // CRC scan and by transport-layer receive paths that need a same-sized
@@ -41,7 +42,21 @@ inline void storageInit() {
         EEPROM.update(STORAGE_OFF_MAGIC1, STORAGE_MAGIC_1);
         EEPROM.update(STORAGE_OFF_ACTIVE, 0xFF);     // no active slot
         EEPROM.update(STORAGE_OFF_BOARDID, 0);       // unassigned
+        EEPROM.update(STORAGE_OFF_GALLERY, 0);       // gallery mode off
     }
+}
+
+// Gallery mode boot flag (servo-4gl). When on, the device auto-runs the active
+// setlist after a boot grace period. Only the byte value 1 means on, so a
+// device whose header predates this flag (offset still 0xFF) reads as off —
+// the safe default for an unattended auto-run feature.
+inline bool storageGalleryMode() {
+    return EEPROM.read(STORAGE_OFF_GALLERY) == 1;
+}
+
+inline bool storageSetGalleryMode(bool on) {
+    EEPROM.update(STORAGE_OFF_GALLERY, on ? 1 : 0);
+    return true;
 }
 
 inline uint8_t storageBoardId() {
