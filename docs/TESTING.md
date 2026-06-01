@@ -1109,6 +1109,13 @@ leader. `schedulerConfig.graceMs` is the grace window (default 10000).
 5. **WiFi reconnect doesn't re-arm.** With `gallery=on`, let the grace fire (or cancel it), then drop and restore WiFi so `networkServicesBegin()` runs again. Expect the grace does **not** re-arm (one-shot) — no second `auto RUN AUTO in …` line.
    - **[x] Pass** (2026-06-01, leader board over USB)
 
+**2026-06-01 (servo-9li Browser Gallery Mode masthead toggle):**
+- [x] `make -C test` — storage 22/22, motion 6/6, sequence 8/8, setlist 11/11, gallery 9/9.
+- [x] `make -C test size` — 118348 / 122880 bytes (+4532 headroom).
+- [x] `node --check` on extracted `servo_controller.html` script — pass.
+- [x] Browser preview at `http://127.0.0.1:4173/servo_controller.html` — masthead Gallery toggle renders in the in-app browser, disabled/dim when no `gallery` status is available from the loaded page, with no visible masthead overlap.
+- Hardware cluster toggle smoke — not run in this session; tracked as `servo-82f`. Flash the firmware, open `servo_controller.html`, confirm `/status.json` includes `gallery`, toggle ON (confirmation required), verify all reachable boards report `gallery: true`, reboot and confirm the flag persists; then toggle OFF and confirm all reachable boards report `gallery: false`.
+
 ---
 
 ## Servo Calibration Notes
