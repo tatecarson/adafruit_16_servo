@@ -19,8 +19,6 @@ BUILD_DIR="/tmp/adafruit-16-servo-build"
 BIN="$BUILD_DIR/adafruit_16_servo.ino.bin"
 CONNECT_TIMEOUT="${CONNECT_TIMEOUT:-3}"
 UPLOAD_TIMEOUT="${UPLOAD_TIMEOUT:-120}"
-SPEED_LIMIT="${SPEED_LIMIT:-1024}"
-SPEED_TIME="${SPEED_TIME:-30}"
 PARALLEL=1
 
 usage() {
@@ -103,7 +101,6 @@ upload_one() {
   # servo_controller.html upload uses.
   if curl -sS --fail \
       --connect-timeout "$CONNECT_TIMEOUT" --max-time "$UPLOAD_TIMEOUT" \
-      --speed-limit "$SPEED_LIMIT" --speed-time "$SPEED_TIME" \
       --write-out "\nCURL http_code=%{http_code} time_connect=%{time_connect} time_starttransfer=%{time_starttransfer} time_total=%{time_total} size_upload=%{size_upload} speed_upload=%{speed_upload}\n" \
       -X POST \
       -H "Content-Type: application/octet-stream" \
