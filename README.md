@@ -54,6 +54,7 @@ Interactive Serial interface for the Adafruit PCA9685 16-channel PWM/Servo drive
 | `MOTION <id>` | `MOTION tidal-drift` | Play a browser-baked Motion from EEPROM |
 | `RUN <id> [LOOP]` | `RUN evening-arc` | Run a browser-baked Sequence by id (schema v1) |
 | `RUN AUTO` | `RUN AUTO` | Run the active baked Setlist forever (schema v1). The leader board (`schedulerConfig.leaderBoardId`) schedules entries — ordered or weighted shuffle honoring `minGapEntries`, per-entry `repeat`/`gapMs` — and mirrors `RUN`/`STOP` to followers. `STOP` halts it. (`avoidSameTag`/`moodArc` are schema-v2, not yet honored.) |
+| `GALLERY [ON\|OFF]` | `GALLERY ON` | Get or set the persistent gallery-mode boot flag. When on, the board auto-runs the active Setlist after the boot grace period. |
 | `STOP` | `STOP` | Stop all active motion and sequences |
 | `STOP <n>` | `STOP 0` | Stop and hold one servo at its current position |
 | `MODE <n> STD\|CONT` | `MODE 2 CONT` | Set servo to standard or continuous |
@@ -84,6 +85,7 @@ Open `servo_controller.html` to author schema v1 Sequences in the browser librar
 - Record mode appends commands sent through the free-form terminal and fills each new step's duration from elapsed time
 - Section `// 03 Sequencer Bake` still imports, exports, slices, and POSTs the same library to the boards
 - **Pull from Boards** reads the baked library back from every reachable board (`GET /sequences`) and rebuilds the editor library: motion tracks are unioned by board, and the full-library fields (sequences/setlists/active/scheduler) must match across boards or the operator is asked to pick a source-of-truth board. Use it to recover the library on a fresh machine, after a branch swap, or after a cleared cache — it reflects what's physically baked on the boards. It never overwrites a non-empty local library without confirmation.
+- The masthead **Gallery** toggle reads `/status.json` `gallery`, confirms before enabling unattended boot behavior, and sends `GALLERY ON/OFF` to every currently reachable board.
 
 
 ## Percent-of-Travel Commands

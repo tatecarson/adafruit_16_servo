@@ -190,6 +190,10 @@ adafruit_16_servo/
 
 33. `feat: setlist scheduler — RUN AUTO (servo-dos)` — leader-gated scheduler that runs the active Setlist forever: ordered or weighted-shuffle (minGapEntries, per-entry repeat/gapMs), riding the existing RUN/STOP command mirror so followers stay in lock-step. New `setlist_scheduler.h` + `test_setlist_scheduler.cpp` (10 tests). avoidSameTag/moodArc deferred (schema v2, servo-yxd). Rebased onto servo-voc (legacy removal), so OTA headroom is healthy again (see the rebase build).
 
+## Git Commits (Gallery Browser Toggle)
+
+34. `feat: add masthead gallery mode toggle (servo-9li)` — exposes the persistent gallery flag in `/status.json` and adds a masthead Gallery toggle that reflects reachable boards, shows amber when all are on, shows dim when off/unknown, confirms before enabling unattended boot auto-run, and sends `GALLERY ON/OFF` to every currently reachable board. Verification: `make -C test`; `make -C test size` 118348 / 122880 bytes (+4532 headroom); browser preview at `127.0.0.1:4173`.
+
 ## Future Features
 
 - [ ] **EEPROM calibration storage** - Save/load servo calibrations (type, min, max, stop pulse) to persist across power cycles. Commands: `SAVE`, `LOAD`, `CLEAR`

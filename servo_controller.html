@@ -109,6 +109,32 @@
   }
   .masthead .meta .stat { color: var(--ink); font-family: var(--mono); font-size: 14px; letter-spacing: 0; text-transform: none; margin-left: 6px; font-weight: 500; }
   .masthead .meta .row { display: flex; gap: 18px; justify-content: flex-end; }
+  .gallery-toggle {
+    appearance: none;
+    border: 1px solid var(--rule-hi);
+    background: transparent;
+    color: var(--ink-mute);
+    font: 600 10px/1 var(--mono);
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    padding: 7px 10px;
+    cursor: pointer;
+    transition: border-color .12s, color .12s, background .12s;
+    min-width: 116px;
+    text-align: center;
+  }
+  .gallery-toggle:hover { border-color: var(--ink-dim); color: var(--ink); }
+  .gallery-toggle[data-state="on"] {
+    border-color: var(--amber);
+    color: var(--amber);
+    background: rgba(255, 182, 39, 0.08);
+  }
+  .gallery-toggle[data-state="mixed"] {
+    border-color: var(--amber);
+    color: var(--amber);
+  }
+  .gallery-toggle[data-state="busy"] { opacity: .7; pointer-events: none; }
+  .gallery-toggle[disabled] { opacity: .35; pointer-events: none; }
 
   /* ---------- section labels ---------- */
 
@@ -1430,6 +1456,11 @@
     .board { grid-template-columns: 160px 1fr; }
     .channels { grid-column: 1 / -1; border-top: 1px solid var(--rule); }
   }
+  @media (max-width: 820px) {
+    .masthead { grid-template-columns: 1fr; align-items: start; }
+    .masthead .meta { text-align: left; }
+    .masthead .meta .row { justify-content: flex-start; flex-wrap: wrap; gap: 10px 14px; }
+  }
 </style>
 </head>
 <body>
@@ -1445,6 +1476,7 @@
     </div>
     <div class="meta">
       <div class="row">
+        <button type="button" id="galleryToggle" class="gallery-toggle" data-state="unknown" aria-pressed="false" title="Persistent gallery mode: auto RUN AUTO after boot grace">Gallery —</button>
         <span>online <span id="metaOnline" class="stat">—/—</span></span>
         <span>poll <span id="metaPoll" class="stat">— ms</span></span>
         <span>uplink <span id="metaUptime" class="stat">—</span></span>
@@ -1889,6 +1921,7 @@ const boardListEl  = $("#boardList");
 const freeTargetEl = $("#freeTarget");
 const autoPollEl   = $("#autoPoll");
 const pollMsEl     = $("#pollMs");
+const galleryToggle = $("#galleryToggle");
 const metaOnline   = $("#metaOnline");
 const metaPoll     = $("#metaPoll");
 const metaUptime   = $("#metaUptime");
@@ -1898,6 +1931,7 @@ const metaUptime   = $("#metaUptime");
 // ============================================================
 const STATUS_TIMEOUT_MS = 4000;
 const OFFLINE_AFTER_MS = 8000;
+let galleryToggleBusy = false;
 
 async function fetchStatus(ip) {
   const ctrl = new AbortController();
@@ -1976,6 +2010,13 @@ async function broadcastCommand(cmd) {
 function preferredBroadcastOrigin() {
   if (!boards.length) return null;
   return boards.slice().sort((a, b) => (lastSeen.get(b) || 0) - (lastSeen.get(a) || 0))[0] || null;
+}
+
+function onlineBoardIps() {
+  return boards.filter(ip => {
+    const t = lastSeen.get(ip) || 0;
+    return Date.now() - t < OFFLINE_AFTER_MS;
+  });
 }
 
 // ============================================================
@@ -2296,6 +2337,7 @@ function render() {
   if (!boards.length) {
     boardsEl.innerHTML = `<div class="placeholder">No boards configured. <em>Add IPs in the footer.</em></div>`;
     metaOnline.textContent = "—/—";
+    renderGalleryToggle();
     return;
   }
   const cards = boards.map((ip, i) => {
@@ -2310,13 +2352,56 @@ function render() {
   });
   boardsEl.innerHTML = cards.join("");
 
-  const onlineCount = boards.filter(ip => {
-    const t = lastSeen.get(ip) || 0;
-    return Date.now() - t < OFFLINE_AFTER_MS;
-  }).length;
+  const onlineCount = onlineBoardIps().length;
   metaOnline.textContent = `${pad2(onlineCount)}/${pad2(boards.length)}`;
   metaPoll.textContent = `${pollMsEl.value} ms`;
   metaUptime.textContent = fmtUptime(Date.now() - startedAt);
+  renderGalleryToggle();
+}
+
+function gallerySummary() {
+  const online = onlineBoardIps();
+  const states = online
+    .map(ip => lastStatus.get(ip)?.gallery)
+    .filter(v => typeof v === "boolean");
+  const on = states.filter(Boolean).length;
+  const off = states.length - on;
+  let state = "unknown";
+  if (states.length > 0 && on === states.length) state = "on";
+  else if (states.length > 0 && off === states.length) state = "off";
+  else if (states.length > 0) state = "mixed";
+  return { online, states, on, off, state };
+}
+
+function renderGalleryToggle() {
+  const summary = gallerySummary();
+  galleryToggle.disabled = summary.online.length === 0;
+  galleryToggle.dataset.state = galleryToggleBusy ? "busy" : summary.state;
+  galleryToggle.setAttribute("aria-pressed", summary.state === "on" ? "true" : "false");
+  if (galleryToggleBusy) return;
+  if (summary.state === "on") galleryToggle.textContent = `Gallery ON ${summary.on}/${summary.states.length}`;
+  else if (summary.state === "off") galleryToggle.textContent = `Gallery OFF ${summary.off}/${summary.states.length}`;
+  else if (summary.state === "mixed") galleryToggle.textContent = `Gallery MIX ${summary.on}/${summary.states.length}`;
+  else galleryToggle.textContent = "Gallery —";
+}
+
+async function setGalleryModeForReachable(enable) {
+  const summary = gallerySummary();
+  if (!summary.online.length) return;
+  if (enable && !confirm(
+    "Turn Gallery Mode ON for all reachable boards?\n\nOn the next boot, boards will auto-run the active setlist after the grace period."
+  )) return;
+
+  galleryToggleBusy = true;
+  galleryToggle.dataset.state = "busy";
+  galleryToggle.textContent = enable ? "Gallery ON..." : "Gallery OFF...";
+  const cmd = enable ? "GALLERY ON" : "GALLERY OFF";
+  try {
+    await Promise.all(summary.online.map(ip => sendCommand(ip, cmd)));
+  } finally {
+    galleryToggleBusy = false;
+    setTimeout(pollOnce, 300);
+  }
 }
 
 // ============================================================
@@ -2391,6 +2476,10 @@ $("#saveBoards").addEventListener("click", () => {
 });
 autoPollEl.addEventListener("change", startPolling);
 pollMsEl.addEventListener("change", () => { metaPoll.textContent = `${pollMsEl.value} ms`; startPolling(); });
+galleryToggle.addEventListener("click", () => {
+  const summary = gallerySummary();
+  setGalleryModeForReachable(summary.state !== "on");
+});
 
 // keyboard shortcut: ESC = STOP. (Legacy 7/8 = PLAY n and S = SPLAY 1 shortcuts
 // removed in servo-voc — those firmware commands no longer exist.)

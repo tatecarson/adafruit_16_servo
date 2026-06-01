@@ -163,6 +163,7 @@ void writeStatusJson(WiFiClient& client) {
   s += F(",\"ip\":\"");          s += ipBuf; s += '"';
   s += F(",\"uptimeMs\":");      s += millis();
   s += F(",\"otaInProgress\":"); s += (otaInProgress ? F("true") : F("false"));
+  s += F(",\"gallery\":");       s += (storageGalleryMode() ? F("true") : F("false"));
   // Legacy sequence/speedSeq telemetry removed in servo-voc.
   s += F(",\"motion\":{\"active\":"); s += (motionRuntime.active ? F("true") : F("false"));
   // motionRuntime.id is emitted unescaped: motionCopyString() (motion_engine.h)
