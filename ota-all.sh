@@ -23,18 +23,27 @@ CONNECT_TIMEOUT="${CONNECT_TIMEOUT:-3}"
 # returns a clean HTTP 500 ("upload incomplete") instead of curl aborting
 # mid-transfer and leaving a half-open socket on the board (servo-6lc).
 UPLOAD_TIMEOUT="${UPLOAD_TIMEOUT:-150}"
-PARALLEL=1
+# Sequential by DEFAULT. Parallel OTA to the whole cluster is unreliable and
+# dangerous: 3 simultaneous ~118 KB transfers share the Wi-Fi airtime, which
+# drops each board's throughput ~8x (8 KB/s solo -> ~1 KB/s) AND crashes the
+# WiFiS3 stacks (observed: all three boards reset/"connection reset by peer"
+# and went dark, needing a power-cycle — servo-6lc). A single board flashes
+# cleanly in ~15s at ~8 KB/s, so sequential (~15s x N boards) is both faster in
+# practice and safe. Use --parallel only if you know what you're doing.
+PARALLEL=0
 
 usage() {
   cat <<'EOF'
 Usage: ./ota-all.sh [--serial|--parallel] [board-ip ...]
 
-Uploads in parallel by default, matching the original script behavior. Each
-board gets its own /tmp/ota-<ip>.log with curl timing diagnostics.
+Uploads one board at a time by default (sequential). Each board gets its own
+/tmp/ota-<ip>.log with curl timing diagnostics.
 
 Options:
-  --serial     Upload one board at a time for controlled diagnostics.
-  --parallel   Upload to all boards concurrently (default).
+  --serial     Upload one board at a time (default).
+  --parallel   Upload to all boards concurrently. NOT RECOMMENDED — parallel
+               OTA saturates the shared Wi-Fi and has crashed every board in
+               the cluster (needs a power-cycle to recover). See servo-6lc.
 
 If one or more board IPs are provided, upload only to those boards.
 EOF
