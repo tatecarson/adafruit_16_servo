@@ -1063,10 +1063,10 @@ Requires OTA-flashing the new firmware to the cluster first (`make -C test size`
 ### Manual hardware test: legacy removal regression (servo-voc)
 
 After OTA-flashing, confirm the surviving commands still work and the removed ones fail gracefully:
-1. `MOTION <id>` and `RUN <id>` (baked) still play; `STOP` halts. **[ ] Pass [ ] Fail —**
-2. `PLAY 1`, `SPLAY 1`, `RUN 1`, `TIMESCALE 2` now print the usage/unknown response instead of executing (no crash). **[ ] Pass [ ] Fail —**
-3. `STATUS` / `HELP` print without referencing PLAY/SPLAY/TIMESCALE. **[ ] Pass [ ] Fail —**
-4. Browser // 02 board cards render (RUN/MOTION pills, no Position/Speed-sequence bars, no timescale row). **[ ] Pass [ ] Fail —**
+1. `MOTION <id>` and `RUN <id>` (baked) still play; `STOP` halts. **[x] Pass** (2026-06-01, board 1 / 192.168.8.198)
+2. `PLAY 1`, `SPLAY 1`, `RUN 1`, `TIMESCALE 2` now print the usage/unknown response instead of executing (no crash). **[x] Pass** (2026-06-01)
+3. `STATUS` / `HELP` print without referencing PLAY/SPLAY/TIMESCALE. **[x] Pass** (2026-06-01)
+4. Browser // 02 board cards render (RUN/MOTION pills, no Position/Speed-sequence bars, no timescale row). **[x] Pass** (2026-06-01)
 
 **2026-05-31 (servo-dos setlist scheduler / RUN AUTO — rebased onto servo-voc):**
 - [x] `make -C test` — storage 22/22, motion 6/6, sequence 8/8, setlist 10/10 (setlist suite: parse ordered/shuffle, ordered playback + repeat + loop, gap STOP + dwell, leader gate, user STOP cancels + internal STOP guarded, shuffle determinism for seed, minGapEntries honored, bad seqId advances without hanging)
@@ -1078,14 +1078,15 @@ Requires OTA-flashing the new firmware to all 3 boards. Bake a library with at
 least one Setlist (an `ordered` one with 2+ entries, distinct `gapMs`, one entry
 `repeat`>1) and set it active.
 
-1. **Leader runs, cluster follows.** On the leader board's Serial (or `/cmd?c=RUN%20AUTO`), send `RUN AUTO`. Expect: leader prints `Running setlist <id>`; the first sequence plays on all boards (mirrored `RUN <seqId>`); after it finishes the next entry plays; an entry with `repeat:2` plays twice; `gapMs` produces a silent gap (mirrored `STOP`) before the next entry; the setlist loops at the end.
-   - Expected: `[ ] Pass  [ ] Fail —`
-2. **STOP halts cleanly.** During playback send `STOP`. Expect: all motion stops on every board and the scheduler does not resume on its own.
-   - Expected: `[ ] Pass  [ ] Fail —`
+1. **Leader scheduling (order / repeat / gap).** On the leader board's Serial (or `/cmd?c=RUN%20AUTO`), send `RUN AUTO`. Expect: leader prints `Running setlist <id>`; entries fire in order; an entry with `repeat:2` plays twice; `gapMs` produces a silent gap before the next entry; the setlist loops.
+   - **[x] Pass** (2026-06-01, leader board 1 / 192.168.8.198) — verified via serial timing: `arc` complete at `47.792`, `pulse` start at `50.899` = **3.1 s gap** matching `gapMs:3000`; `pulse` fired twice (`repeat:2`); order arc → pulse → pulse → loop. Note: the gap is not *visually* obvious with full-range 2000 ms winch moves — per schema §2 these goBILDA 5-turn winches have a ~7.7 s full-range mechanical floor, so the servo is still physically traveling through the (firmware-idle) gap. Use a small-travel step or a longer duration to see the stillness; the scheduler timing itself is correct.
+   - **Cluster-follow portion deferred** — only board 1 has a motor wired; verifying followers mirror the leader is tracked as a separate hardware task (servo-dos Part 4 follow-up).
+2. **STOP halts cleanly.** During playback send `STOP`. Expect: all motion stops and the scheduler does not resume on its own.
+   - Expected: `[ ] Pass  [ ] Fail —` (re-run with USB on the **leader**)
 3. **Non-leader no-op.** Send `RUN AUTO` directly to a follower (boardId ≠ leaderBoardId). Expect: it does nothing locally (no `Running setlist`); it still follows when the leader schedules.
-   - Expected: `[ ] Pass  [ ] Fail —`
+   - Expected: `[ ] Pass  [ ] Fail —` (re-run with USB on the **follower** you send to, to confirm its silence)
 4. **Shuffle (optional).** Activate a `shuffle` setlist with `seed` set; confirm entries don't repeat within `minGapEntries` and the order is reproducible across two `RUN AUTO` runs with the same seed.
-   - Expected: `[ ] Pass  [ ] Fail —`
+   - Expected: `[ ] Pass  [ ] Fail —` (not yet run)
 
 ---
 
