@@ -1082,9 +1082,9 @@ least one Setlist (an `ordered` one with 2+ entries, distinct `gapMs`, one entry
    - **[x] Pass** (2026-06-01, leader board 1 / 192.168.8.198) — verified via serial timing: `arc` complete at `47.792`, `pulse` start at `50.899` = **3.1 s gap** matching `gapMs:3000`; `pulse` fired twice (`repeat:2`); order arc → pulse → pulse → loop. Note: the gap is not *visually* obvious with full-range 2000 ms winch moves — per schema §2 these goBILDA 5-turn winches have a ~7.7 s full-range mechanical floor, so the servo is still physically traveling through the (firmware-idle) gap. Use a small-travel step or a longer duration to see the stillness; the scheduler timing itself is correct.
    - **Cluster-follow portion deferred** — only board 1 has a motor wired; verifying followers mirror the leader is tracked as a separate hardware task (servo-dos Part 4 follow-up).
 2. **STOP halts cleanly.** During playback send `STOP`. Expect: all motion stops and the scheduler does not resume on its own.
-   - Expected: `[ ] Pass  [ ] Fail —` (re-run with USB on the **leader**)
+   - **[x] Pass** (2026-06-01, leader board 1) — STOP halted playback; no further `Running sequence …` lines (scheduler did not self-resume).
 3. **Non-leader no-op.** Send `RUN AUTO` directly to a follower (boardId ≠ leaderBoardId). Expect: it does nothing locally (no `Running setlist`); it still follows when the leader schedules.
-   - Expected: `[ ] Pass  [ ] Fail —` (re-run with USB on the **follower** you send to, to confirm its silence)
+   - **[x] Pass** (2026-06-01, board 2 / 192.168.8.213) — follower printed no `Running setlist` on direct `RUN AUTO` (leader-gate confirmed).
 4. **Shuffle (optional).** Activate a `shuffle` setlist with `seed` set; confirm entries don't repeat within `minGapEntries` and the order is reproducible across two `RUN AUTO` runs with the same seed.
    - Expected: `[ ] Pass  [ ] Fail —` (not yet run)
 
