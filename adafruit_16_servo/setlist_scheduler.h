@@ -160,6 +160,23 @@ inline uint8_t schedulerLeaderBoardId(const uint8_t* data, int len) {
   return 1;
 }
 
+// Parse schedulerConfig.graceMs — the gallery-mode boot grace window before
+// auto-RUN AUTO (servo-4gl). Defaults to 10000ms when absent, malformed, or
+// negative. Mirrors schedulerLeaderBoardId's defensive parse.
+inline uint32_t schedulerGraceMs(const uint8_t* data, int len) {
+  if (data == nullptr || len < 2) return 10000;
+  int cfgPos = 0;
+  if (!seqFindValue(data, 1, len - 1, "schedulerConfig", cfgPos)) return 10000;
+  int cfgEnd = seqFindContainerEnd(data, cfgPos, len, '{', '}');
+  if (cfgEnd <= cfgPos) return 10000;
+  int p = 0; long v = 0;
+  if (seqFindValue(data, cfgPos + 1, cfgEnd, "graceMs", p) &&
+      seqParseInteger(data, p, cfgEnd, v) && v >= 0) {
+    return (uint32_t)v;
+  }
+  return 10000;
+}
+
 // Parse top-level activeSetlistId into `out`. Returns false if absent, null,
 // or empty.
 inline bool activeSetlistId(const uint8_t* data, int len, char* out, uint8_t outLen) {

@@ -281,7 +281,7 @@ A single envelope sent to each board's `POST /sequences` endpoint. Each board pe
 
 Storage on the Arduino UNO R4 WiFi uses the standard `EEPROM` library, which on the Renesas RA4M1 maps to ~8 KB of dedicated dataflash. The 8 KB is partitioned as:
 
-- An 8-byte header with magic bytes, an active-slot pointer, and `boardId`.
+- An 8-byte header with magic bytes, an active-slot pointer, `boardId`, and the `gallery_mode` boot flag (offset 4; `1` = on, anything else = off).
 - Two slots of 4084 bytes each. Each slot is `[length:2][crc16:2][payload:≤4080]`. CRC is CRC16-CCITT (poly 0x1021, init 0xFFFF) over the length bytes concatenated with the payload.
 
 `POST /sequences` writes the payload to the *inactive* slot, then atomically flips the one-byte active-slot pointer. A power loss anywhere before the pointer flip leaves the previous active slot intact. The "previous" slot is simply the non-active one — the browser's restore-previous-bake button calls `POST /sequences/restore`, which is a one-byte pointer flip back (refused if the previous slot's CRC doesn't validate).
