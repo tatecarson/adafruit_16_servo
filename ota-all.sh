@@ -113,6 +113,40 @@ if [[ ! -f "$BIN" ]]; then
   exit 1
 fi
 
+# Firmware build string we're flashing, read from the source we just compiled.
+# Used to disambiguate the false-FAIL case: a fast successful OTA resets the
+# TCP connection (the board applies + reboots) before the HTTP 200 reaches
+# curl, so curl reports failure even though it worked. After a curl failure we
+# poll the board's /status.json and, if it came back on THIS exact build with a
+# fresh uptime, report success instead (servo-6lc). Empty => can't verify, in
+# which case a curl failure is treated as a real failure (old behavior).
+EXPECTED_FW=$(grep -oE '#define[[:space:]]+FW_BUILD[[:space:]]+"[^"]*"' \
+  "$SKETCH_DIR/${SKETCH_NAME}.ino" 2>/dev/null | grep -oE '"[^"]*"' | tr -d '"')
+VERIFY_TIMEOUT="${VERIFY_TIMEOUT:-30}"   # seconds to wait for the board to reboot
+VERIFY_MAX_UPTIME_MS="${VERIFY_MAX_UPTIME_MS:-60000}"  # "fresh reboot" ceiling
+if [[ -n "$EXPECTED_FW" ]]; then
+  echo "Expecting firmware build: $EXPECTED_FW (will verify reboots over /status.json)"
+fi
+
+# Returns 0 if the board at $1 came back on EXPECTED_FW with a fresh uptime,
+# i.e. this OTA actually applied and rebooted. Polls for up to VERIFY_TIMEOUT.
+verify_applied() {
+  local ip="$1"
+  [[ -n "$EXPECTED_FW" ]] || return 1
+  local deadline=$(( SECONDS + VERIFY_TIMEOUT ))
+  local json fw uptime
+  while (( SECONDS < deadline )); do
+    json=$(curl -s --max-time 5 "http://$ip/status.json" 2>/dev/null) || { sleep 2; continue; }
+    fw=$(printf '%s' "$json" | grep -oE '"fw":"[^"]*"' | sed -E 's/.*:"(.*)"/\1/')
+    uptime=$(printf '%s' "$json" | grep -oE '"uptimeMs":[0-9]+' | grep -oE '[0-9]+')
+    if [[ "$fw" == "$EXPECTED_FW" && -n "$uptime" && "$uptime" -lt "$VERIFY_MAX_UPTIME_MS" ]]; then
+      return 0
+    fi
+    sleep 2
+  done
+  return 1
+}
+
 # Number of attempts per board. The firmware fail-fast fix (servo-6lc) means a
 # failed/aborted upload no longer wedges the board — it returns to serving
 # within seconds — so a retry is safe and effective: a healthy transfer runs
@@ -139,6 +173,13 @@ upload_one() {
         --data-binary @"$BIN" \
         "http://$ip/ota?p=${PW_ENCODED}" > "/tmp/ota-$ip.log" 2>&1; then
       echo "  OK   $ip (attempt $attempt/$RETRIES)"
+      return 0
+    fi
+    # curl said it failed — but a fast successful OTA resets the connection
+    # before the 200 OK lands here. Check whether the board actually rebooted
+    # onto this build before calling it a failure (servo-6lc).
+    if verify_applied "$ip"; then
+      echo "  OK   $ip (curl lost the 200, but board rebooted on $EXPECTED_FW — verified)"
       return 0
     fi
     if (( attempt < RETRIES )); then
