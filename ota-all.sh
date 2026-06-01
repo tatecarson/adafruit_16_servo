@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# OTA-flash every board listed in BOARDS in parallel.
+# OTA-flash every board listed in BOARDS.
 # Edit the IPs below after the home setup so they match your three Arduinos.
 #
 # Credentials: OTA_PASSWORD must come from your environment, or — as a
@@ -7,15 +7,46 @@
 # in the same directory. The script never bakes in a default password.
 set -euo pipefail
 
-BOARDS=(
+DEFAULT_BOARDS=(
   192.168.8.138
   192.168.8.213
   192.168.8.198
 )
+BOARDS=()
 
 FQBN="arduino:renesas_uno:unor4wifi"
 BUILD_DIR="/tmp/adafruit-16-servo-build"
 BIN="$BUILD_DIR/adafruit_16_servo.ino.bin"
+CONNECT_TIMEOUT="${CONNECT_TIMEOUT:-3}"
+UPLOAD_TIMEOUT="${UPLOAD_TIMEOUT:-300}"
+PARALLEL=0
+
+usage() {
+  cat <<'EOF'
+Usage: ./ota-all.sh [--parallel] [board-ip ...]
+
+Uploads sequentially by default. UNO R4 WiFi boards can take several minutes to
+receive and stage a ~118 KB sketch over the custom HTTP OTA path, and parallel
+uploads have been observed to time out on otherwise reachable boards.
+
+Options:
+  --parallel   Upload to all boards concurrently.
+
+If one or more board IPs are provided, upload only to those boards.
+EOF
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --parallel) PARALLEL=1; shift ;;
+    -h|--help) usage; exit 0 ;;
+    -*) echo "Unknown option: $1" >&2; usage >&2; exit 2 ;;
+    *) BOARDS+=("$1"); shift ;;
+  esac
+done
+if [[ ${#BOARDS[@]} -eq 0 ]]; then
+  BOARDS=("${DEFAULT_BOARDS[@]}")
+fi
 
 cd "$(dirname "$0")"
 
@@ -61,36 +92,49 @@ if [[ ! -f "$BIN" ]]; then
   exit 1
 fi
 
-echo "Uploading to ${#BOARDS[@]} boards in parallel..."
-pids=()
-for ip in "${BOARDS[@]}"; do
-  (
-    # POST to port 80 /ota — the custom handler in Web.cpp. The
-    # ArduinoOTA library's port-65280 /sketch endpoint returns 500 on
-    # the UNO R4 WiFi (WiFiS3 stack interaction). Match what the
-    # servo_controller.html upload uses.
-    if curl -sS --fail \
-        --connect-timeout 3 --max-time 60 \
-        -X POST \
-        -H "Content-Type: application/octet-stream" \
-        --data-binary @"$BIN" \
-        "http://$ip/ota?p=${PW_ENCODED}" > "/tmp/ota-$ip.log" 2>&1; then
-      echo "  OK   $ip"
-      exit 0
-    else
-      echo "  FAIL $ip (see /tmp/ota-$ip.log)"
-      exit 1
-    fi
-  ) &
-  pids+=($!)
-done
+upload_one() {
+  local ip="$1"
+  # POST to port 80 /ota — the custom handler in Web.cpp. The
+  # ArduinoOTA library's port-65280 /sketch endpoint returns 500 on
+  # the UNO R4 WiFi (WiFiS3 stack interaction). Match what the
+  # servo_controller.html upload uses.
+  if curl -sS --fail \
+      --connect-timeout "$CONNECT_TIMEOUT" --max-time "$UPLOAD_TIMEOUT" \
+      --write-out "\nCURL http_code=%{http_code} time_connect=%{time_connect} time_starttransfer=%{time_starttransfer} time_total=%{time_total} size_upload=%{size_upload} speed_upload=%{speed_upload}\n" \
+      -X POST \
+      -H "Content-Type: application/octet-stream" \
+      -H "Expect:" \
+      --data-binary @"$BIN" \
+      "http://$ip/ota?p=${PW_ENCODED}" > "/tmp/ota-$ip.log" 2>&1; then
+    echo "  OK   $ip"
+    return 0
+  else
+    echo "  FAIL $ip (see /tmp/ota-$ip.log)"
+    return 1
+  fi
+}
 
 failures=0
-for pid in "${pids[@]}"; do
-  if ! wait "$pid"; then
-    failures=$((failures + 1))
-  fi
-done
+if (( PARALLEL )); then
+  echo "Uploading to ${#BOARDS[@]} boards in parallel (${UPLOAD_TIMEOUT}s timeout)..."
+  pids=()
+  for ip in "${BOARDS[@]}"; do
+    ( upload_one "$ip" ) &
+    pids+=($!)
+  done
+  for pid in "${pids[@]}"; do
+    if ! wait "$pid"; then
+      failures=$((failures + 1))
+    fi
+  done
+else
+  echo "Uploading to ${#BOARDS[@]} boards sequentially (${UPLOAD_TIMEOUT}s timeout each)..."
+  for ip in "${BOARDS[@]}"; do
+    if ! upload_one "$ip"; then
+      failures=$((failures + 1))
+    fi
+  done
+fi
 
 if (( failures > 0 )); then
   echo "Done with $failures failure(s)." >&2

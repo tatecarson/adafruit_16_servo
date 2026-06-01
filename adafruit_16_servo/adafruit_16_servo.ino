@@ -230,7 +230,7 @@ bool otaReceive(WiFiClient& client, int contentLength) {
   }
 
   int received = 0;
-  unsigned long deadline = millis() + 60000;
+  unsigned long deadline = millis() + 300000;
   uint8_t buf[256];
   while (received < contentLength && millis() < deadline) {
     int avail = client.available();
