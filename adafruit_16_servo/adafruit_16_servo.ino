@@ -59,7 +59,7 @@
 // /status.json as "fw" so we can confirm which firmware is actually running on
 // each board over the network — removes the "did the flash take?" ambiguity
 // that has burned OTA diagnostics. Bump this string whenever firmware changes.
-#define FW_BUILD "servo-6lc-ota-2"
+#define FW_BUILD "servo-hem-1"
 
 // Wi-Fi / OTA state. otaReady gates syncPoll() so we don't UDP before the
 // stack is up. otaInProgress pauses the animation loop during an upload so
@@ -152,6 +152,21 @@ static void wifiAndOtaBegin() {
   printWifiStatus();
 }
 
+// Approximate free RAM between the top of the heap and the current stack
+// pointer (Cortex-M4 / RA4M1 newlib). Used by the servo-hem diagnostics to
+// watch for heap fragmentation/exhaustion over a long session.
+extern "C" char* sbrk(int incr);
+static int freeMemory() {
+  char top;
+  return (int)(&top - reinterpret_cast<char*>(sbrk(0)));
+}
+
+// Monotonic count of HTTP clients accepted by webPoll() (defined in Web.cpp).
+// Surfaced for the servo-hem wedge diagnosis: if /status.json stops responding
+// but the serial heartbeat shows this still climbing, the board is alive and
+// the network/socket stack is what wedged (vs a brownout/crash).
+extern unsigned long webClientsServed;
+
 // Streamed JSON snapshot for /status.json. Keep keys short to keep the
 // payload under the TCP MTU on a single send.
 void writeStatusJson(WiFiClient& client) {
@@ -169,6 +184,8 @@ void writeStatusJson(WiFiClient& client) {
   s += F(",\"node\":");          s += syncNodeId();
   s += F(",\"ip\":\"");          s += ipBuf; s += '"';
   s += F(",\"uptimeMs\":");      s += millis();
+  s += F(",\"freeRam\":");       s += freeMemory();
+  s += F(",\"served\":");        s += webClientsServed;
   s += F(",\"otaInProgress\":"); s += (otaInProgress ? F("true") : F("false"));
   s += F(",\"gallery\":");       s += (storageGalleryMode() ? F("true") : F("false"));
   // Legacy sequence/speedSeq telemetry removed in servo-voc.
@@ -462,6 +479,24 @@ void loop() {
     webPoll();                  tWeb   = millis() - s;
     s = millis();
     syncPoll();                 tSync  = millis() - s;
+  }
+
+  // servo-hem wedge diagnostics: a periodic serial heartbeat. On the next time
+  // a board (138) goes dark, a USB serial capture tells the hypotheses apart:
+  //   - heartbeats STOP / uptimeMs resets  -> brownout or crash (#1)
+  //   - heartbeats continue but HTTP is dead (served stops climbing on new
+  //     requests) -> network/socket stack wedged (#2/#3)
+  //   - freeRam trends steadily down over hours -> heap fragmentation (#4)
+  {
+    static unsigned long lastHeartbeatMs = 0;
+    if (millis() - lastHeartbeatMs >= 30000) {
+      lastHeartbeatMs = millis();
+      Serial.print(F("HEARTBEAT uptimeMs=")); Serial.print(millis());
+      Serial.print(F(" freeRam="));           Serial.print(freeMemory());
+      Serial.print(F(" served="));            Serial.print(webClientsServed);
+      Serial.print(F(" wifi="));              Serial.print(WiFi.status());
+      Serial.print(F(" rssi="));              Serial.println(WiFi.RSSI());
+    }
   }
 
   // Pause animation work during an active OTA upload so the flash isn't

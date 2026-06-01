@@ -1932,6 +1932,9 @@ const metaUptime   = $("#metaUptime");
 const STATUS_TIMEOUT_MS = 4000;
 const OFFLINE_AFTER_MS = 8000;
 let galleryToggleBusy = false;
+// Timestamp of the last /boardId map refresh (see pollOnce + BOARDID_REFRESH_MS,
+// servo-hem). Declared here because refreshBoardIdMap() below stamps it.
+let lastBoardIdRefreshAt = 0;
 
 async function fetchStatus(ip) {
   const ctrl = new AbortController();
@@ -1993,7 +1996,7 @@ async function refreshBoardIdMap() {
       renderSequencer();
       renderSetlist();
     }
-  })().finally(() => { refreshBoardIdsInFlight = null; });
+  })().finally(() => { refreshBoardIdsInFlight = null; lastBoardIdRefreshAt = Date.now(); });
   return refreshBoardIdsInFlight;
 }
 
@@ -2407,13 +2410,33 @@ async function setGalleryModeForReachable(enable) {
 // ============================================================
 // POLLING
 // ============================================================
+// boardId is persistent in EEPROM and only changes via the BOARDID command, so
+// re-fetching /boardId for every board on every ~800ms poll just doubles the
+// socket load on the slowest board (138) for no benefit. Refresh it on a slow
+// cadence instead (servo-hem hypothesis #2: single-socket server starvation).
+const BOARDID_REFRESH_MS = 30000;
+// Skip a poll tick if the previous poll is still in flight. setInterval fires
+// every interval regardless of whether the last pollOnce finished; on a slow
+// board (138 can take up to STATUS_TIMEOUT_MS=4s) that stacks overlapping
+// /status.json + /boardId connections onto its single-socket server until it
+// stops accepting and wedges (servo-hem). The guard makes polling naturally
+// back off to the response time of the slowest board.
+let pollInFlight = false;
 async function pollOnce() {
-  await Promise.all(boards.map(async ip => {
-    try { await fetchStatus(ip); }
-    catch (e) { /* lastStatus untouched; render() detects staleness */ }
-  }));
-  refreshBoardIdMap();
-  render();
+  if (pollInFlight) return;
+  pollInFlight = true;
+  try {
+    await Promise.all(boards.map(async ip => {
+      try { await fetchStatus(ip); }
+      catch (e) { /* lastStatus untouched; render() detects staleness */ }
+    }));
+    if (Date.now() - lastBoardIdRefreshAt >= BOARDID_REFRESH_MS) {
+      refreshBoardIdMap();   // stamps lastBoardIdRefreshAt on completion
+    }
+    render();
+  } finally {
+    pollInFlight = false;
+  }
 }
 
 function startPolling() {
