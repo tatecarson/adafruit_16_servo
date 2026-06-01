@@ -18,19 +18,21 @@ FQBN="arduino:renesas_uno:unor4wifi"
 BUILD_DIR="/tmp/adafruit-16-servo-build"
 BIN="$BUILD_DIR/adafruit_16_servo.ino.bin"
 CONNECT_TIMEOUT="${CONNECT_TIMEOUT:-3}"
-UPLOAD_TIMEOUT="${UPLOAD_TIMEOUT:-300}"
-PARALLEL=0
+UPLOAD_TIMEOUT="${UPLOAD_TIMEOUT:-120}"
+SPEED_LIMIT="${SPEED_LIMIT:-1024}"
+SPEED_TIME="${SPEED_TIME:-30}"
+PARALLEL=1
 
 usage() {
   cat <<'EOF'
-Usage: ./ota-all.sh [--parallel] [board-ip ...]
+Usage: ./ota-all.sh [--serial|--parallel] [board-ip ...]
 
-Uploads sequentially by default. UNO R4 WiFi boards can take several minutes to
-receive and stage a ~118 KB sketch over the custom HTTP OTA path, and parallel
-uploads have been observed to time out on otherwise reachable boards.
+Uploads in parallel by default, matching the original script behavior. Each
+board gets its own /tmp/ota-<ip>.log with curl timing diagnostics.
 
 Options:
-  --parallel   Upload to all boards concurrently.
+  --serial     Upload one board at a time for controlled diagnostics.
+  --parallel   Upload to all boards concurrently (default).
 
 If one or more board IPs are provided, upload only to those boards.
 EOF
@@ -39,6 +41,7 @@ EOF
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --parallel) PARALLEL=1; shift ;;
+    --serial|--sequential) PARALLEL=0; shift ;;
     -h|--help) usage; exit 0 ;;
     -*) echo "Unknown option: $1" >&2; usage >&2; exit 2 ;;
     *) BOARDS+=("$1"); shift ;;
@@ -100,6 +103,7 @@ upload_one() {
   # servo_controller.html upload uses.
   if curl -sS --fail \
       --connect-timeout "$CONNECT_TIMEOUT" --max-time "$UPLOAD_TIMEOUT" \
+      --speed-limit "$SPEED_LIMIT" --speed-time "$SPEED_TIME" \
       --write-out "\nCURL http_code=%{http_code} time_connect=%{time_connect} time_starttransfer=%{time_starttransfer} time_total=%{time_total} size_upload=%{size_upload} speed_upload=%{speed_upload}\n" \
       -X POST \
       -H "Content-Type: application/octet-stream" \
