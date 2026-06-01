@@ -55,6 +55,12 @@
 #include "gallery_mode.h"
 #include "command_interface.h"
 
+// Firmware build marker (servo-6lc). Printed at boot and surfaced in
+// /status.json as "fw" so we can confirm which firmware is actually running on
+// each board over the network — removes the "did the flash take?" ambiguity
+// that has burned OTA diagnostics. Bump this string whenever firmware changes.
+#define FW_BUILD "servo-6lc-ota-2"
+
 // Wi-Fi / OTA state. otaReady gates syncPoll() so we don't UDP before the
 // stack is up. otaInProgress pauses the animation loop during an upload so
 // the servo loop doesn't fight the OTA flash.
@@ -159,7 +165,8 @@ void writeStatusJson(WiFiClient& client) {
   char ipBuf[16];
   snprintf(ipBuf, sizeof(ipBuf), "%u.%u.%u.%u", ip[0], ip[1], ip[2], ip[3]);
 
-  s += F("{\"node\":");          s += syncNodeId();
+  s += F("{\"fw\":\"");          s += F(FW_BUILD); s += '"';
+  s += F(",\"node\":");          s += syncNodeId();
   s += F(",\"ip\":\"");          s += ipBuf; s += '"';
   s += F(",\"uptimeMs\":");      s += millis();
   s += F(",\"otaInProgress\":"); s += (otaInProgress ? F("true") : F("false"));
@@ -370,6 +377,7 @@ void setup() {
   delay(2000);
   Serial.println(F("Servo Calibration & Control"));
   Serial.println(F("Type HELP for commands"));
+  Serial.print(F("Firmware build: ")); Serial.println(F(FW_BUILD));
   Serial.println();
 
   storageInit();
