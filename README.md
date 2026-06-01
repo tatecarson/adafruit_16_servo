@@ -53,6 +53,7 @@ Interactive Serial interface for the Adafruit PCA9685 16-channel PWM/Servo drive
 | `DMOVE <n> <pct> <ms>` | `DMOVE 0 30 3000` | Smooth animated move to absolute percent down |
 | `MOTION <id>` | `MOTION tidal-drift` | Play a browser-baked Motion from EEPROM |
 | `RUN <id> [LOOP]` | `RUN evening-arc` | Run a browser-baked Sequence by id (schema v1) |
+| `RUN AUTO` | `RUN AUTO` | Run the active baked Setlist forever (schema v1). The leader board (`schedulerConfig.leaderBoardId`) schedules entries — ordered or weighted shuffle honoring `minGapEntries`, per-entry `repeat`/`gapMs` — and mirrors `RUN`/`STOP` to followers. `STOP` halts it. (`avoidSameTag`/`moodArc` are schema-v2, not yet honored.) |
 | `STOP` | `STOP` | Stop all active motion and sequences |
 | `STOP <n>` | `STOP 0` | Stop and hold one servo at its current position |
 | `MODE <n> STD\|CONT` | `MODE 2 CONT` | Set servo to standard or continuous |
