@@ -22,6 +22,10 @@ extern bool otaInProgress;
 
 static WiFiServer controlServer(80);
 
+// Monotonic count of accepted HTTP clients — servo-hem wedge diagnostics.
+// Read by writeStatusJson() and the loop() serial heartbeat in the .ino.
+unsigned long webClientsServed = 0;
+
 static int hexValue(char c) {
   if (c >= '0' && c <= '9') return c - '0';
   if (c >= 'A' && c <= 'F') return c - 'A' + 10;
@@ -221,6 +225,7 @@ void webBegin() {
 void webPoll() {
   WiFiClient client = controlServer.available();
   if (!client) return;
+  webClientsServed++;
 
   unsigned long _wpStart = millis();
 
