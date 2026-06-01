@@ -104,26 +104,41 @@ if [[ ! -f "$BIN" ]]; then
   exit 1
 fi
 
+# Number of attempts per board. The firmware fail-fast fix (servo-6lc) means a
+# failed/aborted upload no longer wedges the board — it returns to serving
+# within seconds — so a retry is safe and effective: a healthy transfer runs
+# ~15s at ~8 KB/s, while a board in a transient degraded-throughput state often
+# succeeds on the next attempt (this is the original "second run succeeded"
+# behavior, now automated).
+RETRIES="${RETRIES:-2}"
+RETRY_DELAY="${RETRY_DELAY:-5}"
+
 upload_one() {
   local ip="$1"
-  # POST to port 80 /ota — the custom handler in Web.cpp. The
-  # ArduinoOTA library's port-65280 /sketch endpoint returns 500 on
-  # the UNO R4 WiFi (WiFiS3 stack interaction). Match what the
-  # servo_controller.html upload uses.
-  if curl -sS --fail \
-      --connect-timeout "$CONNECT_TIMEOUT" --max-time "$UPLOAD_TIMEOUT" \
-      --write-out "\nCURL http_code=%{http_code} time_connect=%{time_connect} time_starttransfer=%{time_starttransfer} time_total=%{time_total} size_upload=%{size_upload} speed_upload=%{speed_upload}\n" \
-      -X POST \
-      -H "Content-Type: application/octet-stream" \
-      -H "Expect:" \
-      --data-binary @"$BIN" \
-      "http://$ip/ota?p=${PW_ENCODED}" > "/tmp/ota-$ip.log" 2>&1; then
-    echo "  OK   $ip"
-    return 0
-  else
-    echo "  FAIL $ip (see /tmp/ota-$ip.log)"
-    return 1
-  fi
+  local attempt
+  for (( attempt=1; attempt<=RETRIES; attempt++ )); do
+    # POST to port 80 /ota — the custom handler in Web.cpp. The
+    # ArduinoOTA library's port-65280 /sketch endpoint returns 500 on
+    # the UNO R4 WiFi (WiFiS3 stack interaction). Match what the
+    # servo_controller.html upload uses.
+    if curl -sS --fail \
+        --connect-timeout "$CONNECT_TIMEOUT" --max-time "$UPLOAD_TIMEOUT" \
+        --write-out "\nCURL http_code=%{http_code} time_connect=%{time_connect} time_starttransfer=%{time_starttransfer} time_total=%{time_total} size_upload=%{size_upload} speed_upload=%{speed_upload}\n" \
+        -X POST \
+        -H "Content-Type: application/octet-stream" \
+        -H "Expect:" \
+        --data-binary @"$BIN" \
+        "http://$ip/ota?p=${PW_ENCODED}" > "/tmp/ota-$ip.log" 2>&1; then
+      echo "  OK   $ip (attempt $attempt/$RETRIES)"
+      return 0
+    fi
+    if (( attempt < RETRIES )); then
+      echo "  retry $ip (attempt $attempt/$RETRIES failed; waiting ${RETRY_DELAY}s for board to recover)"
+      sleep "$RETRY_DELAY"
+    fi
+  done
+  echo "  FAIL $ip after $RETRIES attempts (see /tmp/ota-$ip.log)"
+  return 1
 }
 
 failures=0
