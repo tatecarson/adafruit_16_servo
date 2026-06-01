@@ -122,7 +122,7 @@ fi
 # which case a curl failure is treated as a real failure (old behavior).
 EXPECTED_FW=$(grep -oE '#define[[:space:]]+FW_BUILD[[:space:]]+"[^"]*"' \
   "$SKETCH_DIR/${SKETCH_NAME}.ino" 2>/dev/null | grep -oE '"[^"]*"' | tr -d '"')
-VERIFY_TIMEOUT="${VERIFY_TIMEOUT:-30}"   # seconds to wait for the board to reboot
+VERIFY_TIMEOUT="${VERIFY_TIMEOUT:-90}"   # seconds to wait for the board to reboot
 VERIFY_MAX_UPTIME_MS="${VERIFY_MAX_UPTIME_MS:-60000}"  # "fresh reboot" ceiling
 if [[ -n "$EXPECTED_FW" ]]; then
   echo "Expecting firmware build: $EXPECTED_FW (will verify reboots over /status.json)"
@@ -172,8 +172,13 @@ upload_one() {
         -H "Expect:" \
         --data-binary @"$BIN" \
         "http://$ip/ota?p=${PW_ENCODED}" > "/tmp/ota-$ip.log" 2>&1; then
-      echo "  OK   $ip (attempt $attempt/$RETRIES)"
-      return 0
+      if verify_applied "$ip"; then
+        echo "  OK   $ip (attempt $attempt/$RETRIES; reboot verified on $EXPECTED_FW)"
+        return 0
+      fi
+      echo "  WARN $ip upload returned HTTP 200, but reboot on $EXPECTED_FW was not verified"
+      echo "       see /tmp/ota-$ip.log; board may be wedged post-apply"
+      return 1
     fi
     # curl said it failed — but a fast successful OTA resets the connection
     # before the 200 OK lands here. Check whether the board actually rebooted
@@ -187,7 +192,11 @@ upload_one() {
       sleep "$RETRY_DELAY"
     fi
   done
-  echo "  FAIL $ip after $RETRIES attempts (see /tmp/ota-$ip.log)"
+  if curl -s --max-time 5 "http://$ip/status.json" >/tmp/ota-status-"$ip".json 2>/dev/null; then
+    echo "  FAIL $ip after $RETRIES attempts (status reachable but not fresh $EXPECTED_FW; see /tmp/ota-status-$ip.json and /tmp/ota-$ip.log)"
+  else
+    echo "  WEDGE $ip after $RETRIES attempts (no /status.json; likely post-OTA WiFi/server wedge; see /tmp/ota-$ip.log)"
+  fi
   return 1
 }
 

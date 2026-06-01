@@ -198,6 +198,10 @@ adafruit_16_servo/
 
 35. `refactor: share baked JSON parser helpers (servo-4cd)` — extracts the duplicated Motion/Sequence bounded JSON primitives into `bake_parse.h` and points Motion, Sequence, and Setlist parsing at the shared `bake*` helpers. Verification: `make -C test motion`; `make -C test sequence`; `make -C test setlist`; `make -C test`; `make -C test size` 118868 / 122880 bytes (+4012 headroom).
 
+## Git Commits (OTA Apply Recovery)
+
+36. `fix: delay browser OTA apply until after response close (servo-e0n)` — changes `/ota` so a complete upload sends/closes the HTTP 200 response, then schedules `InternalStorage.apply()` from the main loop after a 2s settle window instead of applying inside the request handler. Adds compact `/status.json` OTA diagnostics (`ota.pendingApply`, last byte counts, timing, and error) plus clearer Serial OTA timeline. `ota-all.sh` now verifies reboot on the expected `FW_BUILD` even after HTTP 200 and reports post-apply wedges explicitly. Verification: `make -C test`; `make -C test size` 119720 / 122880 bytes (+3160 headroom); `bash -n ota-all.sh`.
+
 ## Future Features
 
 - [ ] **EEPROM calibration storage** - Save/load servo calibrations (type, min, max, stop pulse) to persist across power cycles. Commands: `SAVE`, `LOAD`, `CLEAR`
