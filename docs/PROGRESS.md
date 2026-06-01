@@ -194,6 +194,10 @@ adafruit_16_servo/
 
 34. `feat: add masthead gallery mode toggle (servo-9li)` — exposes the persistent gallery flag in `/status.json` and adds a masthead Gallery toggle that reflects reachable boards, shows amber when all are on, shows dim when off/unknown, confirms before enabling unattended boot auto-run, and sends `GALLERY ON/OFF` to every currently reachable board. Verification: `make -C test`; `make -C test size` 118348 / 122880 bytes (+4532 headroom); browser preview at `127.0.0.1:4173`.
 
+## Git Commits (Bake Parser Refactor)
+
+35. `refactor: share baked JSON parser helpers (servo-4cd)` — extracts the duplicated Motion/Sequence bounded JSON primitives into `bake_parse.h` and points Motion, Sequence, and Setlist parsing at the shared `bake*` helpers. Verification: `make -C test motion`; `make -C test sequence`; `make -C test setlist`; `make -C test`; `make -C test size` 118868 / 122880 bytes (+4012 headroom).
+
 ## Future Features
 
 - [ ] **EEPROM calibration storage** - Save/load servo calibrations (type, min, max, stop pulse) to persist across power cycles. Commands: `SAVE`, `LOAD`, `CLEAR`

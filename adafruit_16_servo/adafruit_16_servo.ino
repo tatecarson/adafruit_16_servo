@@ -190,7 +190,7 @@ void writeStatusJson(WiFiClient& client) {
   s += F(",\"gallery\":");       s += (storageGalleryMode() ? F("true") : F("false"));
   // Legacy sequence/speedSeq telemetry removed in servo-voc.
   s += F(",\"motion\":{\"active\":"); s += (motionRuntime.active ? F("true") : F("false"));
-  // motionRuntime.id is emitted unescaped: motionCopyString() (motion_engine.h)
+  // motionRuntime.id is emitted unescaped: bakeCopyString() rejects escapes.
   // rejects '"' and '\\' at parse time, and the schema id regex
   // ^[a-z][a-z0-9-]{0,31}$ permits no other JSON-significant characters.
   s += F(",\"id\":\"");          s += motionRuntime.id;

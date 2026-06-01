@@ -7,9 +7,9 @@
 // ============================================================
 
 #include <string.h>
+#include "bake_parse.h"
 #include "servo_runtime.h"
 #include "storage.h"
-#include "sequence_engine.h"   // reuse seq* JSON parsing primitives
 
 // Defined in command_interface.h (included after this header). The scheduler
 // fires entries through dispatchCommand (NOT processCommand) so the leader's
@@ -21,27 +21,27 @@ void dispatchCommand(const char* cmd, bool fromNetwork);
 // Missing repeat/weight default to 1; missing gapMs defaults to 0.
 static bool setlistParseEntry(const uint8_t* data, int objStart, int objEnd, SetlistEntry& out) {
   int valuePos = 0;
-  if (!seqFindValue(data, objStart + 1, objEnd, "seqId", valuePos)) return false;
-  if (!seqCopyString(data, valuePos, objEnd, out.seqId, sizeof(out.seqId))) return false;
+  if (!bakeFindValue(data, objStart + 1, objEnd, "seqId", valuePos)) return false;
+  if (!bakeCopyString(data, valuePos, objEnd, out.seqId, sizeof(out.seqId))) return false;
 
   // Numeric fields are narrowed to uint16_t/uint32_t, so reject out-of-range
   // values before the cast (servo-dos review): a baked repeat/weight > 65535
   // would wrap and silently change scheduling. Missing fields keep the default.
   long parsed = 0;
   out.repeat = 1;
-  if (seqFindValue(data, objStart + 1, objEnd, "repeat", valuePos)) {
-    if (!seqParseInteger(data, valuePos, objEnd, parsed) || parsed < 1 || parsed > 0xFFFFL) return false;
+  if (bakeFindValue(data, objStart + 1, objEnd, "repeat", valuePos)) {
+    if (!bakeParseInteger(data, valuePos, objEnd, parsed) || parsed < 1 || parsed > 0xFFFFL) return false;
     out.repeat = (uint16_t)parsed;
   }
   out.gapMs = 0;
-  if (seqFindValue(data, objStart + 1, objEnd, "gapMs", valuePos)) {
+  if (bakeFindValue(data, objStart + 1, objEnd, "gapMs", valuePos)) {
     // `parsed` is a (≤32-bit) long, so it can't exceed UINT32_MAX; only guard < 0.
-    if (!seqParseInteger(data, valuePos, objEnd, parsed) || parsed < 0) return false;
+    if (!bakeParseInteger(data, valuePos, objEnd, parsed) || parsed < 0) return false;
     out.gapMs = (uint32_t)parsed;
   }
   out.weight = 1;
-  if (seqFindValue(data, objStart + 1, objEnd, "weight", valuePos)) {
-    if (!seqParseInteger(data, valuePos, objEnd, parsed) || parsed < 1 || parsed > 0xFFFFL) return false;
+  if (bakeFindValue(data, objStart + 1, objEnd, "weight", valuePos)) {
+    if (!bakeParseInteger(data, valuePos, objEnd, parsed) || parsed < 1 || parsed > 0xFFFFL) return false;
     out.weight = (uint16_t)parsed;
   }
   return true;
@@ -61,11 +61,11 @@ inline bool setlistLoadFromBuffer(const uint8_t* data, int len,
   }
 
   int valuePos = 0;
-  if (!seqFindValue(data, 1, len - 1, "setlists", valuePos)) {
+  if (!bakeFindValue(data, 1, len - 1, "setlists", valuePos)) {
     if (error) *error = "missing-setlists";
     return false;
   }
-  int setlistsEnd = seqFindContainerEnd(data, valuePos, len, '[', ']');
+  int setlistsEnd = bakeFindContainerEnd(data, valuePos, len, '[', ']');
   if (setlistsEnd < 0) {
     if (error) *error = "bad-setlists";
     return false;
@@ -73,49 +73,49 @@ inline bool setlistLoadFromBuffer(const uint8_t* data, int len,
 
   int pos = valuePos + 1;
   int slStart = 0, slEnd = 0;
-  while (seqNextObjectInArray(data, valuePos, setlistsEnd, pos, slStart, slEnd)) {
+  while (bakeNextObjectInArray(data, valuePos, setlistsEnd, pos, slStart, slEnd)) {
     int idPos = 0;
-    if (!seqFindValue(data, slStart + 1, slEnd, "id", idPos)) continue;
-    if (!seqStringEqualsIgnoreCase(data, idPos, slEnd, setlistId)) continue;
+    if (!bakeFindValue(data, slStart + 1, slEnd, "id", idPos)) continue;
+    if (!bakeStringEqualsIgnoreCase(data, idPos, slEnd, setlistId)) continue;
 
-    if (!seqCopyString(data, idPos, slEnd, out.id, sizeof(out.id))) {
+    if (!bakeCopyString(data, idPos, slEnd, out.id, sizeof(out.id))) {
       if (error) *error = "bad-setlist-id";
       return false;
     }
 
     int modePos = 0;
-    out.shuffle = seqFindValue(data, slStart + 1, slEnd, "mode", modePos) &&
-                  seqStringEqualsIgnoreCase(data, modePos, slEnd, "shuffle");
+    out.shuffle = bakeFindValue(data, slStart + 1, slEnd, "mode", modePos) &&
+                  bakeStringEqualsIgnoreCase(data, modePos, slEnd, "shuffle");
 
     // shuffleRules.minGapEntries + seed (optional).
     out.minGapEntries = 0;
     out.rngState = 0;
     int rulesPos = 0;
-    if (seqFindValue(data, slStart + 1, slEnd, "shuffleRules", rulesPos)) {
-      int rulesEnd = seqFindContainerEnd(data, rulesPos, slEnd, '{', '}');
+    if (bakeFindValue(data, slStart + 1, slEnd, "shuffleRules", rulesPos)) {
+      int rulesEnd = bakeFindContainerEnd(data, rulesPos, slEnd, '{', '}');
       if (rulesEnd > rulesPos) {
         long v = 0;
         int p = 0;
         // Reject out-of-range minGapEntries before the uint8_t cast (256 → 0).
-        if (seqFindValue(data, rulesPos + 1, rulesEnd, "minGapEntries", p)) {
-          if (!seqParseInteger(data, p, rulesEnd, v) || v < 0 || v > 0xFFL) {
+        if (bakeFindValue(data, rulesPos + 1, rulesEnd, "minGapEntries", p)) {
+          if (!bakeParseInteger(data, p, rulesEnd, v) || v < 0 || v > 0xFFL) {
             if (error) *error = "bad-shuffle-rules";
             return false;
           }
           out.minGapEntries = (uint8_t)v;
         }
-        if (seqFindValue(data, rulesPos + 1, rulesEnd, "seed", p) &&
-            seqParseInteger(data, p, rulesEnd, v)) {
+        if (bakeFindValue(data, rulesPos + 1, rulesEnd, "seed", p) &&
+            bakeParseInteger(data, p, rulesEnd, v)) {
           out.rngState = (uint32_t)v;
         }
       }
     }
 
-    if (!seqFindValue(data, slStart + 1, slEnd, "entries", valuePos)) {
+    if (!bakeFindValue(data, slStart + 1, slEnd, "entries", valuePos)) {
       if (error) *error = "missing-entries";
       return false;
     }
-    int entriesEnd = seqFindContainerEnd(data, valuePos, slEnd, '[', ']');
+    int entriesEnd = bakeFindContainerEnd(data, valuePos, slEnd, '[', ']');
     if (entriesEnd < 0) {
       if (error) *error = "bad-entries";
       return false;
@@ -123,7 +123,7 @@ inline bool setlistLoadFromBuffer(const uint8_t* data, int len,
 
     int ePos = valuePos + 1;
     int eStart = 0, eEnd = 0;
-    while (seqNextObjectInArray(data, valuePos, entriesEnd, ePos, eStart, eEnd)) {
+    while (bakeNextObjectInArray(data, valuePos, entriesEnd, ePos, eStart, eEnd)) {
       if (out.entryCount >= SETLIST_MAX_ENTRIES) {
         if (error) *error = "too-many-entries";
         return false;
@@ -149,12 +149,12 @@ inline bool setlistLoadFromBuffer(const uint8_t* data, int len,
 inline uint8_t schedulerLeaderBoardId(const uint8_t* data, int len) {
   if (data == nullptr || len < 2) return 1;
   int cfgPos = 0;
-  if (!seqFindValue(data, 1, len - 1, "schedulerConfig", cfgPos)) return 1;
-  int cfgEnd = seqFindContainerEnd(data, cfgPos, len, '{', '}');
+  if (!bakeFindValue(data, 1, len - 1, "schedulerConfig", cfgPos)) return 1;
+  int cfgEnd = bakeFindContainerEnd(data, cfgPos, len, '{', '}');
   if (cfgEnd <= cfgPos) return 1;
   int p = 0; long v = 0;
-  if (seqFindValue(data, cfgPos + 1, cfgEnd, "leaderBoardId", p) &&
-      seqParseInteger(data, p, cfgEnd, v) && v >= 1 && v <= 3) {
+  if (bakeFindValue(data, cfgPos + 1, cfgEnd, "leaderBoardId", p) &&
+      bakeParseInteger(data, p, cfgEnd, v) && v >= 1 && v <= 3) {
     return (uint8_t)v;
   }
   return 1;
@@ -166,12 +166,12 @@ inline uint8_t schedulerLeaderBoardId(const uint8_t* data, int len) {
 inline uint32_t schedulerGraceMs(const uint8_t* data, int len) {
   if (data == nullptr || len < 2) return 10000;
   int cfgPos = 0;
-  if (!seqFindValue(data, 1, len - 1, "schedulerConfig", cfgPos)) return 10000;
-  int cfgEnd = seqFindContainerEnd(data, cfgPos, len, '{', '}');
+  if (!bakeFindValue(data, 1, len - 1, "schedulerConfig", cfgPos)) return 10000;
+  int cfgEnd = bakeFindContainerEnd(data, cfgPos, len, '{', '}');
   if (cfgEnd <= cfgPos) return 10000;
   int p = 0; long v = 0;
-  if (seqFindValue(data, cfgPos + 1, cfgEnd, "graceMs", p) &&
-      seqParseInteger(data, p, cfgEnd, v) && v >= 0) {
+  if (bakeFindValue(data, cfgPos + 1, cfgEnd, "graceMs", p) &&
+      bakeParseInteger(data, p, cfgEnd, v) && v >= 0) {
     return (uint32_t)v;
   }
   return 10000;
@@ -182,9 +182,9 @@ inline uint32_t schedulerGraceMs(const uint8_t* data, int len) {
 inline bool activeSetlistId(const uint8_t* data, int len, char* out, uint8_t outLen) {
   if (data == nullptr || len < 2 || outLen == 0) return false;
   int p = 0;
-  if (!seqFindValue(data, 1, len - 1, "activeSetlistId", p)) return false;
+  if (!bakeFindValue(data, 1, len - 1, "activeSetlistId", p)) return false;
   if (p >= len || data[p] != '"') return false;   // null / non-string → none
-  if (!seqCopyString(data, p, len - 1, out, outLen)) return false;
+  if (!bakeCopyString(data, p, len - 1, out, outLen)) return false;
   return out[0] != '\0';
 }
 

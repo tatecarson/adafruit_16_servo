@@ -50,6 +50,7 @@ A servo calibration and control system for the **Adafruit PCA9685 16-channel PWM
 ```
 adafruit_16_servo/
 ├── adafruit_16_servo.ino    # Main Arduino sketch (core logic)
+├── bake_parse.h             # Shared bounded JSON parser helpers for baked libraries
 ├── motion_engine.h          # Browser-baked Motion parser/playback engine
 ├── servo_setup.h            # Installation-specific per-servo setup
 ├── README.md                 # User documentation
@@ -69,7 +70,7 @@ The sketch is split into small headers included by `adafruit_16_servo.ino`:
 3. **Servo/DC control** (`servo_control.h`, `dc_motor.h`): calibrated servo writes, eased moves, percent travel commands, and motor speed/ramp helpers
 4. **Animation engines** (`animation_engine.h`, `motion_engine.h`, `sequence_engine.h`, `setlist_scheduler.h`): eased `MOVE`, baked `MOTION <id>`, baked `RUN <id>` Sequence dispatch, and baked `RUN AUTO` Setlist scheduling (WAVE removed in servo-dz7; legacy `PLAY`/`SPLAY`/`RUN <n>` + `TIMESCALE` removed in servo-voc, both for OTA partition headroom)
 5. **Command interface** (`command_interface.h`): `showHelp()`, `processCommand()`, and mirrored command dispatch
-6. **Persistence/web** (`storage.h`, `bake_validate.h`, `Web.cpp`): EEPROM bake slots, schema validation, boardId, and HTTP endpoints
+6. **Persistence/web** (`storage.h`, `bake_validate.h`, `bake_parse.h`, `Web.cpp`): EEPROM bake slots, schema validation/parsing, boardId, and HTTP endpoints
 
 ## State Model
 

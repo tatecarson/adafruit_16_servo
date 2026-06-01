@@ -1,166 +1,10 @@
 #pragma once
 
 #include <string.h>
+#include "bake_parse.h"
 #include "servo_runtime.h"
 #include "storage.h"
 #include "dc_motor.h"
-
-static bool motionAsciiEq(char a, char b) {
-  if (a >= 'A' && a <= 'Z') a = (char)(a + ('a' - 'A'));
-  if (b >= 'A' && b <= 'Z') b = (char)(b + ('a' - 'A'));
-  return a == b;
-}
-
-static int motionSkipWs(const uint8_t* data, int pos, int end) {
-  while (pos < end) {
-    char c = (char)data[pos];
-    if (c != ' ' && c != '\t' && c != '\n' && c != '\r') break;
-    pos++;
-  }
-  return pos;
-}
-
-static bool motionKeyEquals(const uint8_t* data, int start, int end, const char* key) {
-  int i = 0;
-  for (int p = start; p < end; p++, i++) {
-    if (key[i] == '\0' || (char)data[p] != key[i]) return false;
-  }
-  return key[i] == '\0';
-}
-
-static bool motionStringEqualsIgnoreCase(const uint8_t* data, int pos, int end, const char* value) {
-  if (pos >= end || data[pos] != '"') return false;
-  int p = pos + 1;
-  int i = 0;
-  while (p < end && data[p] != '"') {
-    if (data[p] == '\\') return false;
-    if (value[i] == '\0' || !motionAsciiEq((char)data[p], value[i])) return false;
-    p++;
-    i++;
-  }
-  return p < end && data[p] == '"' && value[i] == '\0';
-}
-
-static bool motionCopyString(const uint8_t* data, int pos, int end, char* out, uint8_t outLen) {
-  if (pos >= end || data[pos] != '"' || outLen == 0) return false;
-  int p = pos + 1;
-  uint8_t n = 0;
-  while (p < end && data[p] != '"') {
-    if (data[p] == '\\' || n >= outLen - 1) return false;
-    out[n++] = (char)data[p++];
-  }
-  if (p >= end || data[p] != '"') return false;
-  out[n] = '\0';
-  return true;
-}
-
-static bool motionFindValue(const uint8_t* data, int start, int end, const char* key, int& valuePos) {
-  int curly = 0;
-  int square = 0;
-  bool inString = false;
-  bool escape = false;
-  int stringStart = -1;
-  bool keyMatched = false;
-
-  for (int p = start; p < end; p++) {
-    char c = (char)data[p];
-    if (escape) {
-      escape = false;
-      continue;
-    }
-    if (inString) {
-      if (c == '\\') {
-        escape = true;
-      } else if (c == '"') {
-        inString = false;
-        if (curly == 0 && square == 0 && stringStart >= 0) {
-          keyMatched = motionKeyEquals(data, stringStart, p, key);
-        }
-      }
-      continue;
-    }
-
-    if (c == '"') {
-      inString = true;
-      stringStart = p + 1;
-    } else if (c == '{') {
-      curly++;
-      keyMatched = false;
-    } else if (c == '}') {
-      curly--;
-      keyMatched = false;
-    } else if (c == '[') {
-      square++;
-      keyMatched = false;
-    } else if (c == ']') {
-      square--;
-      keyMatched = false;
-    } else if (c == ':' && curly == 0 && square == 0 && keyMatched) {
-      valuePos = motionSkipWs(data, p + 1, end);
-      return valuePos < end;
-    } else if (c == ',') {
-      keyMatched = false;
-    }
-  }
-  return false;
-}
-
-static int motionFindContainerEnd(const uint8_t* data, int start, int end, char openChar, char closeChar) {
-  if (start >= end || data[start] != openChar) return -1;
-  int depth = 0;
-  bool inString = false;
-  bool escape = false;
-  for (int p = start; p < end; p++) {
-    char c = (char)data[p];
-    if (escape) {
-      escape = false;
-      continue;
-    }
-    if (inString) {
-      if (c == '\\') escape = true;
-      else if (c == '"') inString = false;
-      continue;
-    }
-    if (c == '"') inString = true;
-    else if (c == openChar) depth++;
-    else if (c == closeChar && --depth == 0) return p;
-  }
-  return -1;
-}
-
-static bool motionParseInteger(const uint8_t* data, int pos, int end, long& value) {
-  pos = motionSkipWs(data, pos, end);
-  bool neg = false;
-  if (pos < end && data[pos] == '-') {
-    neg = true;
-    pos++;
-  }
-  if (pos >= end || data[pos] < '0' || data[pos] > '9') return false;
-  long v = 0;
-  while (pos < end && data[pos] >= '0' && data[pos] <= '9') {
-    v = (v * 10) + (data[pos] - '0');
-    pos++;
-  }
-  if (pos < end && data[pos] == '.') {
-    pos++;
-    while (pos < end && data[pos] >= '0' && data[pos] <= '9') pos++;
-  }
-  value = neg ? -v : v;
-  return true;
-}
-
-static bool motionNextObjectInArray(const uint8_t* data, int arrayStart, int arrayEnd, int& pos, int& objStart, int& objEnd) {
-  if (pos <= arrayStart) pos = arrayStart + 1;
-  pos = motionSkipWs(data, pos, arrayEnd);
-  if (pos < arrayEnd && data[pos] == ',') pos = motionSkipWs(data, pos + 1, arrayEnd);
-  if (pos >= arrayEnd || data[pos] == ']') return false;
-  if (data[pos] != '{') return false;
-  objStart = pos;
-  objEnd = motionFindContainerEnd(data, objStart, arrayEnd + 1, '{', '}');
-  if (objEnd < 0) return false;
-  pos = objEnd + 1;
-  return true;
-}
 
 static bool motionParseKeyframe(
   const uint8_t* data,
@@ -170,15 +14,15 @@ static bool motionParseKeyframe(
 ) {
   int valuePos = 0;
   long parsed = 0;
-  if (!motionFindValue(data, objStart + 1, objEnd, "atMs", valuePos) ||
-      !motionParseInteger(data, valuePos, objEnd, parsed) ||
+  if (!bakeFindValue(data, objStart + 1, objEnd, "atMs", valuePos) ||
+      !bakeParseInteger(data, valuePos, objEnd, parsed) ||
       parsed < 0) {
     return false;
   }
   frame.atMs = (uint32_t)parsed;
 
-  if (!motionFindValue(data, objStart + 1, objEnd, "value", valuePos) ||
-      !motionParseInteger(data, valuePos, objEnd, parsed)) {
+  if (!bakeFindValue(data, objStart + 1, objEnd, "value", valuePos) ||
+      !bakeParseInteger(data, valuePos, objEnd, parsed)) {
     return false;
   }
   frame.value = (int16_t)parsed;
@@ -197,18 +41,18 @@ static bool motionParseTrack(
   int valuePos = 0;
   uint8_t kind = MOTION_TRACK_NONE;
 
-  if (!motionFindValue(data, objStart + 1, objEnd, "kind", valuePos)) return false;
-  if (motionStringEqualsIgnoreCase(data, valuePos, objEnd, "servo")) {
+  if (!bakeFindValue(data, objStart + 1, objEnd, "kind", valuePos)) return false;
+  if (bakeStringEqualsIgnoreCase(data, valuePos, objEnd, "servo")) {
     kind = MOTION_TRACK_SERVO;
-  } else if (motionStringEqualsIgnoreCase(data, valuePos, objEnd, "dc")) {
+  } else if (bakeStringEqualsIgnoreCase(data, valuePos, objEnd, "dc")) {
     kind = MOTION_TRACK_DC;
   } else {
     return false;
   }
 
   long parsed = 0;
-  if (!motionFindValue(data, objStart + 1, objEnd, "channel", valuePos) ||
-      !motionParseInteger(data, valuePos, objEnd, parsed) ||
+  if (!bakeFindValue(data, objStart + 1, objEnd, "channel", valuePos) ||
+      !bakeParseInteger(data, valuePos, objEnd, parsed) ||
       parsed < 0 || parsed > 255) {
     return false;
   }
@@ -216,12 +60,12 @@ static bool motionParseTrack(
   if (kind == MOTION_TRACK_SERVO && channel >= NUM_SERVOS) return false;
   if (kind == MOTION_TRACK_DC && channel != 0) return false;
 
-  if (motionFindValue(data, objStart + 1, objEnd, "boardId", valuePos)) {
+  if (bakeFindValue(data, objStart + 1, objEnd, "boardId", valuePos)) {
     // Present-but-unparseable boardId means the bake is malformed. Treat the
     // track as not-for-us rather than silently including it on every board —
     // which is what the prior `&&`-guarded path did when motionParseInteger
     // failed.
-    if (!motionParseInteger(data, valuePos, objEnd, parsed) || parsed < 0 || parsed > 255) {
+    if (!bakeParseInteger(data, valuePos, objEnd, parsed) || parsed < 0 || parsed > 255) {
       return true;
     }
     uint8_t localBoard = storageBoardId();
@@ -229,8 +73,8 @@ static bool motionParseTrack(
   }
 
   if (out.trackCount >= MOTION_MAX_TRACKS) return false;
-  if (!motionFindValue(data, objStart + 1, objEnd, "keyframes", valuePos)) return false;
-  int arrayEnd = motionFindContainerEnd(data, valuePos, objEnd, '[', ']');
+  if (!bakeFindValue(data, objStart + 1, objEnd, "keyframes", valuePos)) return false;
+  int arrayEnd = bakeFindContainerEnd(data, valuePos, objEnd, '[', ']');
   if (arrayEnd < 0) return false;
 
   uint8_t first = out.keyframeCount;
@@ -239,7 +83,7 @@ static bool motionParseTrack(
   int kfStart = 0;
   int kfEnd = 0;
   uint32_t previousAt = 0;
-  while (motionNextObjectInArray(data, valuePos, arrayEnd, pos, kfStart, kfEnd)) {
+  while (bakeNextObjectInArray(data, valuePos, arrayEnd, pos, kfStart, kfEnd)) {
     if (out.keyframeCount >= MOTION_MAX_KEYFRAMES) return false;
     MotionKeyframe frame;
     if (!motionParseKeyframe(data, kfStart, kfEnd, frame)) return false;
@@ -285,11 +129,11 @@ inline bool motionLoadFromBuffer(
   }
 
   int valuePos = 0;
-  if (!motionFindValue(data, 1, len - 1, "motions", valuePos)) {
+  if (!bakeFindValue(data, 1, len - 1, "motions", valuePos)) {
     if (error) *error = "missing-motions";
     return false;
   }
-  int motionsEnd = motionFindContainerEnd(data, valuePos, len, '[', ']');
+  int motionsEnd = bakeFindContainerEnd(data, valuePos, len, '[', ']');
   if (motionsEnd < 0) {
     if (error) *error = "bad-motions";
     return false;
@@ -298,30 +142,30 @@ inline bool motionLoadFromBuffer(
   int pos = valuePos + 1;
   int motionStart = 0;
   int motionEnd = 0;
-  while (motionNextObjectInArray(data, valuePos, motionsEnd, pos, motionStart, motionEnd)) {
+  while (bakeNextObjectInArray(data, valuePos, motionsEnd, pos, motionStart, motionEnd)) {
     int idPos = 0;
-    if (!motionFindValue(data, motionStart + 1, motionEnd, "id", idPos)) continue;
-    if (!motionStringEqualsIgnoreCase(data, idPos, motionEnd, motionId)) continue;
+    if (!bakeFindValue(data, motionStart + 1, motionEnd, "id", idPos)) continue;
+    if (!bakeStringEqualsIgnoreCase(data, idPos, motionEnd, motionId)) continue;
 
-    if (!motionCopyString(data, idPos, motionEnd, out.id, sizeof(out.id))) {
+    if (!bakeCopyString(data, idPos, motionEnd, out.id, sizeof(out.id))) {
       if (error) *error = "bad-motion-id";
       return false;
     }
 
     long duration = 0;
-    if (!motionFindValue(data, motionStart + 1, motionEnd, "durationMs", valuePos) ||
-        !motionParseInteger(data, valuePos, motionEnd, duration) ||
+    if (!bakeFindValue(data, motionStart + 1, motionEnd, "durationMs", valuePos) ||
+        !bakeParseInteger(data, valuePos, motionEnd, duration) ||
         duration < 1) {
       if (error) *error = "bad-duration";
       return false;
     }
     out.durationMs = (uint32_t)duration;
 
-    if (!motionFindValue(data, motionStart + 1, motionEnd, "tracks", valuePos)) {
+    if (!bakeFindValue(data, motionStart + 1, motionEnd, "tracks", valuePos)) {
       if (error) *error = "missing-tracks";
       return false;
     }
-    int tracksEnd = motionFindContainerEnd(data, valuePos, motionEnd, '[', ']');
+    int tracksEnd = bakeFindContainerEnd(data, valuePos, motionEnd, '[', ']');
     if (tracksEnd < 0) {
       if (error) *error = "bad-tracks";
       return false;
@@ -330,7 +174,7 @@ inline bool motionLoadFromBuffer(
     int trackPos = valuePos + 1;
     int trackStart = 0;
     int trackEnd = 0;
-    while (motionNextObjectInArray(data, valuePos, tracksEnd, trackPos, trackStart, trackEnd)) {
+    while (bakeNextObjectInArray(data, valuePos, tracksEnd, trackPos, trackStart, trackEnd)) {
       bool included = false;
       if (!motionParseTrack(data, trackStart, trackEnd, out.durationMs, out, included)) {
         if (error) *error = "bad-track";
