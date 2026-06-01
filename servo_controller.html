@@ -1602,9 +1602,11 @@
     <div class="seq-picker">
       <select id="seqSelect" title="Sequence"></select>
       <input id="seqName" type="text" placeholder="sequence name" autocomplete="off" spellcheck="false">
+      <code id="seqIdLabel" class="motion-id" title="Sequence id — what you type after RUN and what Setlist entries reference. Use Rename ID to change it."></code>
       <div class="seq-actions">
         <button class="cmd compact" id="seqNew">New</button>
         <button class="cmd compact" id="seqDuplicate">Duplicate</button>
+        <button class="cmd compact" id="seqRename" title="Change this sequence's id (updates Setlist entries + RUN steps; re-bake after)">Rename ID</button>
         <button class="cmd compact alert" id="seqDelete">Delete</button>
       </div>
     </div>
@@ -2671,6 +2673,7 @@ const bakeBudgetCaretEl = $("#bakeBudgetCaret");
 
 const seqSelectEl     = $("#seqSelect");
 const seqNameEl       = $("#seqName");
+const seqIdLabelEl    = $("#seqIdLabel");
 const seqTagsEl       = $("#seqTags");
 const seqTagInputEl   = $("#seqTagInput");
 const seqTotalEl      = $("#seqTotal");
@@ -4193,6 +4196,37 @@ function uniqueSequenceId(lib, seed) {
   return `seq-${Date.now().toString(36)}`.slice(0, 32);
 }
 
+// True while a sequence still carries its placeholder auto-id ("new-sequence"
+// or "new-sequence-N"). Naming such a sequence derives a meaningful id from the
+// name (servo-3ks); once it has a real id we keep it stable across name edits.
+function isAutoSequenceId(id) {
+  return /^new-sequence(-\d+)?$/.test(String(id || ""));
+}
+
+// Rewrite references to a sequence id when it changes (servo-3ks), mirroring
+// rewriteMotionIdReferences: Setlist entries point at sequences via seqId, and
+// a Sequence step can chain another with `RUN <id>` (the optional LOOP suffix
+// is preserved). Mutates lib in place; returns the count of rewritten refs.
+function rewriteSequenceIdReferences(lib, oldId, newId) {
+  let count = 0;
+  for (const sl of lib.setlists || []) {
+    for (const entry of sl.entries || []) {
+      if (entry.seqId === oldId) { entry.seqId = newId; count++; }
+    }
+  }
+  for (const seq of lib.sequences || []) {
+    for (const step of seq.steps || []) {
+      const parts = String(step.cmd || "").trim().split(/\s+/);
+      if (parts[0]?.toUpperCase() === "RUN" && parts[1] === oldId) {
+        parts[1] = newId;
+        step.cmd = parts.join(" ");
+        count++;
+      }
+    }
+  }
+  return count;
+}
+
 function defaultSequence(lib) {
   const id = uniqueSequenceId(lib, "new-sequence");
   return {
@@ -4330,6 +4364,7 @@ function renderSequencer() {
   if (document.activeElement !== seqNameEl) {
     seqNameEl.value = seq.name || seq.id;
   }
+  if (seqIdLabelEl) seqIdLabelEl.textContent = `id: ${seq.id}`;
   seqTagsEl.innerHTML = (seq.tags || []).map(tag =>
     `<span class="seq-chip">${escapeHtml(tag)} <button data-tag-remove="${escapeHtml(tag)}" title="Remove tag">x</button></span>`
   ).join("");
@@ -5183,6 +5218,30 @@ function commitSequenceName() {
   const nextName = seqNameEl.value.trim().slice(0, 64);
   if (!nextName || nextName === seq.name) return;
   seq.name = nextName;
+
+  // While the sequence still has its placeholder auto-id, derive a meaningful
+  // id from the name (servo-3ks) so naming it "arc" yields id "arc" instead of
+  // "new-sequence". Once it has a real id, naming leaves the id alone (schema
+  // contract: id stable, name free-form — use Rename ID to change it).
+  if (isAutoSequenceId(seq.id)) {
+    const lib = sequenceLibrary();
+    const oldId = seq.id;
+    const newId = uniqueSequenceId(lib, nextName);
+    if (newId !== oldId) {
+      const refs = rewriteSequenceIdReferences(lib, oldId, newId);
+      seq.id = newId;
+      lib.sequences = lib.sequences.filter(s => s.id !== oldId);
+      lib.sequences.push(seq);
+      currentSeqId = newId;
+      saveLibrary(lib);
+      seqDirty = false;
+      renderLibSummary();
+      renderSequencer();
+      const note = refs ? ` (${refs} ref${refs === 1 ? "" : "s"} updated)` : "";
+      setSeqStatus(`renamed ${seq.name} · id → ${newId}${note}`, "phosphor");
+      return;
+    }
+  }
   saveCurrentSequence(seq);
   setSeqStatus(`renamed ${seq.name}`, "phosphor");
 }
@@ -5208,6 +5267,30 @@ $("#seqNew").addEventListener("click", () => {
   renderLibSummary();
   renderSequencer();
   setSeqStatus(`created ${seq.name}`, "phosphor");
+});
+
+$("#seqRename").addEventListener("click", () => {
+  if (seqDirty) saveCurrentSequence(readSequenceFromDom());
+  const lib = sequenceLibrary();
+  const seq = getCurrentSequence(lib);
+  if (!seq) return;
+  const oldId = seq.id;
+  const suggested = slugifyId(seq.name || oldId) || oldId;
+  const raw = prompt(`Rename ID for "${seq.name || oldId}"\nUsed by RUN <id> steps and Setlist entries.`, suggested);
+  if (raw == null) return;                       // cancelled
+  const newId = uniqueSequenceId(lib, raw);      // slugify + dedupe
+  if (newId === oldId) { setSeqStatus("id unchanged", "amber"); return; }
+  const target = lib.sequences.find(s => s.id === oldId);
+  if (!target) return;
+  target.id = newId;
+  const refs = rewriteSequenceIdReferences(lib, oldId, newId);
+  currentSeqId = newId;
+  saveLibrary(lib);
+  seqDirty = false;
+  renderLibSummary();
+  renderSequencer();
+  const refNote = refs ? ` · ${refs} ref${refs === 1 ? "" : "s"} updated` : "";
+  setSeqStatus(`id → ${newId}${refNote} · re-bake boards to update them`, "phosphor");
 });
 
 $("#seqDuplicate").addEventListener("click", () => {
@@ -5487,8 +5570,10 @@ function sequenceOptions(selected, lib) {
   const opts = [`<option value=""${selected ? "" : " selected"}>—</option>`];
   for (const s of seqs) {
     const isSel = s.id === selected;
-    const label = `${s.id}${s.name && s.name !== s.id ? ` · ${s.name}` : ""}`;
-    opts.push(`<option value="${escapeHtml(s.id)}"${isSel ? " selected" : ""}>${escapeHtml(label)}</option>`);
+    // Lead with the name; keep the id secondary (and in the title) so pickers
+    // read as "arc" not "new-sequence-2 · arc" (servo-3ks).
+    const label = s.name && s.name !== s.id ? `${s.name} · ${s.id}` : s.id;
+    opts.push(`<option value="${escapeHtml(s.id)}" title="id: ${escapeHtml(s.id)}"${isSel ? " selected" : ""}>${escapeHtml(label)}</option>`);
   }
   return opts.join("");
 }
