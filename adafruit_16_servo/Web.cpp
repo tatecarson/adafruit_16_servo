@@ -13,7 +13,6 @@ void writeStatusJson(WiFiClient& client);
 
 // Provided by adafruit_16_servo.ino — streams POST body to InternalStorage.
 bool otaReceive(WiFiClient& client, int contentLength);
-void otaScheduleApply(unsigned long delayMs);
 void otaApply();
 // Maximum sketch size the OTA partition can stage. Smaller than total flash —
 // see comment over otaMaxSize() in adafruit_16_servo.ino.
@@ -325,10 +324,9 @@ void webPoll() {
       client.println("Content-Type: text/plain");
       client.println();
       client.println("OK");
-      client.flush();
-      delay(250);
+      delay(100);
       client.stop();
-      otaScheduleApply(2000);
+      otaApply();
     } else {
       client.println("HTTP/1.1 500 Internal Server Error");
       client.println("Connection: close");

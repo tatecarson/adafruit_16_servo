@@ -59,7 +59,7 @@
 // /status.json as "fw" so we can confirm which firmware is actually running on
 // each board over the network — removes the "did the flash take?" ambiguity
 // that has burned OTA diagnostics. Bump this string whenever firmware changes.
-#define FW_BUILD "servo-e0n-1"
+#define FW_BUILD "servo-hem-1"
 
 // Wi-Fi / OTA state. otaReady gates syncPoll() so we don't UDP before the
 // stack is up. otaInProgress pauses the animation loop during an upload so
@@ -70,15 +70,6 @@ static_assert(sizeof(OTA_PASSWORD) > 1, "OTA_PASSWORD in Secrets.h must not be e
 bool otaReady = false;
 bool otaInProgress = false;
 bool otaError = false;
-bool otaApplyPending = false;
-unsigned long otaApplyAtMs = 0;
-uint32_t otaLastExpected = 0;
-uint32_t otaLastReceived = 0;
-uint32_t otaLastElapsedMs = 0;
-uint32_t otaLastReadMs = 0;
-uint32_t otaLastWriteMs = 0;
-bool otaLastOk = false;
-const char* otaLastError = "";
 
 static bool ipIsUnset(IPAddress ip) {
   return ip[0] == 0 && ip[1] == 0 && ip[2] == 0 && ip[3] == 0;
@@ -196,15 +187,6 @@ void writeStatusJson(WiFiClient& client) {
   s += F(",\"freeRam\":");       s += freeMemory();
   s += F(",\"served\":");        s += webClientsServed;
   s += F(",\"otaInProgress\":"); s += (otaInProgress ? F("true") : F("false"));
-  s += F(",\"ota\":{\"inProgress\":"); s += (otaInProgress ? F("true") : F("false"));
-  s += F(",\"pendingApply\":");  s += (otaApplyPending ? F("true") : F("false"));
-  s += F(",\"lastOk\":");       s += (otaLastOk ? F("true") : F("false"));
-  s += F(",\"lastExpected\":"); s += otaLastExpected;
-  s += F(",\"lastReceived\":"); s += otaLastReceived;
-  s += F(",\"lastElapsedMs\":"); s += otaLastElapsedMs;
-  s += F(",\"lastReadMs\":");   s += otaLastReadMs;
-  s += F(",\"lastWriteMs\":");  s += otaLastWriteMs;
-  s += F(",\"lastError\":\"");  s += otaLastError; s += F("\"}");
   s += F(",\"gallery\":");       s += (storageGalleryMode() ? F("true") : F("false"));
   // Legacy sequence/speedSeq telemetry removed in servo-voc.
   s += F(",\"motion\":{\"active\":"); s += (motionRuntime.active ? F("true") : F("false"));
@@ -253,14 +235,6 @@ int otaMaxSize() {
 }
 
 bool otaReceive(WiFiClient& client, int contentLength) {
-  otaLastExpected = (uint32_t)contentLength;
-  otaLastReceived = 0;
-  otaLastElapsedMs = 0;
-  otaLastReadMs = 0;
-  otaLastWriteMs = 0;
-  otaLastOk = false;
-  otaLastError = "receiving";
-
   Serial.print(F("Browser OTA: receiving "));
   Serial.print(contentLength);
   Serial.println(F(" bytes (limit "));
@@ -276,7 +250,6 @@ bool otaReceive(WiFiClient& client, int contentLength) {
   if (InternalStorage.open(contentLength) == 0) {
     Serial.println(F("Browser OTA: InternalStorage.open() refused (too large or flash busy)"));
     otaInProgress = false;
-    otaLastError = "open";
     return false;
   }
 
@@ -324,11 +297,6 @@ bool otaReceive(WiFiClient& client, int contentLength) {
   InternalStorage.close();
 
   unsigned long elapsed = millis() - startMs;
-  otaLastReceived = (uint32_t)received;
-  otaLastElapsedMs = elapsed;
-  otaLastReadMs = tRead;
-  otaLastWriteMs = tWrite;
-
   Serial.print(F("Browser OTA: ")); Serial.print(received); Serial.print(F("/"));
   Serial.print(contentLength); Serial.print(F(" bytes in ")); Serial.print(elapsed);
   Serial.print(F("ms (read=")); Serial.print(tRead);
@@ -337,9 +305,7 @@ bool otaReceive(WiFiClient& client, int contentLength) {
   Serial.println(F(" B/s)"));
 
   if (received == contentLength) {
-    otaLastOk = true;
-    otaLastError = "";
-    Serial.println(F("Browser OTA: upload complete; waiting for HTTP response close before apply."));
+    Serial.println(F("Browser OTA: upload complete."));
     return true;
   }
   Serial.print(F("Browser OTA: incomplete (connected="));
@@ -347,21 +313,10 @@ bool otaReceive(WiFiClient& client, int contentLength) {
   Serial.print(F(")"));
   Serial.println();
   otaInProgress = false;
-  otaLastError = client.connected() ? "incomplete" : "disconnect";
   return false;
 }
 
-void otaScheduleApply(unsigned long delayMs) {
-  otaApplyPending = true;
-  otaApplyAtMs = millis() + delayMs;
-  otaInProgress = true;
-  Serial.print(F("Browser OTA: response sent; apply scheduled in "));
-  Serial.print(delayMs);
-  Serial.println(F("ms."));
-}
-
 void otaApply() {
-  otaApplyPending = false;
   Serial.println(F("Browser OTA: applying update..."));
   InternalStorage.apply();
 }
@@ -517,11 +472,7 @@ void loop() {
   unsigned long s = millis();
   maintainWifi();             tMaint = millis() - s;
 
-  if (otaApplyPending && (long)(millis() - otaApplyAtMs) >= 0) {
-    otaApply();
-  }
-
-  if (otaReady && !otaApplyPending) {
+  if (otaReady) {
     s = millis();
     ArduinoOTA.poll();          tOta   = millis() - s;
     s = millis();
