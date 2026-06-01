@@ -229,26 +229,65 @@ bool otaReceive(WiFiClient& client, int contentLength) {
     return false;
   }
 
+  // Receive loop. Mirrors the proven handleSequencesPost() loop in Web.cpp:
+  // an INACTIVITY deadline that resets on every read, plus a client.connected()
+  // check. The previous version used a single absolute millis()+300000 deadline
+  // with no connected() check, so an aborted or stalled upload spun
+  // `avail<=0 -> delay(1)` for the FULL 300s while loop() — UDP telemetry,
+  // other HTTP, ArduinoOTA.poll(), servo updates — was blocked. That is why a
+  // failed OTA made boards vanish from telemetry until a power-cycle, and the
+  // 60s->300s bump made the stall 5x longer (servo-6lc). Now an aborted upload
+  // ends within IDLE_MS and the board goes back to serving immediately; a
+  // pathologically slow-but-progressing upload is still bounded by HARD_CAP_MS
+  // so loop() is never blocked longer than that.
+  const unsigned long IDLE_MS = 5000;        // no progress for 5s -> abort
+  const unsigned long HARD_CAP_MS = 120000;  // never block loop() > 2 min total
+  unsigned long startMs = millis();
+  unsigned long idleDeadline = startMs + IDLE_MS;
+
+  // Throughput instrumentation (servo-6lc): the secondary problem is that
+  // effective OTA RX is only ~0.6-3 KB/s. Splitting time between the WiFiS3
+  // read and the on-chip flash write localizes the bottleneck on the next
+  // hardware run before we commit to a throughput fix.
+  unsigned long tRead = 0, tWrite = 0;
   int received = 0;
-  unsigned long deadline = millis() + 300000;
   uint8_t buf[256];
-  while (received < contentLength && millis() < deadline) {
+  while (received < contentLength &&
+         client.connected() &&
+         millis() < idleDeadline &&
+         (millis() - startMs) < HARD_CAP_MS) {
     int avail = client.available();
     if (avail <= 0) { delay(1); continue; }
     int toRead = min(avail, min((int)sizeof(buf), contentLength - received));
+    unsigned long r0 = millis();
     int n = client.read(buf, toRead);
-    for (int i = 0; i < n; i++) InternalStorage.write(buf[i]);
-    received += n;
+    tRead += millis() - r0;
+    if (n > 0) {
+      unsigned long w0 = millis();
+      for (int i = 0; i < n; i++) InternalStorage.write(buf[i]);
+      tWrite += millis() - w0;
+      received += n;
+      idleDeadline = millis() + IDLE_MS;   // reset inactivity window on progress
+    }
   }
   InternalStorage.close();
+
+  unsigned long elapsed = millis() - startMs;
+  Serial.print(F("Browser OTA: ")); Serial.print(received); Serial.print(F("/"));
+  Serial.print(contentLength); Serial.print(F(" bytes in ")); Serial.print(elapsed);
+  Serial.print(F("ms (read=")); Serial.print(tRead);
+  Serial.print(F("ms write=")); Serial.print(tWrite);
+  Serial.print(F("ms ~")); Serial.print(elapsed ? (received * 1000UL / elapsed) : 0UL);
+  Serial.println(F(" B/s)"));
 
   if (received == contentLength) {
     Serial.println(F("Browser OTA: upload complete."));
     return true;
   }
-  Serial.print(F("Browser OTA: incomplete ("));
-  Serial.print(received);
-  Serial.println(F(" bytes)"));
+  Serial.print(F("Browser OTA: incomplete (connected="));
+  Serial.print(client.connected() ? F("yes") : F("no"));
+  Serial.print(F(")"));
+  Serial.println();
   otaInProgress = false;
   return false;
 }

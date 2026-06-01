@@ -18,7 +18,11 @@ FQBN="arduino:renesas_uno:unor4wifi"
 BUILD_DIR="/tmp/adafruit-16-servo-build"
 BIN="$BUILD_DIR/adafruit_16_servo.ino.bin"
 CONNECT_TIMEOUT="${CONNECT_TIMEOUT:-3}"
-UPLOAD_TIMEOUT="${UPLOAD_TIMEOUT:-120}"
+# Set above the firmware's HARD_CAP_MS (120s, see otaReceive in
+# adafruit_16_servo.ino) so the board's own receive loop terminates first and
+# returns a clean HTTP 500 ("upload incomplete") instead of curl aborting
+# mid-transfer and leaving a half-open socket on the board (servo-6lc).
+UPLOAD_TIMEOUT="${UPLOAD_TIMEOUT:-150}"
 PARALLEL=1
 
 usage() {
