@@ -2535,6 +2535,7 @@ const otaBtnsEl  = $("#otaBtns");
 const otaLogEl   = $("#otaLog");
 const otaFileInfo = $("#otaFileInfo");
 const otaUseCompiledEl = $("#otaUseCompiled");
+const OTA_MAX_BYTES = 122880; // UNO R4 WiFi OTA partition cap.
 let otaCompiledFile = null;
 
 function otaLog(msg, color) {
@@ -2542,10 +2543,12 @@ function otaLog(msg, color) {
   if (color) line.style.color = `var(--${color})`;
   line.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
   otaLogEl.prepend(line);
+  return line;
 }
 
 function updateOtaButtons() {
-  const ready = selectedOtaFile() && otaPassEl.value.length > 0;
+  const file = selectedOtaFile();
+  const ready = file && file.size <= OTA_MAX_BYTES && otaPassEl.value.length > 0;
   otaAllEl.disabled = !ready;
   otaBtnsEl.querySelectorAll(".ota-board-btn").forEach(b => b.disabled = !ready);
 }
@@ -2554,13 +2557,29 @@ function selectedOtaFile() {
   return otaCompiledFile || otaFileEl.files[0] || null;
 }
 
+function formatBytes(bytes) {
+  return `${(bytes / 1024).toFixed(1)} KB`;
+}
+
+function updateOtaFileInfo(file, fwBuild = "") {
+  if (!file) {
+    otaFileInfo.textContent = "";
+    return;
+  }
+  const fw = fwBuild ? ` · ${fwBuild}` : "";
+  const over = file.size > OTA_MAX_BYTES ? ` · EXCEEDS ${(OTA_MAX_BYTES / 1024).toFixed(0)} KB OTA CAP` : "";
+  otaFileInfo.textContent = `${file.name} · ${formatBytes(file.size)}${fw}${over}`;
+  if (file.size > OTA_MAX_BYTES) {
+    otaLog(`${file.name}: ${formatBytes(file.size)} exceeds OTA cap ${formatBytes(OTA_MAX_BYTES)}`, "alert");
+  }
+}
+
 otaFileEl.addEventListener("change", () => {
   otaCompiledFile = null;
   if (otaFileEl.files.length) {
-    const f = otaFileEl.files[0];
-    otaFileInfo.textContent = `${f.name} · ${(f.size / 1024).toFixed(1)} KB`;
+    updateOtaFileInfo(otaFileEl.files[0]);
   } else {
-    otaFileInfo.textContent = "";
+    updateOtaFileInfo(null);
   }
   updateOtaButtons();
 });
@@ -2579,13 +2598,11 @@ async function loadCompiledFirmware() {
     const blob = await binResp.blob();
     otaCompiledFile = new File([blob], filename, { type: "application/octet-stream" });
     otaFileEl.value = "";
-    const kb = (otaCompiledFile.size / 1024).toFixed(1);
-    const fw = manifest.fwBuild ? ` · ${manifest.fwBuild}` : "";
-    otaFileInfo.textContent = `${filename} · ${kb} KB${fw}`;
-    otaLog(`Loaded compiled bin ${filename}${fw}`, "phosphor");
+    updateOtaFileInfo(otaCompiledFile, manifest.fwBuild || "");
+    otaLog(`Loaded compiled bin ${filename}${manifest.fwBuild ? ` · ${manifest.fwBuild}` : ""}`, "phosphor");
   } catch (e) {
     otaCompiledFile = null;
-    otaFileInfo.textContent = "";
+    updateOtaFileInfo(null);
     otaLog(`Compiled bin unavailable — run ./compile-firmware.sh --serve (${e.message})`, "alert");
   }
   updateOtaButtons();
@@ -2594,26 +2611,49 @@ async function loadCompiledFirmware() {
 otaUseCompiledEl.addEventListener("click", loadCompiledFirmware);
 
 async function otaUpload(ip, file, password) {
-  otaLog(`${ip}: uploading ${file.size} bytes...`, "amber");
-  const url = `http://${ip}/ota?p=${encodeURIComponent(password)}`;
-  try {
-    const resp = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/octet-stream" },
-      body: file
-    });
-    const text = await resp.text();
-    if (resp.ok) {
-      otaLog(`${ip}: upload accepted, board rebooting...`, "phosphor");
-      return true;
-    } else {
-      otaLog(`${ip}: rejected — ${text}`, "alert");
-      return false;
-    }
-  } catch (e) {
-    otaLog(`${ip}: error — ${e.message}`, "alert");
+  if (file.size > OTA_MAX_BYTES) {
+    otaLog(`${ip}: refused ${formatBytes(file.size)} binary; OTA cap is ${formatBytes(OTA_MAX_BYTES)}`, "alert");
     return false;
   }
+  const progressLine = otaLog(`${ip}: uploading ${file.size} bytes...`, "amber");
+  const url = `http://${ip}/ota?p=${encodeURIComponent(password)}`;
+  const startedAt = Date.now();
+  return new Promise((resolve) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", url);
+    xhr.setRequestHeader("Content-Type", "application/octet-stream");
+    xhr.upload.onprogress = (event) => {
+      if (!event.lengthComputable || event.loaded <= 0) return;
+      const elapsedSec = Math.max(0.1, (Date.now() - startedAt) / 1000);
+      const rate = event.loaded / elapsedSec;
+      const remaining = Math.max(0, event.total - event.loaded);
+      const etaSec = rate > 0 ? Math.ceil(remaining / rate) : 0;
+      const pct = Math.min(100, (event.loaded / event.total) * 100);
+      progressLine.textContent =
+        `[${new Date().toLocaleTimeString()}] ${ip}: ${pct.toFixed(0)}% ` +
+        `(${formatBytes(event.loaded)} / ${formatBytes(event.total)}, ` +
+        `${formatBytes(rate)}/s, ~${etaSec}s left)`;
+    };
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        otaLog(`${ip}: upload accepted, board rebooting...`, "phosphor");
+        resolve(true);
+      } else {
+        otaLog(`${ip}: rejected — ${xhr.responseText || xhr.statusText || xhr.status}`, "alert");
+        resolve(false);
+      }
+    };
+    xhr.onerror = () => {
+      otaLog(`${ip}: error — connection failed`, "alert");
+      resolve(false);
+    };
+    xhr.ontimeout = () => {
+      otaLog(`${ip}: timeout during upload`, "alert");
+      resolve(false);
+    };
+    xhr.timeout = 180000;
+    xhr.send(file);
+  });
 }
 
 async function otaUploadAll() {

@@ -200,7 +200,7 @@ adafruit_16_servo/
 
 ## Git Commits (Browser Firmware Compile Helper)
 
-36. `feat: load compiled firmware bin from browser helper (servo-onv)` — adds `compile-firmware.sh`, which compiles the sketch with `arduino-cli`, writes a predictable ignored `firmware/adafruit_16_servo.ino.bin` plus `firmware/manifest.json`, and can serve the repo at `127.0.0.1:4173`. The browser OTA section now has a **Use compiled bin** button that fetches that manifest/bin directly when served locally, avoiding manual Arduino IDE export and file-picker browsing. Verification: `bash -n compile-firmware.sh`; `./compile-firmware.sh`; Node syntax check of the inline controller script; local HTTP smoke for controller, manifest, and bin.
+36. `feat: load compiled firmware bin from browser helper (servo-onv)` — adds `compile-firmware.sh`, which compiles the sketch with `arduino-cli`, writes a predictable ignored `firmware/adafruit_16_servo.ino.bin` plus `firmware/manifest.json`, and can serve the repo at `127.0.0.1:4173`. The browser OTA section now has a **Use compiled bin** button that fetches that manifest/bin directly when served locally, avoiding manual Arduino IDE export and file-picker browsing. Browser OTA also refuses binaries over the 122880-byte UNO R4 WiFi OTA cap and shows upload percent/throughput/ETA via XMLHttpRequest. Verification: `bash -n compile-firmware.sh`; `./compile-firmware.sh`; Node syntax check of the inline controller script; local HTTP smoke for controller, manifest, and bin; in-app browser load of compiled bin.
 
 ## Future Features
 
