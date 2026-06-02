@@ -1458,6 +1458,63 @@
     letter-spacing: 0;
   }
 
+  /* ---------- setlist 1-hour simulation (servo-6j4) ---------- */
+  .sl-sim {
+    margin-top: 14px;
+    padding: 12px 14px;
+    border: 1px solid var(--rule-hi);
+    background: var(--bg-deep);
+  }
+  .sl-sim[hidden] { display: none; }
+  .sl-sim-head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+  .sl-sim-title {
+    color: var(--ink-mute);
+    font: 700 8px/1 var(--label);
+    text-transform: uppercase;
+    letter-spacing: 0.26em;
+  }
+  .sl-sim-seed { color: var(--ink-dim); font: 500 10px/1 var(--mono); }
+  .sl-sim-head .cmd { margin-left: auto; }
+  .sl-sim-head .cmd + .cmd { margin-left: 6px; }
+  .sl-sim-verdict {
+    padding: 7px 10px;
+    font: 500 12px/1.3 var(--mono);
+    border-left: 3px solid var(--rule-hi);
+    margin-bottom: 12px;
+  }
+  .sl-sim-verdict.ok { color: var(--phosphor, #6fcf8e); border-left-color: var(--phosphor, #6fcf8e); }
+  .sl-sim-verdict.warn { color: var(--amber, #e0b150); border-left-color: var(--amber, #e0b150); }
+  .sl-sim-body { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .sl-sim-subtitle {
+    color: var(--ink-mute);
+    font: 700 8px/1 var(--label);
+    text-transform: uppercase;
+    letter-spacing: 0.22em;
+    margin-bottom: 8px;
+  }
+  .sl-sim-row { display: flex; align-items: center; gap: 8px; margin-bottom: 5px; }
+  .sl-sim-row.missing .sl-sim-name { color: var(--amber, #e0b150); }
+  .sl-sim-name { flex: 0 0 32%; color: var(--ink); font: 500 11px/1.2 var(--mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .sl-sim-bar { flex: 1 1 auto; height: 8px; background: var(--bg); border: 1px solid var(--rule); position: relative; }
+  .sl-sim-bar > span { position: absolute; inset: 0 auto 0 0; background: var(--rule-hi); }
+  .sl-sim-num { flex: 0 0 auto; color: var(--ink-dim); font: 500 10px/1 var(--mono); }
+  .sl-sim-pacing { margin-top: 10px; color: var(--ink-dim); font: 500 10px/1.4 var(--mono); }
+  .sl-sim-empty { color: var(--ink-dim); font: 500 11px/1 var(--mono); }
+  .sl-sim-timeline {
+    max-height: 260px; overflow-y: auto;
+    border: 1px solid var(--rule); background: var(--bg);
+    padding: 6px 8px;
+  }
+  .sl-sim-tl-row { display: flex; align-items: center; gap: 8px; padding: 2px 0; font: 500 11px/1.3 var(--mono); }
+  .sl-sim-tl-t { flex: 0 0 44px; color: var(--ink-mute); }
+  .sl-sim-tl-name { flex: 1 1 auto; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .sl-sim-tl-dur { flex: 0 0 auto; color: var(--ink-dim); font-size: 10px; }
+  .sl-sim-tl-flags { flex: 0 0 auto; }
+  .sl-sim-flag { margin-left: 2px; }
+  .sl-sim-tl-more { color: var(--ink-mute); font: 500 10px/1.4 var(--mono); padding-top: 4px; }
+  .sl-sim-tl-more.warn { color: var(--amber, #e0b150); }
+  @media (max-width: 820px) { .sl-sim-body { grid-template-columns: 1fr; } }
+
   /* small screens */
   @media (max-width: 1100px) {
     .board { grid-template-columns: 160px 1fr; }
@@ -1727,6 +1784,7 @@
         </label>
         <button class="cmd compact amber" id="slSave">Save</button>
         <button class="cmd compact" id="slDryRun">Dry Run</button>
+        <button class="cmd compact" id="slSimulate" title="Fast-forward one hour of this setlist in the browser to preview what would play — no device, no motion. Catches repetition, unbalanced play counts, and dead air before you bake.">Simulate hour</button>
       </div>
     </div>
 
@@ -1777,6 +1835,27 @@
           <span>seed (0 = random)</span>
           <input id="slSeed" type="number" min="0" step="1" value="0">
         </label>
+      </div>
+    </div>
+
+    <div id="slSimPanel" class="sl-sim" hidden>
+      <div class="sl-sim-head">
+        <span class="sl-sim-title">1-hour simulation</span>
+        <span id="slSimSeed" class="sl-sim-seed"></span>
+        <button class="cmd compact" id="slSimReroll" hidden>Re-roll</button>
+        <button class="cmd compact" id="slSimClose">Close</button>
+      </div>
+      <div id="slSimVerdict" class="sl-sim-verdict"></div>
+      <div class="sl-sim-body">
+        <div class="sl-sim-col">
+          <div class="sl-sim-subtitle">play balance</div>
+          <div id="slSimStats" class="sl-sim-stats"></div>
+          <div id="slSimPacing" class="sl-sim-pacing"></div>
+        </div>
+        <div class="sl-sim-col">
+          <div class="sl-sim-subtitle">representative timeline</div>
+          <div id="slSimTimeline" class="sl-sim-timeline"></div>
+        </div>
       </div>
     </div>
 
@@ -5678,6 +5757,15 @@ const slAvoidSameTagEl = $("#slAvoidSameTag");
 const slMinGapEl       = $("#slMinGap");
 const slMoodArcEl      = $("#slMoodArc");
 const slSeedEl         = $("#slSeed");
+const slSimulateEl     = $("#slSimulate");
+const slSimPanelEl     = $("#slSimPanel");
+const slSimSeedEl      = $("#slSimSeed");
+const slSimRerollEl    = $("#slSimReroll");
+const slSimCloseEl     = $("#slSimClose");
+const slSimVerdictEl   = $("#slSimVerdict");
+const slSimStatsEl     = $("#slSimStats");
+const slSimPacingEl    = $("#slSimPacing");
+const slSimTimelineEl  = $("#slSimTimeline");
 
 let currentSetlistId = null;
 let setlistDirty = false;
@@ -6593,6 +6681,105 @@ slPlayEl.addEventListener("click", () => playSetlist(false));
 slPauseEl.addEventListener("click", pauseOrResumeSetlist);
 slStopEl.addEventListener("click", () => stopSetlistPlayback(true));
 slDryRunEl.addEventListener("click", () => playSetlist(true));
+
+// ---- Setlist 1-hour simulation (servo-6j4) --------------------------------
+const SL_SIM_HORIZON_MS = 3600000;
+
+function slSimFmtClock(ms) {
+  const s = Math.floor(ms / 1000);
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+}
+function slSimFmtDur(ms) {
+  if (ms < 1000) return `${ms}ms`;
+  const s = ms / 1000;
+  return s >= 10 ? `${Math.round(s)}s` : `${s.toFixed(1)}s`;
+}
+
+function renderSetlistSimulation() {
+  const lib = sequenceLibrary();
+  const set = getCurrentSetlist(lib);
+  if (!set) return;
+  if (!(set.entries || []).length) {
+    setSetlistStatus("add entries before simulating", "amber");
+    return;
+  }
+
+  // Stable aggregate stats (deterministic sampling internally).
+  const summary = simAggregate(lib, set, { horizonMs: SL_SIM_HORIZON_MS });
+
+  // Representative timeline: for an unseeded setlist, draw a fresh random run
+  // each time so Re-roll shows real variability; seeded uses the exact order.
+  const standin = (Math.floor(Math.random() * 0xFFFFFFFF) || 1) >>> 0;
+  const sampleRun = summary.seeded
+    ? summary.sampleRun
+    : simulateSetlist(lib, set, { horizonMs: SL_SIM_HORIZON_MS, seed: standin });
+
+  if (summary.seeded) {
+    slSimSeedEl.textContent = `seed ${sampleRun.seedUsed} · reproducible`;
+    slSimRerollEl.hidden = true;
+  } else {
+    slSimSeedEl.textContent = `unseeded · this draw seed ${sampleRun.seedUsed} · stats over ${summary.runs} runs`;
+    slSimRerollEl.hidden = false;
+  }
+
+  const verdict = simVerdict(summary);
+  slSimVerdictEl.className = `sl-sim-verdict ${verdict.level}`;
+  slSimVerdictEl.textContent = (verdict.level === "ok" ? "✓ " : "⚠ ") + verdict.messages.join(" · ");
+
+  // Play balance, sorted by avg play count.
+  const ids = Object.keys(summary.perSeq)
+    .sort((a, b) => summary.perSeq[b].count.avg - summary.perSeq[a].count.avg);
+  const maxAvg = ids.length ? Math.max(...ids.map(id => summary.perSeq[id].count.avg), 1) : 1;
+  const totalAir = ids.reduce((a, id) => a + summary.perSeq[id].airtimeMsAvg, 0) || 1;
+  slSimStatsEl.innerHTML = ids.map(id => {
+    const p = summary.perSeq[id];
+    const pct = Math.round(100 * p.airtimeMsAvg / totalAir);
+    const w = Math.round(100 * p.count.avg / maxAvg);
+    const countLabel = summary.seeded
+      ? `${p.count.avg}`
+      : (p.count.min === p.count.max ? `${p.count.avg.toFixed(0)}` : `${p.count.min}–${p.count.max}`);
+    return `<div class="sl-sim-row${p.missing ? " missing" : ""}">
+      <span class="sl-sim-name">${escapeHtml(p.name)}${p.missing ? " ⚠" : ""}</span>
+      <span class="sl-sim-bar"><span style="width:${w}%"></span></span>
+      <span class="sl-sim-num">${countLabel}× · ${pct}%</span>
+    </div>`;
+  }).join("") || `<div class="sl-sim-empty">no plays</div>`;
+
+  slSimPacingEl.textContent =
+    `gap avg ${slSimFmtDur(Math.round(summary.pacing.avgGapMs))} · longest ${slSimFmtDur(summary.pacing.longestMs)}` +
+    (summary.sameSeq.minIntervalMs != null ? ` · soonest repeat ${slSimFmtDur(summary.sameSeq.minIntervalMs)}` : "");
+
+  // Timeline (flag too-soon recurrences by pick distance, long gaps, missing).
+  const evs = sampleRun.events;
+  const tooSoonPicks = summary.cfg.tooSoonPicks;
+  const tooSoon = new Set();
+  { const last = {}; evs.forEach((ev, i) => {
+      if (last[ev.seqId] != null && (i - last[ev.seqId] - 1) < tooSoonPicks) tooSoon.add(i);
+      last[ev.seqId] = i;
+    }); }
+  const shown = evs.slice(0, 200);
+  let html = shown.map((ev, i) => {
+    const flags = [];
+    if (ev.missing) flags.push(`<span class="sl-sim-flag" title="sequence not in library">⚠</span>`);
+    if (tooSoon.has(i)) flags.push(`<span class="sl-sim-flag" title="repeats too soon">🔁</span>`);
+    if (ev.gapAfterMs > summary.pacing.longGapMs) flags.push(`<span class="sl-sim-flag" title="long gap / dead air">🕳</span>`);
+    return `<div class="sl-sim-tl-row">
+      <span class="sl-sim-tl-t">${slSimFmtClock(ev.tStartMs)}</span>
+      <span class="sl-sim-tl-name">${escapeHtml(ev.seqName)}${ev.repeat > 1 ? ` ×${ev.repeat}` : ""}</span>
+      <span class="sl-sim-tl-dur">${slSimFmtDur(ev.playMs)}${ev.gapAfterMs ? ` +${slSimFmtDur(ev.gapAfterMs)}` : ""}</span>
+      <span class="sl-sim-tl-flags">${flags.join("")}</span>
+    </div>`;
+  }).join("");
+  if (evs.length > shown.length) html += `<div class="sl-sim-tl-more">… ${evs.length - shown.length} more plays</div>`;
+  if (sampleRun.capped) html += `<div class="sl-sim-tl-more warn">capped — sequences have ~0 duration; check step timings</div>`;
+  slSimTimelineEl.innerHTML = html;
+
+  slSimPanelEl.hidden = false;
+}
+
+slSimulateEl.addEventListener("click", renderSetlistSimulation);
+slSimRerollEl.addEventListener("click", renderSetlistSimulation);
+slSimCloseEl.addEventListener("click", () => { slSimPanelEl.hidden = true; });
 
 // ============================================================
 // INIT
