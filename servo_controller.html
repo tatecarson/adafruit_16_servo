@@ -2454,6 +2454,23 @@ function stopPolling() {
   if (pollHandle) { clearInterval(pollHandle); pollHandle = null; }
 }
 
+function pausePollingForOta() {
+  const wasPolling = !!pollHandle;
+  if (wasPolling) {
+    stopPolling();
+    metaPoll.textContent = "paused OTA";
+    otaLog("Telemetry polling paused for OTA", "amber");
+  }
+  return () => {
+    if (wasPolling && autoPollEl.checked) {
+      otaLog("Telemetry polling resumed", "phosphor");
+      startPolling();
+    } else {
+      render();
+    }
+  };
+}
+
 // ============================================================
 // UI WIRING
 // ============================================================
@@ -2691,25 +2708,36 @@ async function otaUploadAll() {
   const pw = otaPassEl.value;
   if (!file || !pw) return;
   otaAllEl.disabled = true;
-  const targets = onlineBoardIps();
-  otaLog(`Starting upload to ${targets.length}/${boards.length} online boards...`);
-  boards.filter(ip => !targets.includes(ip)).forEach(ip => {
-    otaLog(`${ip}: skipped — offline in telemetry before OTA`, "alert");
-  });
-  let ok = 0, fail = 0;
-  for (const ip of targets) {
-    const success = await otaUpload(ip, file, pw);
-    if (success) ok++; else fail++;
+  const resumePolling = pausePollingForOta();
+  try {
+    const targets = onlineBoardIps();
+    otaLog(`Starting upload to ${targets.length}/${boards.length} online boards...`);
+    boards.filter(ip => !targets.includes(ip)).forEach(ip => {
+      otaLog(`${ip}: skipped — offline in telemetry before OTA`, "alert");
+    });
+    let ok = 0, fail = 0;
+    for (const ip of targets) {
+      const success = await otaUpload(ip, file, pw);
+      if (success) ok++; else fail++;
+    }
+    otaLog(`Done: ${ok} succeeded, ${fail} failed`, fail ? "alert" : "phosphor");
+  } finally {
+    resumePolling();
+    updateOtaButtons();
   }
-  otaLog(`Done: ${ok} succeeded, ${fail} failed`, fail ? "alert" : "phosphor");
-  updateOtaButtons();
 }
 
 async function otaUploadOne(ip) {
   const file = selectedOtaFile();
   const pw = otaPassEl.value;
   if (!file || !pw) return;
-  await otaUpload(ip, file, pw);
+  const resumePolling = pausePollingForOta();
+  try {
+    await otaUpload(ip, file, pw);
+  } finally {
+    resumePolling();
+    updateOtaButtons();
+  }
 }
 
 otaAllEl.addEventListener("click", otaUploadAll);
