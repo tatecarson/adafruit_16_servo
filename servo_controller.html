@@ -5805,6 +5805,140 @@ function lookupSequence(lib, seqId) {
   return (lib.sequences || []).find(s => s.id === seqId) || null;
 }
 
+// === SETLIST-SIM-CORE START ===
+// Pure, DOM-free port of the firmware setlist scheduler
+// (adafruit_16_servo/setlist_scheduler.h). Used by the browser 1-hour
+// simulation (servo-6j4) and verified pick-for-pick against the firmware by
+// test/verify_sim_matches_firmware.mjs, which extracts THIS block and runs it
+// under node. Keep it pure (no DOM, no globals) and keep it faithful to the
+// firmware — any divergence breaks `make sim-verify`.
+
+// uint32 helpers so JS bitops match C's unsigned xorshift exactly.
+function simU32(n) {
+  n = Math.trunc(Number(n));
+  if (!Number.isFinite(n)) return 0;
+  return n >>> 0;
+}
+
+// xorshift32 with the firmware's golden-ratio guard for the 0 fixed point.
+// state is a one-element array used as a mutable uint32 cell.
+function simRngNext(state) {
+  let x = state[0] >>> 0;
+  if (x === 0) x = 0x9E3779B9;
+  x = (x ^ (x << 13)) >>> 0;
+  x = (x ^ (x >>> 17)) >>> 0;
+  x = (x ^ (x << 5)) >>> 0;
+  state[0] = x >>> 0;
+  return x >>> 0;
+}
+
+function simSeqDurationMs(lib, seqId) {
+  const seq = (lib.sequences || []).find(s => s.id === seqId);
+  if (!seq) return { durationMs: 0, name: seqId, missing: true };
+  let total = 0;
+  for (const st of seq.steps || []) total += Math.max(0, Math.trunc(Number(st.durationMs)) || 0);
+  return { durationMs: total, name: seq.name || seq.id, missing: false };
+}
+
+function simEntryWeight(e) {
+  // Firmware stores weight as uint16 (truncated at parse/bake); default 1.
+  if (e.weight == null) return 1;
+  const w = Math.trunc(Number(e.weight));
+  return (Number.isFinite(w) && w >= 0) ? w : 1;
+}
+function simEntryRepeat(e) {
+  // Firmware repeat is uint16 >= 1; browser enforces min 1.
+  const r = Math.trunc(Number(e.repeat));
+  return (Number.isFinite(r) && r >= 1) ? r : 1;
+}
+function simEntryGapMs(e) {
+  const g = Math.trunc(Number(e.gapMs));
+  return (Number.isFinite(g) && g >= 0) ? g : 0;
+}
+
+// Replay the scheduler over `horizonMs` and return the chronological pick list.
+// opts: { horizonMs = 3_600_000, seed } — seed is the stand-in for the device's
+// boot millis() when the setlist is unseeded (shuffleRules.seed == 0).
+function simulateSetlist(lib, setlist, opts) {
+  opts = opts || {};
+  const horizonMs = opts.horizonMs != null ? opts.horizonMs : 3600000;
+  const entries = (setlist.entries || []);
+  const n = entries.length;
+  if (n === 0) return { seedUsed: 0, events: [], capped: false, horizonMs, mode: setlist.mode };
+
+  const shuffle = setlist.mode === "shuffle";
+  const rules = setlist.shuffleRules || {};
+  const minGap = shuffle ? Math.max(0, Math.trunc(Number(rules.minGapEntries)) || 0) : 0;
+
+  // Seed: shuffleRules.seed if non-zero (reproducible). Otherwise the device
+  // seeds rngState = millis() | 1; mirror that with the supplied stand-in seed.
+  const configuredSeed = simU32(rules.seed);
+  let seedUsed = configuredSeed;
+  if (shuffle && seedUsed === 0) {
+    const standin = opts.seed != null ? simU32(opts.seed) : 1;
+    seedUsed = (standin | 1) >>> 0;
+  }
+  const rng = [seedUsed];
+
+  // Recency ring (logical): last picks, checked up to the firmware's window.
+  const recent = [];
+  function recordRecent(idx) { recent.push(idx); }
+  function isRecent(idx) {
+    let window = minGap;
+    if (window >= n) window = n - 1;
+    const cnt = Math.min(recent.length, window);
+    for (let i = 0; i < cnt; i++) {
+      if (recent[recent.length - 1 - i] === idx) return true;
+    }
+    return false;
+  }
+
+  function pickShuffle() {
+    let total = 0;
+    for (let i = 0; i < n; i++) if (!isRecent(i)) total += simEntryWeight(entries[i]);
+    const relaxed = total === 0;
+    if (relaxed) for (let i = 0; i < n; i++) total += simEntryWeight(entries[i]);
+    if (total === 0) return 0;
+    let pick = simRngNext(rng) % total;
+    for (let i = 0; i < n; i++) {
+      if (!relaxed && isRecent(i)) continue;
+      const w = simEntryWeight(entries[i]);
+      if (pick < w) return i;
+      pick -= w;
+    }
+    return n - 1;
+  }
+
+  const events = [];
+  const CAP = 100000;
+  let t = 0;
+  let capped = false;
+
+  function fire(idx) {
+    recordRecent(idx);
+    const entry = entries[idx];
+    const info = simSeqDurationMs(lib, entry.seqId);
+    const repeat = simEntryRepeat(entry);
+    const gapAfterMs = simEntryGapMs(entry);
+    const playMs = repeat * info.durationMs;
+    events.push({
+      tStartMs: t, index: idx, seqId: entry.seqId, seqName: info.name,
+      missing: info.missing, durationMs: info.durationMs, repeat, playMs, gapAfterMs,
+    });
+    t += playMs + gapAfterMs;
+  }
+
+  let idx = shuffle ? pickShuffle() : 0;
+  fire(idx);
+  while (t < horizonMs) {
+    if (events.length >= CAP) { capped = true; break; }
+    idx = shuffle ? pickShuffle() : (idx + 1) % n;
+    fire(idx);
+  }
+  return { seedUsed, events, capped, horizonMs, mode: setlist.mode };
+}
+// === SETLIST-SIM-CORE END ===
+
 function renderSetlist() {
   const lib = sequenceLibrary();
   const set = getCurrentSetlist(lib);
