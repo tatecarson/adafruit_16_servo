@@ -2553,6 +2553,7 @@ const otaLogEl   = $("#otaLog");
 const otaFileInfo = $("#otaFileInfo");
 const otaUseCompiledEl = $("#otaUseCompiled");
 const OTA_MAX_BYTES = 122880; // UNO R4 WiFi OTA partition cap.
+const OTA_RESPONSE_WAIT_MS = 135000; // Firmware receive hard cap is 120s.
 let otaCompiledFile = null;
 
 function otaLog(msg, color) {
@@ -2669,13 +2670,13 @@ async function otaUpload(ip, file, password) {
         `${formatBytes(rate)}/s, ~${etaSec}s left)`;
       if (event.loaded >= event.total && !responseTimer) {
         progressLine.textContent =
-          `[${new Date().toLocaleTimeString()}] ${ip}: 100% sent; waiting for board response...`;
+          `[${new Date().toLocaleTimeString()}] ${ip}: browser sent 100%; board may still be receiving...`;
         responseTimer = setTimeout(() => {
           if (done) return;
-          otaLog(`${ip}: upload sent, but no response after 45s; moving to next board`, "alert");
+          otaLog(`${ip}: no response after ${Math.round(OTA_RESPONSE_WAIT_MS / 1000)}s; moving to next board`, "alert");
           xhr.abort();
           finish(false);
-        }, 45000);
+        }, OTA_RESPONSE_WAIT_MS);
       }
     };
     xhr.onload = () => {
