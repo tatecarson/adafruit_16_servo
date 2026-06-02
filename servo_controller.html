@@ -5937,6 +5937,159 @@ function simulateSetlist(lib, setlist, opts) {
   }
   return { seedUsed, events, capped, horizonMs, mode: setlist.mode };
 }
+
+// Default thresholds for flagging problems (overridable via cfg).
+// "Too soon" is measured in PICK DISTANCE, not wall-clock: a recurrence is bad
+// when too few other sequences separate it, independent of how long sequences
+// run. tooSoonPicks=1 flags only back-to-back (0 picks between) repeats.
+const SIM_TOO_SOON_PICKS = 1;
+const SIM_LONG_GAP_MS = 60000;   // a gap over 60s = "dead air"
+
+// Stats for ONE simulated run.
+function simAnalyzeRun(result, cfg) {
+  cfg = cfg || {};
+  const tooSoonPicks = cfg.tooSoonPicks != null ? cfg.tooSoonPicks : SIM_TOO_SOON_PICKS;
+  const events = result.events || [];
+  const perSeq = {};
+  const starts = {};            // seqId -> [tStartMs]
+  const lastIndex = {};         // seqId -> last event index seen
+  const missing = new Set();
+  let tooSoonCount = 0;
+  events.forEach((ev, i) => {
+    let p = perSeq[ev.seqId];
+    if (!p) p = perSeq[ev.seqId] = { count: 0, airtimeMs: 0, name: ev.seqName, missing: !!ev.missing };
+    p.count++;
+    p.airtimeMs += ev.playMs;
+    (starts[ev.seqId] || (starts[ev.seqId] = [])).push(ev.tStartMs);
+    if (ev.missing) missing.add(ev.seqId);
+    if (lastIndex[ev.seqId] != null) {
+      const between = i - lastIndex[ev.seqId] - 1;   // other picks since last time
+      if (between < tooSoonPicks) tooSoonCount++;
+    }
+    lastIndex[ev.seqId] = i;
+  });
+
+  const gapList = events.map(e => e.gapAfterMs);
+  const gaps = gapList.length
+    ? { min: Math.min(...gapList), max: Math.max(...gapList),
+        avg: gapList.reduce((a, b) => a + b, 0) / gapList.length, longestMs: Math.max(...gapList) }
+    : { min: 0, max: 0, avg: 0, longestMs: 0 };
+
+  let minIntervalMs = null;     // informational: shortest wall-clock gap between repeats
+  for (const id in starts) {
+    const ts = starts[id];
+    for (let i = 1; i < ts.length; i++) {
+      const d = ts[i] - ts[i - 1];
+      if (minIntervalMs === null || d < minIntervalMs) minIntervalMs = d;
+    }
+  }
+
+  return {
+    perSeq,
+    gaps,
+    sameSeq: { minIntervalMs, tooSoonCount },
+    missingSeqIds: Array.from(missing),
+    totalSpanMs: result.horizonMs,
+  };
+}
+
+// Run the simulation (once if reproducible, N times if unseeded) and aggregate.
+function simAggregate(lib, setlist, cfg) {
+  cfg = cfg || {};
+  const tooSoonPicks = cfg.tooSoonPicks != null ? cfg.tooSoonPicks : SIM_TOO_SOON_PICKS;
+  const longGapMs = cfg.longGapMs != null ? cfg.longGapMs : SIM_LONG_GAP_MS;
+  const horizonMs = cfg.horizonMs != null ? cfg.horizonMs : 3600000;
+
+  const shuffle = setlist.mode === "shuffle";
+  const seeded = shuffle ? (simU32((setlist.shuffleRules || {}).seed) !== 0) : true;
+  const runs = seeded ? 1 : Math.max(1, cfg.runs || 100);
+
+  const acc = {};         // seqId -> { counts:[], airtime:0, name, missing }
+  let gapLongest = 0, gapAvgSum = 0;
+  let tooSoonSum = 0, minIntervalMs = null;
+  const missing = new Set();
+  let lastRun = null;
+
+  for (let i = 0; i < runs; i++) {
+    const res = simulateSetlist(lib, setlist, { horizonMs, seed: i + 1 });
+    lastRun = res;
+    const an = simAnalyzeRun(res, { tooSoonPicks });
+    for (const id in an.perSeq) {
+      const p = an.perSeq[id];
+      let a = acc[id];
+      if (!a) a = acc[id] = { counts: [], airtime: 0, name: p.name, missing: p.missing };
+      a.counts.push(p.count);
+      a.airtime += p.airtimeMs;
+    }
+    gapLongest = Math.max(gapLongest, an.gaps.longestMs);
+    gapAvgSum += an.gaps.avg;
+    tooSoonSum += an.sameSeq.tooSoonCount;
+    if (an.sameSeq.minIntervalMs !== null && (minIntervalMs === null || an.sameSeq.minIntervalMs < minIntervalMs)) {
+      minIntervalMs = an.sameSeq.minIntervalMs;
+    }
+    for (const id of an.missingSeqIds) missing.add(id);
+  }
+
+  const perSeq = {};
+  for (const id in acc) {
+    const a = acc[id];
+    const sum = a.counts.reduce((x, y) => x + y, 0);
+    perSeq[id] = {
+      name: a.name, missing: a.missing,
+      count: { min: Math.min(...a.counts), max: Math.max(...a.counts), avg: sum / runs },
+      airtimeMsAvg: a.airtime / runs,
+    };
+  }
+
+  return {
+    seeded, runs, horizonMs, perSeq,
+    pacing: { longestMs: gapLongest, avgGapMs: gapAvgSum / runs, longGapMs },
+    sameSeq: { minIntervalMs, tooSoonAvg: tooSoonSum / runs, tooSoonPicks },
+    missing: Array.from(missing),
+    sampleRun: lastRun,
+    cfg: { tooSoonPicks, longGapMs },
+  };
+}
+
+// Turn an aggregate into a one-line verdict + supporting messages.
+function simVerdict(summary) {
+  const messages = [];
+  let level = "ok";
+  const warn = (m) => { level = "warn"; messages.push(m); };
+
+  if (summary.missing && summary.missing.length) {
+    warn(`references missing sequence${summary.missing.length > 1 ? "s" : ""}: ${summary.missing.join(", ")}`);
+  }
+
+  const ids = Object.keys(summary.perSeq);
+  if (ids.length > 1) {
+    let hi = null, lo = null;
+    for (const id of ids) {
+      const c = summary.perSeq[id].count.avg;
+      if (hi === null || c > summary.perSeq[hi].count.avg) hi = id;
+      if (lo === null || c < summary.perSeq[lo].count.avg) lo = id;
+    }
+    const hiC = summary.perSeq[hi].count.avg;
+    const loC = summary.perSeq[lo].count.avg;
+    if (loC > 0 && hiC >= 3 * loC) {
+      warn(`${summary.perSeq[hi].name} plays ~${(hiC / loC).toFixed(1)}× more than ${summary.perSeq[lo].name}`);
+    } else if (loC === 0 && hiC > 0) {
+      warn(`${summary.perSeq[lo].name} never plays while ${summary.perSeq[hi].name} does`);
+    }
+  }
+
+  if (summary.sameSeq.tooSoonAvg >= 1) {
+    const n = Math.round(summary.sameSeq.tooSoonAvg);
+    warn(`${n >= 2 ? n + " sequences repeat" : "a sequence repeats"} too soon`);
+  }
+
+  if (summary.pacing.longestMs > summary.pacing.longGapMs) {
+    warn(`dead air up to ${Math.round(summary.pacing.longestMs / 1000)}s`);
+  }
+
+  if (level === "ok") messages.push("looks balanced");
+  return { level, messages };
+}
 // === SETLIST-SIM-CORE END ===
 
 function renderSetlist() {

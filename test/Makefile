@@ -24,6 +24,7 @@ sim-verify:
 	  exit 0; \
 	}
 	node verify_sim_matches_firmware.mjs
+	node verify_sim_analysis.mjs
 
 # Aggregate run of every host suite. The legacy time-multiplier suite was
 # removed in servo-voc along with the legacy PLAY/SPLAY/RUN-n engine it tested.
