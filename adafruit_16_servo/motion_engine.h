@@ -231,7 +231,16 @@ static void motionApplyTrackValue(MotionTrack& track, int16_t value) {
 inline void updateMotion() {
   if (!motionRuntime.active) return;
 
-  uint32_t elapsed = (uint32_t)(millis() - motionRuntime.startMs);
+  // startMs may sit in the future when a Motion is armed for a cluster-shared
+  // start instant (servo-vna). Compare as a signed delta so an un-started
+  // Motion holds its pose instead of underflowing to a huge unsigned elapsed
+  // (which would read as instantly complete). A negative delta on a fresh
+  // arm = "not yet"; a positive delta on a late/rebooted board = catch-up to
+  // the correct phase, keeping the cluster in lockstep.
+  int32_t signedElapsed = (int32_t)(millis() - motionRuntime.startMs);
+  if (signedElapsed < 0) return;
+
+  uint32_t elapsed = (uint32_t)signedElapsed;
   bool complete = elapsed >= motionRuntime.durationMs;
   if (complete) elapsed = motionRuntime.durationMs;
 
@@ -268,7 +277,12 @@ inline void updateMotion() {
   }
 }
 
-inline bool startMotionFromStorage(const char* motionId, bool announce) {
+// Load and arm a Motion to begin at an explicit local time (servo-vna).
+// localStartMs is in this board's millis() frame. Pass millis() for an
+// immediate start; pass a future time to arm a cluster-synchronized start;
+// a past time catches up to the correct phase. updateMotion() gates the
+// actual playback on the signed millis()-startMs delta.
+inline bool startMotionFromStorageAt(const char* motionId, unsigned long localStartMs, bool announce) {
   uint8_t* buf = storageScratchBuffer();
   int len = storageReadActive(buf, STORAGE_PAYLOAD_MAX);
   if (len <= 0) {
@@ -306,7 +320,7 @@ inline bool startMotionFromStorage(const char* motionId, bool announce) {
     }
   }
 
-  motionRuntime.startMs = millis();
+  motionRuntime.startMs = localStartMs;
   motionRuntime.active = true;
   updateMotion();
 
@@ -318,4 +332,10 @@ inline bool startMotionFromStorage(const char* motionId, bool announce) {
     Serial.println(F(" tracks)"));
   }
   return true;
+}
+
+// Immediate, local-only start (no cluster sync). Thin wrapper kept for the
+// serial/standalone path and existing callers/tests.
+inline bool startMotionFromStorage(const char* motionId, bool announce) {
+  return startMotionFromStorageAt(motionId, millis(), announce);
 }

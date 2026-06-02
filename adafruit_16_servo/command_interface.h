@@ -5,6 +5,13 @@
 #include "Sync.h"
 #include "servo_calibration.h"
 
+// servo-vna: how far ahead a synchronized Motion is scheduled. The originator
+// broadcasts MOTION_START with this lead and arms locally at millis()+LEAD;
+// each peer arms at ITS OWN millis()+LEAD on receipt. The lead just has to
+// exceed UDP broadcast propagation (~1-5ms on a LAN) so every board arms
+// together; small enough to feel responsive.
+#define MOTION_START_LEAD_MS 150
+
 void showHelp() {
   Serial.println(F("Commands: S/P/CAL/SWEEP/TPULSE/STATUS"));
   Serial.println(F("CAL_GET/CAL_SET/CAL_RESET/CAL_PULSE (persisted calibration)"));
@@ -372,13 +379,30 @@ void processCommand(char* cmd) {
 // locally. Per-servo pokes (S0 90, P1 ...) stay local-only on purpose.
 // Compared after trim+uppercase.
 inline bool shouldMirrorCommand(const char* upperCmd) {
-  return startsWith(upperCmd, "MOTION ") || strcmp(upperCmd, "MOTION") == 0
+  // MOTION is intentionally NOT here: a locally-originated MOTION is sent as a
+  // timestamped MOTION_START (synchronized cluster start, servo-vna) by the
+  // dispatchCommand intercept below — not as a plain fire-on-arrival EVT.
       // RUN (both legacy numeric and schema-v1 id forms) is mirrored
       // so all boards start the same sequence in lock-step. Per-step
       // target filtering happens inside each board's runner.
-      || startsWith(upperCmd, "RUN ") || strcmp(upperCmd, "RUN") == 0
+  return startsWith(upperCmd, "RUN ") || strcmp(upperCmd, "RUN") == 0
       || startsWith(upperCmd, "ROTATE ") || strcmp(upperCmd, "ROTATE") == 0
       || strcmp(upperCmd, "STOP") == 0;
+}
+
+// Originate a synchronized Motion (servo-vna). Broadcast MOTION_START with the
+// lead and arm locally at millis()+LEAD; peers arm at their own millis()+LEAD on
+// receipt. Relative timing means no board's clock offset can desync the start —
+// the only spread is UDP propagation (a few ms), well inside the 20ms budget.
+inline void triggerMotionSynced(const char* motionId) {
+  broadcastMotionStart(motionId, MOTION_START_LEAD_MS);
+  startMotionFromStorageAt(motionId, millis() + MOTION_START_LEAD_MS, true);
+}
+
+// Called by Sync.cpp when a peer's MOTION_START arrives. localStartMs is already
+// in this board's millis() frame (Sync.cpp converted it from the synced clock).
+void onMotionStartSync(const char* motionId, unsigned long localStartMs) {
+  startMotionFromStorageAt(motionId, localStartMs, false);
 }
 
 // Single entry point used by Serial input, the HTTP /cmd handler, and the
@@ -406,6 +430,32 @@ void dispatchCommand(const char* cmd, bool fromNetwork) {
   upper[sizeof(upper) - 1] = '\0';
   trimString(upper);
   toUpperCase(upper);
+
+  // Synchronized Motion (servo-vna): a locally-originated `MOTION <id>` becomes
+  // a cluster-synced start (broadcast MOTION_START + arm at a shared instant)
+  // instead of an immediate local start. Peers arm via onMotionStartSync, so
+  // MOTION is no longer EVT-mirrored. Sequence steps call processCommand()
+  // directly (bypassing dispatchCommand), so each board still runs its own step
+  // locally and never fans out a conflicting MOTION_START. A bare `MOTION` with
+  // no id falls through to processCommand's usage message.
+  if (!fromNetwork && startsWith(upper, "MOTION ")) {
+    // Extract the id from `upper` (already trim+uppercased). Motion id matching
+    // is case-insensitive on both the wire and at load, so the upper-cased id
+    // is fine and sidesteps any leading-whitespace in the raw `buf`.
+    char idBuf[40] = {0};
+    int sp = findChar(upper, ' ', 0);
+    if (sp > 0) {
+      const char* p = upper + sp + 1;
+      while (*p == ' ') p++;
+      int i = 0;
+      while (*p && *p != ' ' && i < (int)sizeof(idBuf) - 1) idBuf[i++] = *p++;
+      idBuf[i] = '\0';
+    }
+    if (idBuf[0]) {
+      triggerMotionSynced(idBuf);
+      return;
+    }
+  }
 
   processCommand(buf);
 

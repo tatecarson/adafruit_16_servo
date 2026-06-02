@@ -998,7 +998,80 @@ when baked should be run once servo-67d lands.
 
 ---
 
+## Test 32: Synchronized Motion Start (servo-vna)
+
+Synchronized cluster Motion playback. A locally-originated `MOTION <id>` is no
+longer started immediately — the `dispatchCommand` intercept sends a
+`MOTION_START` (`INST1 MST <id> <leadMs>`) and arms the Motion at
+`millis() + MOTION_START_LEAD_MS` (150ms). Each peer arms at **its own**
+`millis() + leadMs` on receipt — **relative** timing, no shared clock, so a
+stale `clockOffset` on any board can't desync it (servo-dvi). The `MST` is
+**unicast** to each known peer (not broadcast) because WiFi broadcast frames get
+no 802.11 ACK/retry and were lost ~50% of the time. `updateMotion()` gates
+playback on the signed `millis() − startMs` delta: future = hold pose, on-time =
+start at t=0, slightly-late = correct small offset.
+
+Firmware build: `servo-vna-5` (verify via `GET /status.json` → `"fw"`).
+
+**Hardware results (2026-06-02, 3-board cluster .198/.213/.138, no servos on
+2&3):** After fixing the original absolute-clock design (instant-complete when a
+peer's clock was unsynced) and switching broadcast→unicast, the cross-board
+delivery is 100% across 14 trials from every originator — all three boards flip
+`motion.active:true` on every `MOTION` fired from any board, no instant-complete.
+Physical alignment (≤20ms) / drift (<50ms/hr) still pending servos (servo-9oh).
+
+### Single-board (testable now — degrades to a 150ms-delayed local start)
+
+1. **MOTION still plays standalone.** With one board (no peers) and an active
+   bake containing a Motion, send `MOTION <id>` over Serial. Expect serial
+   `Playing motion <id> (<n> tracks)` and the servos run the Motion ~150ms after
+   the command (the lead time), then complete normally. No peers = `clockOffset`
+   0, so local start = `millis() + 150`.
+   - [ ] Pass / [ ] Fail:
+2. **STOP during the 150ms lead.** Send `MOTION <id>` then immediately `STOP`
+   (within ~150ms). Expect the Motion is cancelled and the servos never begin
+   (armed-but-not-started Motion is torn down by `cancelMotionPlayback`).
+   - [ ] Pass / [ ] Fail:
+3. **MOTION with no id.** Send bare `MOTION`. Expect the usage message
+   `Use: MOTION <id>` (falls through to `processCommand`, no broadcast).
+   - [ ] Pass / [ ] Fail:
+4. **Sequence step MOTION unaffected.** Run a Sequence whose step cmd is
+   `MOTION <id>`. Expect it plays as before (sequence steps call
+   `processCommand` directly, bypassing the synced-broadcast path — each board
+   runs its own step, no MOTION_START storm).
+   - [ ] Pass / [ ] Fail:
+
+### Multi-board — DEFERRED to servo-9oh (needs boards 2 & 3 built with servos)
+
+These verify the actual acceptance criteria and **cannot** be run until the
+other two boards have their motors installed:
+
+5. **Start alignment.** Trigger `MOTION <id>` (browser pointed at any board, or
+   Serial). Expect all three boards begin the same Motion within 20ms of each
+   other.
+6. **Drift.** Loop a Motion for one hour. Expect phase drift stays <50ms (the
+   per-second heartbeat re-learns `clockOffset`).
+7. **Late/reboot rejoin.** Power-cycle one follower mid-Motion. Expect it
+   rejoins at the correct phase within one clock-broadcast cycle (catch-up
+   start), not restarting at t=0.
+8. **Any originator works.** Issue the MOTION from a browser pointed at a
+   *follower*. Expect all boards still sync (the originating board names the
+   shared instant; it need not be the leader).
+
+---
+
 ## Host Regression Tests
+
+**2026-06-02 (servo-vna synchronized Motion start):**
+- [x] `make -C test` — storage 22/22, motion 8/8 (2 new: future-start hold,
+  past-start catch-up), sequence 8/8, setlist 11/11, gallery 9/9.
+- [x] `./compile-firmware.sh` — ~120KB (45% flash), 69% RAM. Build `servo-vna-5`.
+- [x] **3-board hardware test** — found + fixed two bugs the host tests can't see:
+  (1) absolute shared-clock start instant-completed when a peer's `clockOffset`
+  was unsynced → switched to **relative** start (`millis()+leadMs` per board,
+  servo-dvi); (2) one-shot `MST` over WiFi **broadcast** lost ~50% → switched to
+  **unicast** per peer. After fixes: 100% cross-board delivery, 14/14 trials from
+  every originator, zero instant-completes.
 
 **2026-05-23:**
 - [x] `make -C test` — 7/7 time multiplier

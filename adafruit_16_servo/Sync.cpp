@@ -3,17 +3,29 @@
 // Provided by command_interface.h in the servo sketch. Declared extern so
 // Sync.cpp stays decoupled from the command layer.
 void dispatchCommand(const char* cmd, bool fromNetwork);
+// servo-vna: arm a cluster-synchronized Motion at an absolute local time
+// (this board's millis() frame). Sync.cpp passes millis()+leadMs on MST receipt.
+void onMotionStartSync(const char* motionId, unsigned long localStartMs);
 
 #define SYNC_MAGIC "INST1"
 #define MAX_PEERS 4
 #define HEARTBEAT_INTERVAL_MS 1000
 #define PEER_ALIVE_MS 3000
+// txSeq restarts at 0 when a board reboots, so an incoming seq far below the
+// per-peer high-water mark means a new session. Without this, a non-rebooted
+// receiver would keep its stale lastEventSeq/lastHeartbeatSeq/lastMotionSeq and
+// silently drop the restarted peer's packets (stale clock sync, dropped synced
+// Motion starts) until txSeq climbs back. The gap tolerates ordinary UDP
+// reordering — a reboot drops thousands behind, a reorder only a few.
+#define SEQ_REBOOT_GAP 16
 
 struct Peer {
   uint8_t id;
   IPAddress ip;
   uint32_t lastEventSeq;
   uint32_t lastHeartbeatSeq;
+  uint32_t lastMotionSeq;
+  uint32_t seqHigh;
   uint32_t lastUptimeMs;
   unsigned long lastSeenMs;
 };
@@ -22,16 +34,11 @@ static WiFiUDP udp;
 static IPAddress broadcastIp(255, 255, 255, 255);
 static uint8_t nodeId = 0;
 static uint32_t txSeq = 0;
-static long clockOffset = 0;
 static unsigned long lastHeartbeatMs = 0;
 static Peer peers[MAX_PEERS];
 static int peerCount = 0;
 
 uint8_t syncNodeId() { return nodeId; }
-
-unsigned long syncMillis() {
-  return millis() + clockOffset;
-}
 
 static void initNodeId() {
   byte mac[6];
@@ -55,22 +62,13 @@ static Peer* upsertPeer(uint8_t id, IPAddress ip) {
     peers[peerCount].ip = ip;
     peers[peerCount].lastEventSeq = 0;
     peers[peerCount].lastHeartbeatSeq = 0;
+    peers[peerCount].lastMotionSeq = 0;
+    peers[peerCount].seqHigh = 0;
     peers[peerCount].lastUptimeMs = 0;
     peers[peerCount].lastSeenMs = millis();
     return &peers[peerCount++];
   }
   return nullptr;
-}
-
-static uint8_t lowestAlivePeerId() {
-  uint8_t lowest = nodeId;
-  unsigned long now = millis();
-  for (int i = 0; i < peerCount; i++) {
-    if (now - peers[i].lastSeenMs < PEER_ALIVE_MS && peers[i].id < lowest) {
-      lowest = peers[i].id;
-    }
-  }
-  return lowest;
 }
 
 static void sendPacket(const char* type, const char* payload) {
@@ -86,6 +84,28 @@ static void sendPacket(const char* type, const char* payload) {
 
 void broadcastMessage(const char* text) { sendPacket("MSG", text); }
 void broadcastEvent(const char* name)   { sendPacket("EVT", name); }
+
+void broadcastMotionStart(const char* motionId, unsigned long leadMs) {
+  char payload[64];
+  snprintf(payload, sizeof(payload), "%s %lu", motionId ? motionId : "", leadMs);
+
+  // MST is a one-shot trigger with no retransmit. WiFi BROADCAST frames get no
+  // 802.11 ACK/retry and are dropped often (a single broadcast missed a
+  // follower ~50% of the time — servo-dvi), so UNICAST the packet to each known
+  // peer instead: unicast gets link-layer ACK + retransmission. Build it ONCE
+  // (single seq) so the per-peer copies share a seq and any incidental
+  // duplicate is deduped, not replayed as a second arm. Originator arms locally.
+  char buf[96];
+  int n = snprintf(buf, sizeof(buf), "%s %s %u %lu %s",
+                   SYNC_MAGIC, "MST", (unsigned)nodeId,
+                   (unsigned long)(++txSeq), payload);
+  if (n <= 0) return;
+  for (int i = 0; i < peerCount; i++) {
+    udp.beginPacket(peers[i].ip, SYNC_PORT);
+    udp.write((const uint8_t*)buf, n);
+    udp.endPacket();
+  }
+}
 
 void sendHeartbeat() {
   char payload[16];
@@ -127,18 +147,39 @@ static void handleSyncPacket() {
   Peer* peer = upsertPeer((uint8_t)originId, udp.remoteIP());
   if (peer == nullptr) return;
 
+  // Sender-reboot detection (shared by all packet types): if seq has fallen far
+  // below this peer's high-water mark, the sender restarted (txSeq reset to 0).
+  // Clear the per-type dedup counters so its restarted packets are accepted
+  // instead of being rejected until seq climbs back past the stale value.
+  if (peer->seqHigh != 0 && (uint32_t)seq + SEQ_REBOOT_GAP < peer->seqHigh) {
+    peer->lastEventSeq = 0;
+    peer->lastHeartbeatSeq = 0;
+    peer->lastMotionSeq = 0;
+    peer->seqHigh = 0;
+  }
+  if ((uint32_t)seq > peer->seqHigh) peer->seqHigh = (uint32_t)seq;
+
   if (strcmp(type, "EVT") == 0) {
     if (seq <= peer->lastEventSeq && peer->lastEventSeq != 0) return;
     peer->lastEventSeq = seq;
     onSyncEvent(payload);
+  } else if (strcmp(type, "MST") == 0) {
+    // servo-vna: "begin Motion <id> in <leadMs> ms". Relative start — arm on our
+    // OWN clock at millis()+leadMs. No shared-clock conversion, so no board's
+    // clock state can desync or instant-complete the Motion (servo-dvi).
+    if (seq <= peer->lastMotionSeq && peer->lastMotionSeq != 0) return;
+    peer->lastMotionSeq = seq;
+    char motionId[40] = {0};
+    unsigned long leadMs = 0;
+    if (sscanf(payload, "%39s %lu", motionId, &leadMs) == 2 && motionId[0]) {
+      onMotionStartSync(motionId, millis() + leadMs);
+    }
   } else if (strcmp(type, "HB") == 0) {
     if (seq <= peer->lastHeartbeatSeq && peer->lastHeartbeatSeq != 0) return;
     peer->lastHeartbeatSeq = seq;
-    unsigned long uptime = strtoul(payload, nullptr, 10);
-    peer->lastUptimeMs = uptime;
-    if ((uint8_t)originId == lowestAlivePeerId() && (uint8_t)originId < nodeId) {
-      clockOffset = (long)uptime - (long)millis();
-    }
+    // Track the peer's uptime for /peers.json display. (The old leader-clock
+    // sync that consumed this was removed with servo-vna's relative start.)
+    peer->lastUptimeMs = strtoul(payload, nullptr, 10);
   }
 }
 

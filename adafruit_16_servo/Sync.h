@@ -9,7 +9,11 @@ void syncPoll();
 void sendHeartbeat();
 void broadcastMessage(const char* text);
 void broadcastEvent(const char* name);
-unsigned long syncMillis();
+// servo-vna: send a MOTION_START — "begin Motion <id> in <leadMs> ms".
+// Relative, not absolute: every board (originator included) arms the Motion at
+// its OWN millis()+leadMs, so the start needs no shared clock. Unicast to each
+// known peer (broadcast frames are dropped too often for a one-shot trigger).
+void broadcastMotionStart(const char* motionId, unsigned long leadMs);
 uint8_t syncNodeId();
 void syncWritePeersHtml(WiFiClient& client);
 void syncWritePeersJson(WiFiClient& client);
