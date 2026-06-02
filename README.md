@@ -78,9 +78,15 @@ STOP
 
 ### Browser Sequence Editor
 
-Open `servo_controller.html` to author schema v1 Sequences in the browser library before exporting or baking.
+Serve `servo_controller.html` through the local helper to author schema v1 Sequences in a shared project-folder library before exporting or baking:
 
-- Section `// 04 Sequencer` creates, duplicates, renames, deletes, tags, and saves Sequences in `localStorage`
+```bash
+python3 servo_library_server.py
+```
+
+Then open `http://127.0.0.1:4173/servo_controller.html`. The helper serves the page and lets any browser read/write `library.json` in this project folder. If the helper is not running, the page falls back to browser `localStorage`.
+
+- Section `// 04 Sequencer` creates, duplicates, renames, deletes, tags, and saves Sequences in the shared library
 - Steps support free-text commands, duration, target board, private labels, hold points, drag reorder, preview, scrub, looped playback, and pause/resume
 - Record mode appends commands sent through the free-form terminal and fills each new step's duration from elapsed time
 - Section `// 03 Sequencer Bake` still imports, exports, slices, and POSTs the same library to the boards
