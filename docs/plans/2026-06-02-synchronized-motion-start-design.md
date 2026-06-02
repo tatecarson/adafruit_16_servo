@@ -111,6 +111,19 @@ The UDP broadcast/receive path uses the host mock; the physical acceptance
 **cannot** be verified until boards 2 & 3 have their servos built. Tracked by
 **servo-9oh** (blocked on servo-vna).
 
+## Sender-reboot handling (dedup)
+
+`MST` is de-duplicated per peer with `lastMotionSeq`, alongside the existing
+`lastEventSeq`/`lastHeartbeatSeq`. Because `txSeq` resets to 0 when a board
+reboots, a non-rebooted receiver holding a high stored seq would otherwise
+silently drop the restarted sender's packets until its seq climbed back —
+staling the synced clock and dropping synchronized starts after a *leader*
+reboot. `handleSyncPacket` detects this: if an incoming seq falls more than
+`SEQ_REBOOT_GAP` (16) below the per-peer high-water mark, it clears all three
+dedup counters so the restarted peer is accepted immediately. The gap tolerates
+ordinary UDP reordering (a reboot drops thousands behind; a reorder, a few).
+(A *follower* reboot needs no special handling — it clears its own RAM on boot.)
+
 ## Known limitation (noted, not fixed)
 
 `clockOffset` ignores one-way UDP latency (~1–5ms on LAN) — a fixed sub-frame

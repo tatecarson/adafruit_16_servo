@@ -11,6 +11,13 @@ void onMotionStartSync(const char* motionId, unsigned long localStartMs);
 #define MAX_PEERS 4
 #define HEARTBEAT_INTERVAL_MS 1000
 #define PEER_ALIVE_MS 3000
+// txSeq restarts at 0 when a board reboots, so an incoming seq far below the
+// per-peer high-water mark means a new session. Without this, a non-rebooted
+// receiver would keep its stale lastEventSeq/lastHeartbeatSeq/lastMotionSeq and
+// silently drop the restarted peer's packets (stale clock sync, dropped synced
+// Motion starts) until txSeq climbs back. The gap tolerates ordinary UDP
+// reordering — a reboot drops thousands behind, a reorder only a few.
+#define SEQ_REBOOT_GAP 16
 
 struct Peer {
   uint8_t id;
@@ -18,6 +25,7 @@ struct Peer {
   uint32_t lastEventSeq;
   uint32_t lastHeartbeatSeq;
   uint32_t lastMotionSeq;
+  uint32_t seqHigh;
   uint32_t lastUptimeMs;
   unsigned long lastSeenMs;
 };
@@ -60,6 +68,7 @@ static Peer* upsertPeer(uint8_t id, IPAddress ip) {
     peers[peerCount].lastEventSeq = 0;
     peers[peerCount].lastHeartbeatSeq = 0;
     peers[peerCount].lastMotionSeq = 0;
+    peers[peerCount].seqHigh = 0;
     peers[peerCount].lastUptimeMs = 0;
     peers[peerCount].lastSeenMs = millis();
     return &peers[peerCount++];
@@ -137,6 +146,18 @@ static void handleSyncPacket() {
 
   Peer* peer = upsertPeer((uint8_t)originId, udp.remoteIP());
   if (peer == nullptr) return;
+
+  // Sender-reboot detection (shared by all packet types): if seq has fallen far
+  // below this peer's high-water mark, the sender restarted (txSeq reset to 0).
+  // Clear the per-type dedup counters so its restarted packets are accepted
+  // instead of being rejected until seq climbs back past the stale value.
+  if (peer->seqHigh != 0 && (uint32_t)seq + SEQ_REBOOT_GAP < peer->seqHigh) {
+    peer->lastEventSeq = 0;
+    peer->lastHeartbeatSeq = 0;
+    peer->lastMotionSeq = 0;
+    peer->seqHigh = 0;
+  }
+  if ((uint32_t)seq > peer->seqHigh) peer->seqHigh = (uint32_t)seq;
 
   if (strcmp(type, "EVT") == 0) {
     if (seq <= peer->lastEventSeq && peer->lastEventSeq != 0) return;
