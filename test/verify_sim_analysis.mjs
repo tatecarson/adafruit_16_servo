@@ -39,7 +39,7 @@ for (const fn of ["simAnalyzeRun", "simAggregate", "simVerdict"]) {
   if (typeof mod[fn] !== "function") fail(`sim-core does not export ${fn}()`);
 }
 if (failed) process.exit(1);
-const { simAnalyzeRun, simAggregate, simVerdict } = mod;
+const { simAnalyzeRun, simAggregate, simVerdict, simulateSetlist } = mod;
 
 console.log("=== Setlist simulation analysis ===");
 
@@ -131,6 +131,20 @@ function mkResult(rows) {
       shuffleRules: { minGapEntries: 1, seed: 0 } }, { horizonMs: 2000, runs: 50 });
   eq("unseeded → N runs", unseeded.runs, 50);
   eq("unseeded flag false", unseeded.seeded, false);
+}
+
+// ---- degenerate setlist: zero-duration sequence caps the run, analysis must
+//      not throw on the huge (100k-event) array (Math.max spread overflow) ----
+{
+  const lib = { sequences: [{ id: "z", name: "Z", steps: [{ durationMs: 0 }] }] };
+  const set = { mode: "shuffle", entries: [{ seqId: "z", repeat: 1, gapMs: 0, weight: 1 }],
+                shuffleRules: { minGapEntries: 0, seed: 1 } };
+  const res = simulateSetlist(lib, set, { horizonMs: 3600000 });
+  eq("zero-duration run is capped", res.capped, true);
+  let an;
+  try { an = simAnalyzeRun(res, {}); ok("analysis of capped run does not throw"); }
+  catch (e) { fail(`analysis threw on capped run: ${e.message}`); an = null; }
+  if (an) eq("capped run gaps computed", an.gaps.longestMs, 0);
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

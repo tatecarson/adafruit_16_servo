@@ -6057,10 +6057,17 @@ function simAnalyzeRun(result, cfg) {
     lastIndex[ev.seqId] = i;
   });
 
-  const gapList = events.map(e => e.gapAfterMs);
-  const gaps = gapList.length
-    ? { min: Math.min(...gapList), max: Math.max(...gapList),
-        avg: gapList.reduce((a, b) => a + b, 0) / gapList.length, longestMs: Math.max(...gapList) }
+  // Single pass (events can reach the 100k cap on degenerate setlists, where
+  // Math.max(...spread) would overflow the call stack).
+  let gMin = Infinity, gMax = 0, gSum = 0;
+  for (const ev of events) {
+    const g = ev.gapAfterMs;
+    if (g < gMin) gMin = g;
+    if (g > gMax) gMax = g;
+    gSum += g;
+  }
+  const gaps = events.length
+    ? { min: gMin, max: gMax, avg: gSum / events.length, longestMs: gMax }
     : { min: 0, max: 0, avg: 0, longestMs: 0 };
 
   let minIntervalMs = null;     // informational: shortest wall-clock gap between repeats
