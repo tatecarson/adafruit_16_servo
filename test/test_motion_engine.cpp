@@ -178,6 +178,45 @@ static void test_malformed_boardid_excludes_track() {
   ASSERT_TRUE(strcmp(error, "no-local-tracks") == 0);
 }
 
+// servo-vna: synchronized Motion start. startMotionFromStorageAt() anchors the
+// Motion's startMs to an explicit (cluster-shared) local time. A start in the
+// future must hold the current pose until the instant arrives, then begin at
+// t=0 — boards arm early and fire together.
+static void test_future_start_holds_pose_until_instant() {
+  reset_state();
+  ASSERT_TRUE(storageWriteSlot((const uint8_t*)kBlob, strlen(kBlob)));
+  // _mock_millis is 0; arm to begin 200ms in the future.
+  ASSERT_TRUE(startMotionFromStorageAt("tidal-drift", 200, false));
+  ASSERT_TRUE(motionRuntime.active);
+  // Held: servo stays at the reset pose (375), NOT slammed to the t=0 value (150).
+  ASSERT_EQ(servoState[0].posPulse, 375);
+  ASSERT_EQ(motorState.currentSpeed, 0);
+
+  _mock_millis = 199;            // one tick before the start instant
+  updateMotion();
+  ASSERT_EQ(servoState[0].posPulse, 375);
+  ASSERT_TRUE(motionRuntime.active);
+
+  _mock_millis = 200;            // start instant — t=0 keyframe applies
+  updateMotion();
+  ASSERT_EQ(servoState[0].posPulse, 150);
+  ASSERT_EQ(motorState.currentSpeed, 0);
+}
+
+// A board that receives the start packet late (or reboots mid-Motion) must
+// join at the CORRECT phase, not restart at t=0 — that's what keeps a late
+// follower in lockstep.
+static void test_past_start_catches_up_to_phase() {
+  reset_state();
+  ASSERT_TRUE(storageWriteSlot((const uint8_t*)kBlob, strlen(kBlob)));
+  _mock_millis = 700;            // "now" is 500ms past the intended start
+  ASSERT_TRUE(startMotionFromStorageAt("tidal-drift", 200, false));
+  ASSERT_TRUE(motionRuntime.active);
+  // Caught up to elapsed=500: servo at 50% (375), dc at 50 — not t=0.
+  ASSERT_EQ(servoState[0].posPulse, 375);
+  ASSERT_EQ(motorState.currentSpeed, 50);
+}
+
 int main() {
   printf("=== Motion Engine Tests ===\n");
   RUN(loads_motion_case_insensitive);
@@ -186,6 +225,8 @@ int main() {
   RUN(cancel_stops_dc_track);
   RUN(switching_to_servo_only_motion_stops_dc);
   RUN(malformed_boardid_excludes_track);
+  RUN(future_start_holds_pose_until_instant);
+  RUN(past_start_catches_up_to_phase);
   printf("\n%d/%d passed, %d failed\n", _tests_passed, _tests_run, _tests_failed);
   return _tests_failed ? 1 : 0;
 }

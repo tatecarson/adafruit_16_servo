@@ -998,7 +998,67 @@ when baked should be run once servo-67d lands.
 
 ---
 
+## Test 32: Synchronized Motion Start (servo-vna)
+
+Synchronized cluster Motion playback. A locally-originated `MOTION <id>` is no
+longer started immediately — `dispatchCommand` broadcasts a `MOTION_START`
+(`INST1 MST …`) carrying a shared-clock start instant (`syncMillis() +
+MOTION_START_LEAD_MS`, 150ms ahead) and arms the Motion to begin then. Peers
+receive the packet, convert the instant into their own `millis()` frame
+(`syncStartMs − clockOffset`), and arm to the same moment. `updateMotion()`
+gates playback on the signed `millis() − startMs` delta: future = hold pose,
+on-time = start at t=0, past (late packet / reboot) = catch up to the correct
+phase.
+
+Firmware build: `servo-vna-1` (verify via `GET /status.json` → `"fw"`).
+
+### Single-board (testable now — degrades to a 150ms-delayed local start)
+
+1. **MOTION still plays standalone.** With one board (no peers) and an active
+   bake containing a Motion, send `MOTION <id>` over Serial. Expect serial
+   `Playing motion <id> (<n> tracks)` and the servos run the Motion ~150ms after
+   the command (the lead time), then complete normally. No peers = `clockOffset`
+   0, so local start = `millis() + 150`.
+   - [ ] Pass / [ ] Fail:
+2. **STOP during the 150ms lead.** Send `MOTION <id>` then immediately `STOP`
+   (within ~150ms). Expect the Motion is cancelled and the servos never begin
+   (armed-but-not-started Motion is torn down by `cancelMotionPlayback`).
+   - [ ] Pass / [ ] Fail:
+3. **MOTION with no id.** Send bare `MOTION`. Expect the usage message
+   `Use: MOTION <id>` (falls through to `processCommand`, no broadcast).
+   - [ ] Pass / [ ] Fail:
+4. **Sequence step MOTION unaffected.** Run a Sequence whose step cmd is
+   `MOTION <id>`. Expect it plays as before (sequence steps call
+   `processCommand` directly, bypassing the synced-broadcast path — each board
+   runs its own step, no MOTION_START storm).
+   - [ ] Pass / [ ] Fail:
+
+### Multi-board — DEFERRED to servo-9oh (needs boards 2 & 3 built with servos)
+
+These verify the actual acceptance criteria and **cannot** be run until the
+other two boards have their motors installed:
+
+5. **Start alignment.** Trigger `MOTION <id>` (browser pointed at any board, or
+   Serial). Expect all three boards begin the same Motion within 20ms of each
+   other.
+6. **Drift.** Loop a Motion for one hour. Expect phase drift stays <50ms (the
+   per-second heartbeat re-learns `clockOffset`).
+7. **Late/reboot rejoin.** Power-cycle one follower mid-Motion. Expect it
+   rejoins at the correct phase within one clock-broadcast cycle (catch-up
+   start), not restarting at t=0.
+8. **Any originator works.** Issue the MOTION from a browser pointed at a
+   *follower*. Expect all boards still sync (the originating board names the
+   shared instant; it need not be the leader).
+
+---
+
 ## Host Regression Tests
+
+**2026-06-02 (servo-vna synchronized Motion start):**
+- [x] `make -C test` — storage 22/22, motion 8/8 (2 new: future-start hold,
+  past-start catch-up), sequence 8/8, setlist 11/11, gallery 9/9.
+- [x] `./compile-firmware.sh` — 120040 bytes (45% flash), 22872 bytes RAM (69%).
+  Build id `servo-vna-1`.
 
 **2026-05-23:**
 - [x] `make -C test` — 7/7 time multiplier

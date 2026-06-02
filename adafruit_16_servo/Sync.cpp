@@ -3,6 +3,9 @@
 // Provided by command_interface.h in the servo sketch. Declared extern so
 // Sync.cpp stays decoupled from the command layer.
 void dispatchCommand(const char* cmd, bool fromNetwork);
+// servo-vna: arm a cluster-synchronized Motion. localStartMs is already in this
+// board's millis() frame (Sync.cpp owns clockOffset, so it does the conversion).
+void onMotionStartSync(const char* motionId, unsigned long localStartMs);
 
 #define SYNC_MAGIC "INST1"
 #define MAX_PEERS 4
@@ -14,6 +17,7 @@ struct Peer {
   IPAddress ip;
   uint32_t lastEventSeq;
   uint32_t lastHeartbeatSeq;
+  uint32_t lastMotionSeq;
   uint32_t lastUptimeMs;
   unsigned long lastSeenMs;
 };
@@ -55,6 +59,7 @@ static Peer* upsertPeer(uint8_t id, IPAddress ip) {
     peers[peerCount].ip = ip;
     peers[peerCount].lastEventSeq = 0;
     peers[peerCount].lastHeartbeatSeq = 0;
+    peers[peerCount].lastMotionSeq = 0;
     peers[peerCount].lastUptimeMs = 0;
     peers[peerCount].lastSeenMs = millis();
     return &peers[peerCount++];
@@ -86,6 +91,12 @@ static void sendPacket(const char* type, const char* payload) {
 
 void broadcastMessage(const char* text) { sendPacket("MSG", text); }
 void broadcastEvent(const char* name)   { sendPacket("EVT", name); }
+
+void broadcastMotionStart(const char* motionId, unsigned long syncStartMs) {
+  char payload[64];
+  snprintf(payload, sizeof(payload), "%s %lu", motionId ? motionId : "", syncStartMs);
+  sendPacket("MST", payload);
+}
 
 void sendHeartbeat() {
   char payload[16];
@@ -131,6 +142,17 @@ static void handleSyncPacket() {
     if (seq <= peer->lastEventSeq && peer->lastEventSeq != 0) return;
     peer->lastEventSeq = seq;
     onSyncEvent(payload);
+  } else if (strcmp(type, "MST") == 0) {
+    // servo-vna: "begin Motion <id> at <syncStartMs>". Convert the shared-clock
+    // instant into our own millis() frame and hand it to the motion engine.
+    if (seq <= peer->lastMotionSeq && peer->lastMotionSeq != 0) return;
+    peer->lastMotionSeq = seq;
+    char motionId[40] = {0};
+    unsigned long syncStartMs = 0;
+    if (sscanf(payload, "%39s %lu", motionId, &syncStartMs) == 2 && motionId[0]) {
+      unsigned long localStartMs = (unsigned long)((long)syncStartMs - clockOffset);
+      onMotionStartSync(motionId, localStartMs);
+    }
   } else if (strcmp(type, "HB") == 0) {
     if (seq <= peer->lastHeartbeatSeq && peer->lastHeartbeatSeq != 0) return;
     peer->lastHeartbeatSeq = seq;
