@@ -17,14 +17,20 @@ all: test
 # Browser setlist simulation (servo-6j4) must reproduce the firmware scheduler's
 # pick order exactly. This extracts the SETLIST-SIM-CORE block from
 # servo_controller.html and asserts it matches firmware-captured oracle picks.
-# Requires node. Skipped (with a notice) if node isn't installed.
+# Requires node. Fails fast if node is missing so the oracle check can't be
+# silently skipped; set SKIP_SIM_VERIFY=1 to deliberately bypass it.
 sim-verify:
-	@command -v node >/dev/null 2>&1 || { \
-	  echo "SKIP sim-verify: node not on PATH (install Node.js to run the browser-sim oracle check)"; \
-	  exit 0; \
-	}
-	node verify_sim_matches_firmware.mjs
-	node verify_sim_analysis.mjs
+	@if [ -n "$(SKIP_SIM_VERIFY)" ]; then \
+	  echo "SKIP sim-verify: SKIP_SIM_VERIFY set"; \
+	else \
+	  command -v node >/dev/null 2>&1 || { \
+	    echo "ERROR: sim-verify needs Node.js (node not on PATH)." >&2; \
+	    echo "       Install Node, or run with SKIP_SIM_VERIFY=1 to bypass." >&2; \
+	    exit 1; \
+	  }; \
+	  node verify_sim_matches_firmware.mjs && \
+	  node verify_sim_analysis.mjs; \
+	fi
 
 # Aggregate run of every host suite. The legacy time-multiplier suite was
 # removed in servo-voc along with the legacy PLAY/SPLAY/RUN-n engine it tested.
