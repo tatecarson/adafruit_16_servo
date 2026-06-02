@@ -26,8 +26,9 @@ function approx(name, got, want, tol = 1e-9) {
   else fail(`${name}: expected ~${want}, got ${got}`);
 }
 
-const s = html.indexOf(START), e = html.indexOf(END);
-if (s < 0 || e < 0) { fail("sim-core markers not found"); process.exit(1); }
+const s = html.indexOf(START);
+const e = html.indexOf(END, s + START.length);
+if (s < 0 || e <= s) { fail("sim-core markers not found or out of order"); process.exit(1); }
 const core = html.slice(s + START.length, e);
 
 const dir = mkdtempSync(join(tmpdir(), "setlist-an-"));
@@ -145,6 +146,30 @@ function mkResult(rows) {
   try { an = simAnalyzeRun(res, {}); ok("analysis of capped run does not throw"); }
   catch (e) { fail(`analysis threw on capped run: ${e.message}`); an = null; }
   if (an) eq("capped run gaps computed", an.gaps.longestMs, 0);
+}
+
+// ---- single-sequence setlist must NOT be flagged "too soon" (intentional) ---
+{
+  const lib = { sequences: [{ id: "solo", name: "Solo", steps: [{ durationMs: 1000 }] }] };
+  const set = { mode: "ordered", entries: [{ seqId: "solo", repeat: 1, gapMs: 0 }] };
+  const v = simVerdict(simAggregate(lib, set, { horizonMs: 5000 }));
+  eq("single-sequence setlist verdict ok (no false too-soon)", v.level, "ok");
+}
+
+// ---- aggregate min must count runs where a sequence didn't play as 0 --------
+{
+  const lib = { sequences: [
+    { id: "x", name: "X", steps: [{ durationMs: 1000 }] },
+    { id: "y", name: "Y", steps: [{ durationMs: 1000 }] }] };
+  const set = { mode: "shuffle",
+    entries: [{ seqId: "x", repeat: 1, gapMs: 0, weight: 1 },
+              { seqId: "y", repeat: 1, gapMs: 0, weight: 1 }],
+    shuffleRules: { minGapEntries: 0, seed: 0 } };
+  // horizon=1ms → exactly one pick per run, so each run plays only X or only Y.
+  const sum = simAggregate(lib, set, { horizonMs: 1, runs: 20 });
+  eq("both sequences sampled across runs", Object.keys(sum.perSeq).sort(), ["x", "y"]);
+  eq("min counts zero-play runs (x)", sum.perSeq.x.count.min, 0);
+  eq("min counts zero-play runs (y)", sum.perSeq.y.count.min, 0);
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

@@ -6128,6 +6128,9 @@ function simAggregate(lib, setlist, cfg) {
   const perSeq = {};
   for (const id in acc) {
     const a = acc[id];
+    // A sequence absent from a run played 0 times that run; pad so min/max
+    // reflect zero-play runs (avg already divides by total runs).
+    while (a.counts.length < runs) a.counts.push(0);
     const sum = a.counts.reduce((x, y) => x + y, 0);
     perSeq[id] = {
       name: a.name, missing: a.missing,
@@ -6173,7 +6176,9 @@ function simVerdict(summary) {
     }
   }
 
-  if (summary.sameSeq.tooSoonAvg >= 1) {
+  // Only meaningful when there's more than one sequence to choose from — a
+  // single-sequence setlist (e.g. one-entry ordered) repeats by design.
+  if (summary.sameSeq.tooSoonAvg >= 1 && ids.length > 1) {
     const n = Math.round(summary.sameSeq.tooSoonAvg);
     warn(`${n >= 2 ? n + " sequences repeat" : "a sequence repeats"} too soon`);
   }

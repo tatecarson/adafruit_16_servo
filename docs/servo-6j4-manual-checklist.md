@@ -3,7 +3,7 @@
 No hardware needed; this is a pure browser feature.
 
 ## Launch
-```
+```bash
 python3 servo_library_server.py
 ```
 Open the printed URL (default http://127.0.0.1:4173/servo_controller.html).
