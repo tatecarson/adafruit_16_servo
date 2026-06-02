@@ -2,8 +2,8 @@
   "schemaVersion": 1,
   "motions": [
     {
-      "id": "new-motion",
-      "name": "New Motion",
+      "id": "library-test",
+      "name": "library test",
       "tags": [],
       "scope": "cluster",
       "durationMs": 8000,
@@ -149,6 +149,18 @@
             {
               "atMs": 0,
               "value": 0
+            },
+            {
+              "atMs": 2500,
+              "value": 89
+            },
+            {
+              "atMs": 5100,
+              "value": -57
+            },
+            {
+              "atMs": 6500,
+              "value": 100
             }
           ]
         }
