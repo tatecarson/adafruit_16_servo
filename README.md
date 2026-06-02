@@ -87,6 +87,16 @@ Open `servo_controller.html` to author schema v1 Sequences in the browser librar
 - **Pull from Boards** reads the baked library back from every reachable board (`GET /sequences`) and rebuilds the editor library: motion tracks are unioned by board, and the full-library fields (sequences/setlists/active/scheduler) must match across boards or the operator is asked to pick a source-of-truth board. Use it to recover the library on a fresh machine, after a branch swap, or after a cleared cache — it reflects what's physically baked on the boards. It never overwrites a non-empty local library without confirmation.
 - The masthead **Gallery** toggle reads `/status.json` `gallery`, confirms before enabling unattended boot behavior, and sends `GALLERY ON/OFF` to every currently reachable board.
 
+### Compile Firmware for Browser OTA
+
+To avoid exporting a `.bin` from the Arduino IDE by hand:
+
+```bash
+./compile-firmware.sh --serve
+```
+
+Then open `http://127.0.0.1:4173/servo_controller.html`, go to `// 07 Firmware Upload`, click **Use compiled bin**, enter the OTA password, and upload to one board or all boards. The script writes `firmware/adafruit_16_servo.ino.bin` and `firmware/manifest.json`; those generated artifacts are ignored by git.
+
 
 ## Percent-of-Travel Commands
 

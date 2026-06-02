@@ -198,6 +198,10 @@ adafruit_16_servo/
 
 35. `refactor: share baked JSON parser helpers (servo-4cd)` — extracts the duplicated Motion/Sequence bounded JSON primitives into `bake_parse.h` and points Motion, Sequence, and Setlist parsing at the shared `bake*` helpers. Verification: `make -C test motion`; `make -C test sequence`; `make -C test setlist`; `make -C test`; `make -C test size` 118868 / 122880 bytes (+4012 headroom).
 
+## Git Commits (Browser Firmware Compile Helper)
+
+36. `feat: load compiled firmware bin from browser helper (servo-onv)` — adds `compile-firmware.sh`, which compiles the sketch with `arduino-cli`, writes a predictable ignored `firmware/adafruit_16_servo.ino.bin` plus `firmware/manifest.json`, and can serve the repo at `127.0.0.1:4173`. The browser OTA section now has a **Use compiled bin** button that fetches that manifest/bin directly when served locally, avoiding manual Arduino IDE export and file-picker browsing. Verification: `bash -n compile-firmware.sh`; `./compile-firmware.sh`; Node syntax check of the inline controller script; local HTTP smoke for controller, manifest, and bin.
+
 ## Future Features
 
 - [ ] **EEPROM calibration storage** - Save/load servo calibrations (type, min, max, stop pulse) to persist across power cycles. Commands: `SAVE`, `LOAD`, `CLEAR`

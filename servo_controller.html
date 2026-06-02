@@ -1847,6 +1847,7 @@
       <div class="gname">Binary <span class="key">.BIN</span></div>
       <div class="btns" style="align-items:center">
         <input id="otaFile" type="file" accept=".bin" style="font:500 11px/1 var(--mono); color:var(--ink-dim); max-width:280px">
+        <button class="cmd compact" id="otaUseCompiled" title="Load ./firmware/manifest.json and the compiled .bin served from this project folder">Use compiled bin</button>
         <span id="otaFileInfo" style="font:500 10px/1 var(--mono); color:var(--ink-mute)"></span>
       </div>
     </div>
@@ -2533,6 +2534,8 @@ const otaAllEl   = $("#otaAll");
 const otaBtnsEl  = $("#otaBtns");
 const otaLogEl   = $("#otaLog");
 const otaFileInfo = $("#otaFileInfo");
+const otaUseCompiledEl = $("#otaUseCompiled");
+let otaCompiledFile = null;
 
 function otaLog(msg, color) {
   const line = document.createElement("div");
@@ -2542,12 +2545,17 @@ function otaLog(msg, color) {
 }
 
 function updateOtaButtons() {
-  const ready = otaFileEl.files.length > 0 && otaPassEl.value.length > 0;
+  const ready = selectedOtaFile() && otaPassEl.value.length > 0;
   otaAllEl.disabled = !ready;
   otaBtnsEl.querySelectorAll(".ota-board-btn").forEach(b => b.disabled = !ready);
 }
 
+function selectedOtaFile() {
+  return otaCompiledFile || otaFileEl.files[0] || null;
+}
+
 otaFileEl.addEventListener("change", () => {
+  otaCompiledFile = null;
   if (otaFileEl.files.length) {
     const f = otaFileEl.files[0];
     otaFileInfo.textContent = `${f.name} · ${(f.size / 1024).toFixed(1)} KB`;
@@ -2557,6 +2565,33 @@ otaFileEl.addEventListener("change", () => {
   updateOtaButtons();
 });
 otaPassEl.addEventListener("input", updateOtaButtons);
+
+async function loadCompiledFirmware() {
+  try {
+    otaLog("Loading compiled firmware manifest...", "amber");
+    const bust = Date.now();
+    const manifestResp = await fetch(`firmware/manifest.json?ts=${bust}`);
+    if (!manifestResp.ok) throw new Error("firmware/manifest.json not found");
+    const manifest = await manifestResp.json();
+    const filename = manifest.filename || "adafruit_16_servo.ino.bin";
+    const binResp = await fetch(`firmware/${encodeURIComponent(filename)}?ts=${bust}`);
+    if (!binResp.ok) throw new Error(`${filename} not found`);
+    const blob = await binResp.blob();
+    otaCompiledFile = new File([blob], filename, { type: "application/octet-stream" });
+    otaFileEl.value = "";
+    const kb = (otaCompiledFile.size / 1024).toFixed(1);
+    const fw = manifest.fwBuild ? ` · ${manifest.fwBuild}` : "";
+    otaFileInfo.textContent = `${filename} · ${kb} KB${fw}`;
+    otaLog(`Loaded compiled bin ${filename}${fw}`, "phosphor");
+  } catch (e) {
+    otaCompiledFile = null;
+    otaFileInfo.textContent = "";
+    otaLog(`Compiled bin unavailable — run ./compile-firmware.sh --serve (${e.message})`, "alert");
+  }
+  updateOtaButtons();
+}
+
+otaUseCompiledEl.addEventListener("click", loadCompiledFirmware);
 
 async function otaUpload(ip, file, password) {
   otaLog(`${ip}: uploading ${file.size} bytes...`, "amber");
@@ -2582,7 +2617,7 @@ async function otaUpload(ip, file, password) {
 }
 
 async function otaUploadAll() {
-  const file = otaFileEl.files[0];
+  const file = selectedOtaFile();
   const pw = otaPassEl.value;
   if (!file || !pw) return;
   otaAllEl.disabled = true;
@@ -2597,7 +2632,7 @@ async function otaUploadAll() {
 }
 
 async function otaUploadOne(ip) {
-  const file = otaFileEl.files[0];
+  const file = selectedOtaFile();
   const pw = otaPassEl.value;
   if (!file || !pw) return;
   await otaUpload(ip, file, pw);
