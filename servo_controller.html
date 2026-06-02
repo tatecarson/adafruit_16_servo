@@ -2550,7 +2550,9 @@ function updateOtaButtons() {
   const file = selectedOtaFile();
   const ready = file && file.size <= OTA_MAX_BYTES && otaPassEl.value.length > 0;
   otaAllEl.disabled = !ready;
-  otaBtnsEl.querySelectorAll(".ota-board-btn").forEach(b => b.disabled = !ready);
+  otaBtnsEl.querySelectorAll(".ota-board-btn").forEach(b => {
+    b.disabled = !ready || !onlineBoardIps().includes(b.dataset.ip);
+  });
 }
 
 function selectedOtaFile() {
@@ -2615,11 +2617,26 @@ async function otaUpload(ip, file, password) {
     otaLog(`${ip}: refused ${formatBytes(file.size)} binary; OTA cap is ${formatBytes(OTA_MAX_BYTES)}`, "alert");
     return false;
   }
+  try {
+    otaLog(`${ip}: checking status before upload...`, "amber");
+    await fetchStatus(ip);
+  } catch {
+    otaLog(`${ip}: skipped — board is not reachable before OTA`, "alert");
+    return false;
+  }
   const progressLine = otaLog(`${ip}: uploading ${file.size} bytes...`, "amber");
   const url = `http://${ip}/ota?p=${encodeURIComponent(password)}`;
   const startedAt = Date.now();
   return new Promise((resolve) => {
     const xhr = new XMLHttpRequest();
+    let done = false;
+    let responseTimer = null;
+    const finish = (ok) => {
+      if (done) return;
+      done = true;
+      if (responseTimer) clearTimeout(responseTimer);
+      resolve(ok);
+    };
     xhr.open("POST", url);
     xhr.setRequestHeader("Content-Type", "application/octet-stream");
     xhr.upload.onprogress = (event) => {
@@ -2633,23 +2650,36 @@ async function otaUpload(ip, file, password) {
         `[${new Date().toLocaleTimeString()}] ${ip}: ${pct.toFixed(0)}% ` +
         `(${formatBytes(event.loaded)} / ${formatBytes(event.total)}, ` +
         `${formatBytes(rate)}/s, ~${etaSec}s left)`;
+      if (event.loaded >= event.total && !responseTimer) {
+        progressLine.textContent =
+          `[${new Date().toLocaleTimeString()}] ${ip}: 100% sent; waiting for board response...`;
+        responseTimer = setTimeout(() => {
+          if (done) return;
+          otaLog(`${ip}: upload sent, but no response after 45s; moving to next board`, "alert");
+          xhr.abort();
+          finish(false);
+        }, 45000);
+      }
     };
     xhr.onload = () => {
       if (xhr.status >= 200 && xhr.status < 300) {
         otaLog(`${ip}: upload accepted, board rebooting...`, "phosphor");
-        resolve(true);
+        finish(true);
       } else {
         otaLog(`${ip}: rejected — ${xhr.responseText || xhr.statusText || xhr.status}`, "alert");
-        resolve(false);
+        finish(false);
       }
     };
     xhr.onerror = () => {
       otaLog(`${ip}: error — connection failed`, "alert");
-      resolve(false);
+      finish(false);
     };
     xhr.ontimeout = () => {
       otaLog(`${ip}: timeout during upload`, "alert");
-      resolve(false);
+      finish(false);
+    };
+    xhr.onabort = () => {
+      finish(false);
     };
     xhr.timeout = 180000;
     xhr.send(file);
@@ -2661,9 +2691,13 @@ async function otaUploadAll() {
   const pw = otaPassEl.value;
   if (!file || !pw) return;
   otaAllEl.disabled = true;
-  otaLog("Starting upload to all boards...");
+  const targets = onlineBoardIps();
+  otaLog(`Starting upload to ${targets.length}/${boards.length} online boards...`);
+  boards.filter(ip => !targets.includes(ip)).forEach(ip => {
+    otaLog(`${ip}: skipped — offline in telemetry before OTA`, "alert");
+  });
   let ok = 0, fail = 0;
-  for (const ip of boards) {
+  for (const ip of targets) {
     const success = await otaUpload(ip, file, pw);
     if (success) ok++; else fail++;
   }
@@ -2686,6 +2720,7 @@ function renderOtaBoardButtons() {
     const btn = document.createElement("button");
     btn.className = "cmd compact ota-board-btn";
     btn.textContent = ip;
+    btn.dataset.ip = ip;
     btn.disabled = true;
     btn.addEventListener("click", () => otaUploadOne(ip));
     otaBtnsEl.appendChild(btn);
