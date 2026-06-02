@@ -3,8 +3,8 @@
 // Provided by command_interface.h in the servo sketch. Declared extern so
 // Sync.cpp stays decoupled from the command layer.
 void dispatchCommand(const char* cmd, bool fromNetwork);
-// servo-vna: arm a cluster-synchronized Motion. localStartMs is already in this
-// board's millis() frame (Sync.cpp owns clockOffset, so it does the conversion).
+// servo-vna: arm a cluster-synchronized Motion at an absolute local time
+// (this board's millis() frame). Sync.cpp passes millis()+leadMs on MST receipt.
 void onMotionStartSync(const char* motionId, unsigned long localStartMs);
 
 #define SYNC_MAGIC "INST1"
@@ -34,16 +34,11 @@ static WiFiUDP udp;
 static IPAddress broadcastIp(255, 255, 255, 255);
 static uint8_t nodeId = 0;
 static uint32_t txSeq = 0;
-static long clockOffset = 0;
 static unsigned long lastHeartbeatMs = 0;
 static Peer peers[MAX_PEERS];
 static int peerCount = 0;
 
 uint8_t syncNodeId() { return nodeId; }
-
-unsigned long syncMillis() {
-  return millis() + clockOffset;
-}
 
 static void initNodeId() {
   byte mac[6];
@@ -74,17 +69,6 @@ static Peer* upsertPeer(uint8_t id, IPAddress ip) {
     return &peers[peerCount++];
   }
   return nullptr;
-}
-
-static uint8_t lowestAlivePeerId() {
-  uint8_t lowest = nodeId;
-  unsigned long now = millis();
-  for (int i = 0; i < peerCount; i++) {
-    if (now - peers[i].lastSeenMs < PEER_ALIVE_MS && peers[i].id < lowest) {
-      lowest = peers[i].id;
-    }
-  }
-  return lowest;
 }
 
 static void sendPacket(const char* type, const char* payload) {
@@ -181,8 +165,8 @@ static void handleSyncPacket() {
     onSyncEvent(payload);
   } else if (strcmp(type, "MST") == 0) {
     // servo-vna: "begin Motion <id> in <leadMs> ms". Relative start — arm on our
-    // OWN clock at millis()+leadMs. No shared-clock conversion, so a stale/zero
-    // clockOffset on any board can't desync or instant-complete the Motion.
+    // OWN clock at millis()+leadMs. No shared-clock conversion, so no board's
+    // clock state can desync or instant-complete the Motion (servo-dvi).
     if (seq <= peer->lastMotionSeq && peer->lastMotionSeq != 0) return;
     peer->lastMotionSeq = seq;
     char motionId[40] = {0};
@@ -193,11 +177,9 @@ static void handleSyncPacket() {
   } else if (strcmp(type, "HB") == 0) {
     if (seq <= peer->lastHeartbeatSeq && peer->lastHeartbeatSeq != 0) return;
     peer->lastHeartbeatSeq = seq;
-    unsigned long uptime = strtoul(payload, nullptr, 10);
-    peer->lastUptimeMs = uptime;
-    if ((uint8_t)originId == lowestAlivePeerId() && (uint8_t)originId < nodeId) {
-      clockOffset = (long)uptime - (long)millis();
-    }
+    // Track the peer's uptime for /peers.json display. (The old leader-clock
+    // sync that consumed this was removed with servo-vna's relative start.)
+    peer->lastUptimeMs = strtoul(payload, nullptr, 10);
   }
 }
 
