@@ -26,50 +26,61 @@ mostly discrete poses where small offsets aren't visible).
 
 ## Existing primitives (reused, not rebuilt)
 
-- `syncMillis() = millis() + clockOffset` — a shared clock. Followers learn
-  `clockOffset = leaderUptime - millis()` from the lowest-alive peer's heartbeat
-  (`Sync.cpp`), so `syncMillis()` ≈ the leader's `millis()` on every board. The
-  leader's own offset stays 0.
-- Heartbeats every 1000ms → the offset is re-learned each second, so drift
-  between updates is bounded (well under the 50ms/hour budget).
 - `Sync.cpp` packet framing: `INST1 <TYPE> <node> <seq> <payload>`.
+- A peer table (`peers[]`) populated from heartbeats, with each peer's `id` and
+  `ip` — used to unicast the start (see below).
+
+> **Note — relative, not absolute clock.** The first implementation used an
+> absolute shared-clock timestamp (`syncMillis()`/`clockOffset`). Hardware
+> testing showed that approach is catastrophically fragile: if any board's
+> `clockOffset` is stale or unlearned, its start timestamp is mis-converted by
+> peers and the Motion instant-completes or hangs (servo-dvi). The shipped
+> design below is **relative** and needs no shared clock at all.
 
 ## Mechanism
 
-The board that **originates** a Motion picks a start instant on the shared
-synced clock, broadcasts it, and every board (including the originator) anchors
-that Motion's `startMs` to it.
+The board that **originates** a Motion broadcasts "start in `LEAD` ms"; every
+board (including the originator) arms the Motion at **its own**
+`millis() + LEAD`. No shared-clock conversion, so no board's clock offset can
+desync the start. The only spread between boards is UDP propagation (a few ms
+on a LAN), well inside the 20ms budget.
 
 Originator rather than strictly "leader": a browser can hit any board's `/cmd`,
-and since all boards share the synced clock, any originator can name a valid
-shared future time — no forwarding hop. In gallery mode the scheduler runs on
-the leader, so the leader-driven case falls out for free.
+and any board can say "start in LEAD ms" — no forwarding hop. In gallery mode
+the scheduler runs on the leader, so the leader-driven case falls out for free.
 
-### New UDP message — `MST` (motion-start)
+### UDP message — `MST` (motion-start)
 
-Payload: `<motionId> <syncStartMs>`. Wire form:
-`INST1 MST <node> <seq> <motionId> <syncStartMs>`.
+Payload: `<motionId> <leadMs>`. Wire form: `INST1 MST <node> <seq> <id> <leadMs>`.
 
-- Sender: `broadcastMotionStart(const char* id, unsigned long syncStartMs)` in
-  `Sync.cpp` (mirrors `broadcastEvent`).
-- Receiver: `Sync.cpp` owns `clockOffset`, so it computes
-  `localStartMs = syncStartMs - clockOffset` and calls a new extern hook
+- Sender: `broadcastMotionStart(const char* id, unsigned long leadMs)` in
+  `Sync.cpp`. **Unicast, not broadcast** — see Delivery below.
+- Receiver: arms at `millis() + leadMs` via the extern hook
   `onMotionStartSync(const char* motionId, unsigned long localStartMs)`,
-  implemented in `adafruit_16_servo.ino`.
+  implemented in `command_interface.h`. No `clockOffset` involved.
 
 ### Lead time
 
-`#define MOTION_START_LEAD_MS 150`. `syncStart = syncMillis() + 150`. Enough for
-a LAN broadcast (<5ms typical) to land before the start instant; imperceptible
-to a viewer.
+`#define MOTION_START_LEAD_MS 150`. Just has to exceed UDP propagation so every
+board arms together; imperceptible to a viewer.
+
+### Delivery — unicast, not broadcast
+
+`MST` is a **one-shot** trigger with no retransmit. WiFi *broadcast* frames get
+no 802.11 ACK/retry and are dropped often — hardware testing measured a single
+broadcast missing a given follower ~50% of the time (servo-dvi). So
+`broadcastMotionStart` builds the packet **once** (one `seq`) and **unicasts** a
+copy to each peer in the table; unicast gets link-layer ACK + retransmission.
+The shared `seq` means any incidental duplicate is deduped (`lastMotionSeq`),
+not replayed as a second arm. (Heartbeats stay broadcast — they repeat every
+second, so individual drops are invisible.)
 
 ### Trigger paths
 
 - **Originating** (`MOTION <id>` from serial / HTTP `/cmd` / scheduler →
-  `processCommand`): broadcast `MST(id, syncMillis() + LEAD)`, then arm locally
-  at `millis() + LEAD`. (`millis()+LEAD` is algebraically identical to
-  `syncStart - clockOffset`, so the originator needs no offset knowledge.)
-- **Received `MST`** (`onMotionStartSync`): arm at `syncStartMs - clockOffset`.
+  `dispatchCommand` intercept): `broadcastMotionStart(id, LEAD)`, then arm
+  locally at `millis() + LEAD`.
+- **Received `MST`** (`onMotionStartSync`): arm at `millis() + leadMs`.
 - **Remove `MOTION` from the EVT mirror whitelist** (`shouldMirrorCommand`) so
   it is no longer double-fired by the old immediate-mirror path.
 
@@ -87,12 +98,15 @@ uint32_t elapsed = (uint32_t)signedElapsed;
 
 One guard, three behaviors:
 
-- **future** start → holds pose until the instant arrives, then begins at t=0;
+- **future** start (the normal case: `millis() + LEAD`) → holds pose until the
+  instant arrives, then begins at t=0;
 - **on-time** start → begins at t=0;
-- **late** packet, or a board that was busy/rebooted → starts mid-Motion **at
-  the correct phase** (catch-up), so it rejoins in lockstep rather than
-  restarting out of phase. This is what satisfies "follower reboot rejoins
-  cleanly within one clock-broadcast cycle."
+- **slightly-late** arm (processing jitter pushes the arm a few ms past the
+  intended instant) → starts at the correct small elapsed offset rather than
+  snapping to t=0, keeping boards aligned. A board that *misses* the `MST`
+  entirely (rebooting, off-network) simply doesn't play that Motion and joins
+  the next one — "rejoins within one trigger" — which is acceptable now that
+  starts are frequent and unicast-reliable.
 
 ## Testing
 
@@ -117,15 +131,20 @@ The UDP broadcast/receive path uses the host mock; the physical acceptance
 `lastEventSeq`/`lastHeartbeatSeq`. Because `txSeq` resets to 0 when a board
 reboots, a non-rebooted receiver holding a high stored seq would otherwise
 silently drop the restarted sender's packets until its seq climbed back —
-staling the synced clock and dropping synchronized starts after a *leader*
-reboot. `handleSyncPacket` detects this: if an incoming seq falls more than
+dropping its mirrored commands and synchronized starts after a reboot.
+`handleSyncPacket` detects this: if an incoming seq falls more than
 `SEQ_REBOOT_GAP` (16) below the per-peer high-water mark, it clears all three
 dedup counters so the restarted peer is accepted immediately. The gap tolerates
 ordinary UDP reordering (a reboot drops thousands behind; a reorder, a few).
 (A *follower* reboot needs no special handling — it clears its own RAM on boot.)
 
-## Known limitation (noted, not fixed)
+## Notes
 
-`clockOffset` ignores one-way UDP latency (~1–5ms on LAN) — a fixed sub-frame
-error well inside the 20ms budget. YAGNI for now; a future refinement could
-timestamp on arrival.
+- The heartbeat `clockOffset`/`syncMillis()` machinery still exists but is no
+  longer used for Motion start (relative timing replaced it). Left in place as
+  it's harmless and may serve future needs; removing it is out of scope.
+- Start *alignment* (≤20ms) and *drift* (<50ms/hour) on real servos still need
+  the multi-board physical check in **servo-9oh** — HTTP `/status.json` polling
+  can't measure sub-frame alignment. What hardware testing *did* confirm:
+  all boards start (no instant-complete/hang regardless of clock state) and
+  100% unicast delivery across 14 trials from every originator.

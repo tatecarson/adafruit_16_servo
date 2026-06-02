@@ -5,10 +5,11 @@
 #include "Sync.h"
 #include "servo_calibration.h"
 
-// servo-vna: how far in the future a synchronized Motion is scheduled. The
-// originator picks syncMillis()+LEAD and broadcasts it; the lead gives the
-// MOTION_START packet time to reach every board before the start instant
-// (a LAN broadcast is <5ms typical). Small enough to feel responsive.
+// servo-vna: how far ahead a synchronized Motion is scheduled. The originator
+// broadcasts MOTION_START with this lead and arms locally at millis()+LEAD;
+// each peer arms at ITS OWN millis()+LEAD on receipt. The lead just has to
+// exceed UDP broadcast propagation (~1-5ms on a LAN) so every board arms
+// together; small enough to feel responsive.
 #define MOTION_START_LEAD_MS 150
 
 void showHelp() {
@@ -389,12 +390,12 @@ inline bool shouldMirrorCommand(const char* upperCmd) {
       || strcmp(upperCmd, "STOP") == 0;
 }
 
-// Originate a synchronized Motion (servo-vna). Name a shared future instant on
-// the synced clock, broadcast MOTION_START to peers, and arm locally at the
-// same instant. millis()+LEAD is algebraically identical to
-// syncMillis()+LEAD - clockOffset, so the originator needs no offset knowledge.
+// Originate a synchronized Motion (servo-vna). Broadcast MOTION_START with the
+// lead and arm locally at millis()+LEAD; peers arm at their own millis()+LEAD on
+// receipt. Relative timing means no board's clock offset can desync the start —
+// the only spread is UDP propagation (a few ms), well inside the 20ms budget.
 inline void triggerMotionSynced(const char* motionId) {
-  broadcastMotionStart(motionId, syncMillis() + MOTION_START_LEAD_MS);
+  broadcastMotionStart(motionId, MOTION_START_LEAD_MS);
   startMotionFromStorageAt(motionId, millis() + MOTION_START_LEAD_MS, true);
 }
 

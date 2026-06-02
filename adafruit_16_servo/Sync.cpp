@@ -101,10 +101,26 @@ static void sendPacket(const char* type, const char* payload) {
 void broadcastMessage(const char* text) { sendPacket("MSG", text); }
 void broadcastEvent(const char* name)   { sendPacket("EVT", name); }
 
-void broadcastMotionStart(const char* motionId, unsigned long syncStartMs) {
+void broadcastMotionStart(const char* motionId, unsigned long leadMs) {
   char payload[64];
-  snprintf(payload, sizeof(payload), "%s %lu", motionId ? motionId : "", syncStartMs);
-  sendPacket("MST", payload);
+  snprintf(payload, sizeof(payload), "%s %lu", motionId ? motionId : "", leadMs);
+
+  // MST is a one-shot trigger with no retransmit. WiFi BROADCAST frames get no
+  // 802.11 ACK/retry and are dropped often (a single broadcast missed a
+  // follower ~50% of the time — servo-dvi), so UNICAST the packet to each known
+  // peer instead: unicast gets link-layer ACK + retransmission. Build it ONCE
+  // (single seq) so the per-peer copies share a seq and any incidental
+  // duplicate is deduped, not replayed as a second arm. Originator arms locally.
+  char buf[96];
+  int n = snprintf(buf, sizeof(buf), "%s %s %u %lu %s",
+                   SYNC_MAGIC, "MST", (unsigned)nodeId,
+                   (unsigned long)(++txSeq), payload);
+  if (n <= 0) return;
+  for (int i = 0; i < peerCount; i++) {
+    udp.beginPacket(peers[i].ip, SYNC_PORT);
+    udp.write((const uint8_t*)buf, n);
+    udp.endPacket();
+  }
 }
 
 void sendHeartbeat() {
@@ -164,15 +180,15 @@ static void handleSyncPacket() {
     peer->lastEventSeq = seq;
     onSyncEvent(payload);
   } else if (strcmp(type, "MST") == 0) {
-    // servo-vna: "begin Motion <id> at <syncStartMs>". Convert the shared-clock
-    // instant into our own millis() frame and hand it to the motion engine.
+    // servo-vna: "begin Motion <id> in <leadMs> ms". Relative start — arm on our
+    // OWN clock at millis()+leadMs. No shared-clock conversion, so a stale/zero
+    // clockOffset on any board can't desync or instant-complete the Motion.
     if (seq <= peer->lastMotionSeq && peer->lastMotionSeq != 0) return;
     peer->lastMotionSeq = seq;
     char motionId[40] = {0};
-    unsigned long syncStartMs = 0;
-    if (sscanf(payload, "%39s %lu", motionId, &syncStartMs) == 2 && motionId[0]) {
-      unsigned long localStartMs = (unsigned long)((long)syncStartMs - clockOffset);
-      onMotionStartSync(motionId, localStartMs);
+    unsigned long leadMs = 0;
+    if (sscanf(payload, "%39s %lu", motionId, &leadMs) == 2 && motionId[0]) {
+      onMotionStartSync(motionId, millis() + leadMs);
     }
   } else if (strcmp(type, "HB") == 0) {
     if (seq <= peer->lastHeartbeatSeq && peer->lastHeartbeatSeq != 0) return;

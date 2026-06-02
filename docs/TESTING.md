@@ -1001,16 +1001,24 @@ when baked should be run once servo-67d lands.
 ## Test 32: Synchronized Motion Start (servo-vna)
 
 Synchronized cluster Motion playback. A locally-originated `MOTION <id>` is no
-longer started immediately — `dispatchCommand` broadcasts a `MOTION_START`
-(`INST1 MST …`) carrying a shared-clock start instant (`syncMillis() +
-MOTION_START_LEAD_MS`, 150ms ahead) and arms the Motion to begin then. Peers
-receive the packet, convert the instant into their own `millis()` frame
-(`syncStartMs − clockOffset`), and arm to the same moment. `updateMotion()`
-gates playback on the signed `millis() − startMs` delta: future = hold pose,
-on-time = start at t=0, past (late packet / reboot) = catch up to the correct
-phase.
+longer started immediately — the `dispatchCommand` intercept sends a
+`MOTION_START` (`INST1 MST <id> <leadMs>`) and arms the Motion at
+`millis() + MOTION_START_LEAD_MS` (150ms). Each peer arms at **its own**
+`millis() + leadMs` on receipt — **relative** timing, no shared clock, so a
+stale `clockOffset` on any board can't desync it (servo-dvi). The `MST` is
+**unicast** to each known peer (not broadcast) because WiFi broadcast frames get
+no 802.11 ACK/retry and were lost ~50% of the time. `updateMotion()` gates
+playback on the signed `millis() − startMs` delta: future = hold pose, on-time =
+start at t=0, slightly-late = correct small offset.
 
-Firmware build: `servo-vna-1` (verify via `GET /status.json` → `"fw"`).
+Firmware build: `servo-vna-5` (verify via `GET /status.json` → `"fw"`).
+
+**Hardware results (2026-06-02, 3-board cluster .198/.213/.138, no servos on
+2&3):** After fixing the original absolute-clock design (instant-complete when a
+peer's clock was unsynced) and switching broadcast→unicast, the cross-board
+delivery is 100% across 14 trials from every originator — all three boards flip
+`motion.active:true` on every `MOTION` fired from any board, no instant-complete.
+Physical alignment (≤20ms) / drift (<50ms/hr) still pending servos (servo-9oh).
 
 ### Single-board (testable now — degrades to a 150ms-delayed local start)
 
@@ -1057,8 +1065,13 @@ other two boards have their motors installed:
 **2026-06-02 (servo-vna synchronized Motion start):**
 - [x] `make -C test` — storage 22/22, motion 8/8 (2 new: future-start hold,
   past-start catch-up), sequence 8/8, setlist 11/11, gallery 9/9.
-- [x] `./compile-firmware.sh` — 120040 bytes (45% flash), 22872 bytes RAM (69%).
-  Build id `servo-vna-1`.
+- [x] `./compile-firmware.sh` — ~120KB (45% flash), 69% RAM. Build `servo-vna-5`.
+- [x] **3-board hardware test** — found + fixed two bugs the host tests can't see:
+  (1) absolute shared-clock start instant-completed when a peer's `clockOffset`
+  was unsynced → switched to **relative** start (`millis()+leadMs` per board,
+  servo-dvi); (2) one-shot `MST` over WiFi **broadcast** lost ~50% → switched to
+  **unicast** per peer. After fixes: 100% cross-board delivery, 14/14 trials from
+  every originator, zero instant-completes.
 
 **2026-05-23:**
 - [x] `make -C test` — 7/7 time multiplier
