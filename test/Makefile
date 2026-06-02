@@ -10,13 +10,25 @@ FQBN       = arduino:renesas_uno:unor4wifi
 BUILD_DIR  = /tmp/adafruit-16-servo-build
 SKETCH_DIR = ../adafruit_16_servo
 
-.PHONY: all test clean size ota-budget storage motion sequence setlist gallery
+.PHONY: all test clean size ota-budget storage motion sequence setlist gallery sim-verify
 
 all: test
 
+# Browser setlist simulation (servo-6j4) must reproduce the firmware scheduler's
+# pick order exactly. This extracts the SETLIST-SIM-CORE block from
+# servo_controller.html and asserts it matches firmware-captured oracle picks.
+# Requires node. Skipped (with a notice) if node isn't installed.
+sim-verify:
+	@command -v node >/dev/null 2>&1 || { \
+	  echo "SKIP sim-verify: node not on PATH (install Node.js to run the browser-sim oracle check)"; \
+	  exit 0; \
+	}
+	node verify_sim_matches_firmware.mjs
+	node verify_sim_analysis.mjs
+
 # Aggregate run of every host suite. The legacy time-multiplier suite was
 # removed in servo-voc along with the legacy PLAY/SPLAY/RUN-n engine it tested.
-test: storage motion sequence setlist gallery
+test: storage motion sequence setlist gallery sim-verify
 
 run_storage_tests: test_storage.cpp mock/Arduino.h mock/EEPROM.h
 	$(CXX) $(CXXFLAGS) -o $@ $<
