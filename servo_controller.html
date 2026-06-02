@@ -3825,6 +3825,125 @@ function mutateCurrentMotion(mutator, save = true) {
   }
 }
 
+// === SHAPE-CORE START ===
+// Pure, DOM-free generators for the Motion-editor preset shape curves
+// (servo-rig). Verified by test/verify_shape_curves.mjs, which extracts this
+// block and runs it under node. Keep it pure (no DOM); the servo slew limit is
+// passed in as msPerPct so the block stays self-contained.
+
+function shapeValue(shape, u) {
+  switch (shape) {
+    case "rampUp":   return u;
+    case "rampDown": return 1 - u;
+    case "sine":     return 0.5 - 0.5 * Math.cos(2 * Math.PI * u);
+    case "triangle": return 1 - Math.abs(2 * u - 1);
+    case "square":   return u < 0.5 ? 0 : 1;
+    case "easeIn":   return u * u;
+    case "easeOut":  return 1 - (1 - u) * (1 - u);
+    case "jitter":   return Math.random();
+    default:         return u;
+  }
+}
+
+function _shapeClamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+
+function _dedupeByAt(points) {
+  const byAt = new Map();
+  for (const p of points) byAt.set(p.atMs, p.value);
+  return Array.from(byAt, ([atMs, value]) => ({ atMs, value })).sort((a, b) => a.atMs - b.atMs);
+}
+
+// Sample a shape across [t0,t1] on the 100ms grid (3..24 points), mapping
+// normalized v∈[0,1] to integer values in [low,high].
+function _sampleShape(shape, t0, t1, low, high, rng) {
+  const span = Math.max(0, t1 - t0);
+  const n = Math.max(3, Math.min(24, Math.round(span / 100) + 1));
+  const pts = [];
+  for (let i = 0; i < n; i++) {
+    const u = i / (n - 1);
+    const v = shape === "jitter" ? (rng ? rng() : Math.random()) : shapeValue(shape, u);
+    pts.push({ atMs: Math.round((t0 + u * span) / 100) * 100, value: Math.round(low + v * (high - low)) });
+  }
+  return _dedupeByAt(pts);
+}
+
+// Largest amplitude scale s∈[0,1] making every segment respect the slew limit.
+function _feasibleAmplitudeScale(points, msPerPct) {
+  let s = 1;
+  for (let i = 1; i < points.length; i++) {
+    const dt = points[i].atMs - points[i - 1].atMs;
+    const dv = Math.abs(points[i].value - points[i - 1].value);
+    if (dv === 0) continue;
+    s = Math.min(s, (dt / msPerPct) / dv);
+  }
+  return Math.max(0, Math.min(1, s));
+}
+
+// Safety net: after integer rounding, pull any over-steep segment back to the
+// steepest feasible step so nothing infeasible can be baked.
+function _clampSlew(points, msPerPct) {
+  for (let i = 1; i < points.length; i++) {
+    const dt = points[i].atMs - points[i - 1].atMs;
+    const maxDv = Math.floor(dt / msPerPct);
+    const prev = points[i - 1].value;
+    if (points[i].value > prev + maxDv) points[i].value = prev + maxDv;
+    else if (points[i].value < prev - maxDv) points[i].value = prev - maxDv;
+  }
+  return points;
+}
+
+// Servo "square" as a trapezoid: hold low, ramp up at the steepest feasible
+// slope centered on the midpoint, hold high. Returns null if the box is too
+// narrow to fit even one ramp (caller falls back to amplitude reduction).
+function _servoSquareTrapezoid(t0, t1, low, high, msPerPct) {
+  const span = t1 - t0;
+  const rampMs = Math.abs(high - low) * msPerPct;
+  if (rampMs <= 0 || rampMs > span) return null;
+  let upStart = (t0 + t1) / 2 - rampMs / 2;
+  let upEnd = upStart + rampMs;
+  if (upStart < t0) { upStart = t0; upEnd = t0 + rampMs; }
+  if (upEnd > t1) { upEnd = t1; upStart = t1 - rampMs; }
+  const pts = [{ atMs: t0, value: low }, { atMs: upStart, value: low }];
+  for (let t = Math.ceil(upStart / 100) * 100; t < upEnd; t += 100) {
+    pts.push({ atMs: t, value: low + ((t - upStart) / (upEnd - upStart)) * (high - low) });
+  }
+  pts.push({ atMs: upEnd, value: high }, { atMs: t1, value: high });
+  return _dedupeByAt(pts.map(p => ({ atMs: Math.round(p.atMs / 100) * 100, value: Math.round(p.value) })));
+}
+
+// Generate keyframes for a shape painted into a box. spec = { kind, min, max }.
+// Returns { keyframes, reducedTo } where reducedTo < 1 means servo amplitude was
+// reduced to respect the slew limit.
+function generateShapeKeyframes({ shape, t0, t1, low, high, spec, msPerPct = 77, rng }) {
+  const a = Math.round(_shapeClamp(low, spec.min, spec.max));
+  const b = Math.round(_shapeClamp(high, spec.min, spec.max));
+  low = a; high = b;
+
+  if (spec.kind !== "servo") {
+    return { keyframes: _sampleShape(shape, t0, t1, low, high, rng), reducedTo: 1 };
+  }
+
+  if (shape === "square") {
+    const trap = _servoSquareTrapezoid(t0, t1, low, high, msPerPct);
+    if (trap) return { keyframes: _clampSlew(trap, msPerPct), reducedTo: 1 };
+    // too narrow for a trapezoid — fall through to amplitude reduction.
+  }
+
+  const ideal = _sampleShape(shape, t0, t1, low, high, rng);
+  const mid = (low + high) / 2;
+  const s = _feasibleAmplitudeScale(ideal, msPerPct);
+  const scaled = ideal.map(p => ({ atMs: p.atMs, value: Math.round(mid + (p.value - mid) * s) }));
+  return { keyframes: _clampSlew(scaled, msPerPct), reducedTo: s };
+}
+
+// Replace any keyframes inside [t0,t1] with the generated ones; keep the rest.
+function mergeShapeIntoKeyframes(existing, generated, t0, t1) {
+  const lo = Math.min(t0, t1), hi = Math.max(t0, t1);
+  const kept = (existing || []).filter(k => k.atMs < lo || k.atMs > hi);
+  return _dedupeByAt(kept.concat(generated.map(k => ({ atMs: k.atMs, value: k.value }))));
+}
+// === SHAPE-CORE END ===
+
 function addMotionKeyframe(spec, atMs, value) {
   let applied = false;
   let clamped = false;
