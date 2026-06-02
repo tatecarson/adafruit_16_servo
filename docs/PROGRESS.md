@@ -206,6 +206,10 @@ adafruit_16_servo/
 
 37. `fix: delay browser OTA apply until after response close (servo-e0n)` — changes `/ota` so a complete upload sends/closes the HTTP 200 response, then schedules `InternalStorage.apply()` from the main loop after a 2s settle window instead of applying inside the request handler. Adds compact `/status.json` OTA diagnostics (`ota.pendingApply`, last byte counts, timing, and error) plus clearer Serial OTA timeline. `ota-all.sh` now verifies reboot on the expected `FW_BUILD` even after HTTP 200 and reports post-apply wedges explicitly. Verification: `make -C test`; `make -C test size` 119720 / 122880 bytes (+3160 headroom); `bash -n ota-all.sh`.
 
+## Git Commits (Project Library Persistence)
+
+38. `feat: persist browser library to project file (servo-1xt)` — adds `servo_library_server.py`, a local helper that serves `servo_controller.html` and accepts POST/PUT writes to `library.json` so Motion/Sequence/Setlist authoring is shared across browsers and git-versionable. The browser loads `library.json` before editor initialization, saves edits back to the file when available, and keeps localStorage as fallback cache only. Verification: `python3 -m py_compile servo_library_server.py`; helper GET/POST smoke; in-app browser preview. `make -C test` passed storage/motion/sequence before hanging in `run_setlist_tests`; follow-up tracked as `servo-6tm`.
+
 ## Future Features
 
 - [ ] **EEPROM calibration storage** - Save/load servo calibrations (type, min, max, stop pulse) to persist across power cycles. Commands: `SAVE`, `LOAD`, `CLEAR`

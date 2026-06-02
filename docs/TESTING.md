@@ -1189,6 +1189,13 @@ leader. `schedulerConfig.graceMs` is the grace window (default 10000).
 - [x] Browser preview at `http://127.0.0.1:4173/servo_controller.html` — masthead Gallery toggle renders in the in-app browser, disabled/dim when no `gallery` status is available from the loaded page, with no visible masthead overlap.
 - Hardware cluster toggle smoke — not run in this session; tracked as `servo-82f`. Flash the firmware, open `servo_controller.html`, confirm `/status.json` includes `gallery`, toggle ON (confirmation required), verify all reachable boards report `gallery: true`, reboot and confirm the flag persists; then toggle OFF and confirm all reachable boards report `gallery: false`.
 
+**2026-06-02 (servo-1xt project-folder library persistence):**
+- [x] `python3 -m py_compile servo_library_server.py` — pass.
+- [x] Local helper smoke at `http://127.0.0.1:4175/` — `GET /library.json` returned schema v1 library JSON; `POST /library.json` with the current library returned `{"ok": true, "bytes": 200}` and rewrote the project file atomically.
+- [x] Browser preview at `http://127.0.0.1:4175/servo_controller.html` — `// 03` storage status reported `saved to library.json`, summary rendered from the file-backed library, and the page loaded without observed runtime errors.
+- [ ] `make -C test` — storage 22/22, motion 8/8, and sequence 8/8 passed; aggregate run then hung in `run_setlist_tests` and left the child process uninterruptible in this host environment. No firmware files changed in servo-1xt.
+- Hardware bake smoke — not run; this change is browser/helper persistence only and does not modify firmware or board endpoints.
+
 ---
 
 ## Servo Calibration Notes

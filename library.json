@@ -1,0 +1,194 @@
+{
+  "schemaVersion": 1,
+  "motions": [
+    {
+      "id": "new-motion",
+      "name": "New Motion",
+      "tags": [],
+      "scope": "cluster",
+      "durationMs": 8000,
+      "tracks": [
+        {
+          "kind": "servo",
+          "boardId": 1,
+          "channel": 0,
+          "label": "B1.S0",
+          "keyframes": [
+            {
+              "atMs": 0,
+              "value": 0
+            }
+          ]
+        },
+        {
+          "kind": "servo",
+          "boardId": 1,
+          "channel": 1,
+          "label": "B1.S1",
+          "keyframes": [
+            {
+              "atMs": 0,
+              "value": 0
+            }
+          ]
+        },
+        {
+          "kind": "servo",
+          "boardId": 1,
+          "channel": 2,
+          "label": "B1.S2",
+          "keyframes": [
+            {
+              "atMs": 0,
+              "value": 0
+            }
+          ]
+        },
+        {
+          "kind": "dc",
+          "boardId": 1,
+          "channel": 0,
+          "label": "B1.DC",
+          "keyframes": [
+            {
+              "atMs": 0,
+              "value": 0
+            }
+          ]
+        },
+        {
+          "kind": "servo",
+          "boardId": 2,
+          "channel": 0,
+          "label": "B2.S0",
+          "keyframes": [
+            {
+              "atMs": 0,
+              "value": 0
+            }
+          ]
+        },
+        {
+          "kind": "servo",
+          "boardId": 2,
+          "channel": 1,
+          "label": "B2.S1",
+          "keyframes": [
+            {
+              "atMs": 0,
+              "value": 0
+            }
+          ]
+        },
+        {
+          "kind": "servo",
+          "boardId": 2,
+          "channel": 2,
+          "label": "B2.S2",
+          "keyframes": [
+            {
+              "atMs": 0,
+              "value": 0
+            }
+          ]
+        },
+        {
+          "kind": "dc",
+          "boardId": 2,
+          "channel": 0,
+          "label": "B2.DC",
+          "keyframes": [
+            {
+              "atMs": 0,
+              "value": 0
+            }
+          ]
+        },
+        {
+          "kind": "servo",
+          "boardId": 3,
+          "channel": 0,
+          "label": "B3.S0",
+          "keyframes": [
+            {
+              "atMs": 0,
+              "value": 0
+            }
+          ]
+        },
+        {
+          "kind": "servo",
+          "boardId": 3,
+          "channel": 1,
+          "label": "B3.S1",
+          "keyframes": [
+            {
+              "atMs": 0,
+              "value": 0
+            }
+          ]
+        },
+        {
+          "kind": "servo",
+          "boardId": 3,
+          "channel": 2,
+          "label": "B3.S2",
+          "keyframes": [
+            {
+              "atMs": 0,
+              "value": 0
+            }
+          ]
+        },
+        {
+          "kind": "dc",
+          "boardId": 3,
+          "channel": 0,
+          "label": "B3.DC",
+          "keyframes": [
+            {
+              "atMs": 0,
+              "value": 0
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "sequences": [
+    {
+      "id": "new-sequence",
+      "name": "New Sequence",
+      "tags": [],
+      "steps": [
+        {
+          "cmd": "STOP",
+          "durationMs": 1000,
+          "target": "all",
+          "label": "",
+          "hold": false
+        }
+      ]
+    }
+  ],
+  "setlists": [
+    {
+      "id": "new-setlist",
+      "name": "New Setlist",
+      "mode": "ordered",
+      "entries": [],
+      "shuffleRules": {
+        "avoidSameTag": false,
+        "minGapEntries": 0,
+        "moodArc": "random",
+        "seed": 0
+      }
+    }
+  ],
+  "activeSetlistId": null,
+  "schedulerConfig": {
+    "leaderBoardId": 1,
+    "graceMs": 10000,
+    "tagEnergy": []
+  }
+}
