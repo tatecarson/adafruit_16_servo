@@ -181,6 +181,68 @@
           "hold": false
         }
       ]
+    },
+    {
+      "id": "calm-drift",
+      "name": "Calm Drift",
+      "tags": [
+        "calm"
+      ],
+      "steps": [
+        {
+          "cmd": "MOTION library-test",
+          "durationMs": 8000,
+          "target": "all",
+          "label": "drift",
+          "hold": false
+        },
+        {
+          "cmd": "STOP",
+          "durationMs": 4000,
+          "target": "all",
+          "label": "settle",
+          "hold": true
+        }
+      ]
+    },
+    {
+      "id": "pulse",
+      "name": "Pulse",
+      "tags": [
+        "medium"
+      ],
+      "steps": [
+        {
+          "cmd": "MOTION library-test",
+          "durationMs": 6000,
+          "target": "all",
+          "label": "pulse",
+          "hold": false
+        }
+      ]
+    },
+    {
+      "id": "frantic",
+      "name": "Frantic",
+      "tags": [
+        "frantic"
+      ],
+      "steps": [
+        {
+          "cmd": "MOTION library-test",
+          "durationMs": 2000,
+          "target": "all",
+          "label": "burst",
+          "hold": false
+        },
+        {
+          "cmd": "MOTION library-test",
+          "durationMs": 2000,
+          "target": "all",
+          "label": "burst2",
+          "hold": false
+        }
+      ]
     }
   ],
   "setlists": [
@@ -189,6 +251,37 @@
       "name": "New Setlist",
       "mode": "ordered",
       "entries": [],
+      "shuffleRules": {
+        "avoidSameTag": false,
+        "minGapEntries": 0,
+        "moodArc": "random",
+        "seed": 0
+      }
+    },
+    {
+      "id": "gallery-demo",
+      "name": "Gallery Demo",
+      "mode": "shuffle",
+      "entries": [
+        {
+          "seqId": "calm-drift",
+          "repeat": 1,
+          "gapMs": 3000,
+          "weight": 30
+        },
+        {
+          "seqId": "pulse",
+          "repeat": 1,
+          "gapMs": 1500,
+          "weight": 1
+        },
+        {
+          "seqId": "frantic",
+          "repeat": 2,
+          "gapMs": 500,
+          "weight": 1
+        }
+      ],
       "shuffleRules": {
         "avoidSameTag": false,
         "minGapEntries": 0,
