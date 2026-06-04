@@ -49,6 +49,13 @@ Open the printed URL → section **// 06 Motion**. Create/select a Motion so the
       any shape (the editor's feasibility markers stay clean).
       - true but most shapes show "reduced amplitude to fit (N%)" in amber, which is expected and fine. But, this makes it so the shapes pretty much all look the same and not very useful. 
 
+## B2. DC live-throughput (servo-6g9)
+- [ ] Insert any shape on a **DC** track → keyframes are spaced ~2s apart (a few
+      per box), and the track shows **no red** "Play Live needs ≥1200ms" marker.
+- [ ] A DC box narrower than ~2s collapses to a single setpoint (expected).
+- [ ] Baked MOTION playback of a DC shape still runs (density was never a bake
+      problem; this only kept Play Live happy).
+
 ## D. Cross-checks
 - [x ] Works on any of the 12 tracks (servo and DC, all 3 boards).
 - [ x] Inserted shapes survive save and re-open (library persistence).

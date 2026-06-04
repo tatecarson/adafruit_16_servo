@@ -56,6 +56,8 @@ function feasible(kfs) {
 }
 const SERVO = { kind: "servo", min: 0, max: 100 };
 const DC = { kind: "dc", min: -100, max: 100 };
+const DC_MIN_SPACING = 2000;   // live-safe DC spacing (servo-6g9)
+function dcMinGap(kfs) { let g = Infinity; for (let i = 1; i < kfs.length; i++) g = Math.min(g, kfs[i].atMs - kfs[i - 1].atMs); return g; }
 
 console.log("=== Motion shape curves ===");
 
@@ -73,15 +75,22 @@ eq("square(0.75)=1", shapeValue("square", 0.75), 1);
 approx("easeIn(0.5)=0.25", shapeValue("easeIn", 0.5), 0.25);
 approx("easeOut(0.5)=0.75", shapeValue("easeOut", 0.5), 0.75);
 
-// ---- generateShapeKeyframes: DC ramp (no feasibility limit) ------------------
+// ---- DC ramp: coarsened to live-safe spacing (servo-6g9) -------------------
 {
   const { keyframes, reducedTo } = generateShapeKeyframes(
-    { shape: "rampUp", t0: 0, t1: 1000, low: -100, high: 100, spec: DC, msPerPct: MS_PER_PCT });
-  eq("dc ramp: 11 points", keyframes.length, 11);
+    { shape: "rampUp", t0: 0, t1: 8000, low: -100, high: 100, spec: DC, msPerPct: MS_PER_PCT, dcMinSpacingMs: DC_MIN_SPACING });
   eq("dc ramp: starts low", keyframes[0], { atMs: 0, value: -100 });
-  eq("dc ramp: ends high", keyframes[keyframes.length - 1], { atMs: 1000, value: 100 });
+  eq("dc ramp: ends high", keyframes[keyframes.length - 1], { atMs: 8000, value: 100 });
   eq("dc ramp: not reduced", reducedTo, 1);
   assert("dc ramp: atMs on 100ms grid", keyframes.every(k => k.atMs % 100 === 0));
+  assert("dc ramp: events >=2000ms apart (Play-Live safe)", dcMinGap(keyframes) >= DC_MIN_SPACING);
+  assert("dc ramp: never below the 1200ms block floor", dcMinGap(keyframes) >= 1200);
+}
+{
+  // A box narrower than the spacing floor collapses to a single setpoint.
+  const tiny = generateShapeKeyframes(
+    { shape: "rampUp", t0: 0, t1: 1500, low: 0, high: 100, spec: DC, msPerPct: MS_PER_PCT, dcMinSpacingMs: DC_MIN_SPACING });
+  assert("dc tiny box: at most one event", tiny.keyframes.length <= 1 || dcMinGap(tiny.keyframes) >= 1200);
 }
 
 // ---- point-count clamp (3..24) ---------------------------------------------
@@ -112,8 +121,9 @@ approx("easeOut(0.5)=0.75", shapeValue("easeOut", 0.5), 0.75);
 
 // ---- square: DC clean step, servo feasible trapezoid ------------------------
 {
-  const dcSq = generateShapeKeyframes({ shape: "square", t0: 0, t1: 1000, low: -100, high: 100, spec: DC, msPerPct: MS_PER_PCT });
+  const dcSq = generateShapeKeyframes({ shape: "square", t0: 0, t1: 8000, low: -100, high: 100, spec: DC, msPerPct: MS_PER_PCT, dcMinSpacingMs: DC_MIN_SPACING });
   assert("dc square values are only low/high", dcSq.keyframes.every(k => k.value === -100 || k.value === 100));
+  assert("dc square: live-safe spacing", dcMinGap(dcSq.keyframes) >= DC_MIN_SPACING);
 
   // box wide enough for full up+down ramps at 20% amplitude (20*77=1540ms each).
   const servoSq = generateShapeKeyframes({ shape: "square", t0: 0, t1: 6000, low: 0, high: 20, spec: SERVO, msPerPct: MS_PER_PCT });

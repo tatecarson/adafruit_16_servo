@@ -3920,6 +3920,23 @@ function _sampleShape(shape, t0, t1, low, high, rng) {
   return _dedupeByAt(pts);
 }
 
+// Sample a shape for a DC track at >= minSpacingMs between events (servo-6g9).
+// DC is step interpolation, so dense keyframes don't smooth motion — they just
+// emit more ROTATEs than Play Live can stream. Point COUNT is derived from the
+// spacing floor; points still land on the 100ms grid. A box narrower than the
+// floor collapses to a single setpoint.
+function _sampleShapeSpaced(shape, t0, t1, low, high, rng, minSpacingMs) {
+  const span = Math.max(0, t1 - t0);
+  const n = Math.max(1, Math.floor(span / Math.max(1, minSpacingMs)) + 1);
+  const pts = [];
+  for (let i = 0; i < n; i++) {
+    const u = n === 1 ? 0 : i / (n - 1);
+    const v = shape === "jitter" ? (rng ? rng() : Math.random()) : shapeValue(shape, u);
+    pts.push({ atMs: Math.round((t0 + u * span) / 100) * 100, value: Math.round(low + v * (high - low)) });
+  }
+  return _dedupeByAt(pts);
+}
+
 // Largest amplitude scale s∈[0,1] making every segment respect the slew limit.
 function _feasibleAmplitudeScale(points, msPerPct) {
   let s = 1;
@@ -3967,13 +3984,14 @@ function _servoSquareTrapezoid(t0, t1, low, high, msPerPct) {
 // Generate keyframes for a shape painted into a box. spec = { kind, min, max }.
 // Returns { keyframes, reducedTo } where reducedTo < 1 means servo amplitude was
 // reduced to respect the slew limit.
-function generateShapeKeyframes({ shape, t0, t1, low, high, spec, msPerPct = 77, rng }) {
+function generateShapeKeyframes({ shape, t0, t1, low, high, spec, msPerPct = 77, rng, dcMinSpacingMs = 2000 }) {
   const a = Math.round(_shapeClamp(low, spec.min, spec.max));
   const b = Math.round(_shapeClamp(high, spec.min, spec.max));
   low = a; high = b;
 
   if (spec.kind !== "servo") {
-    return { keyframes: _sampleShape(shape, t0, t1, low, high, rng), reducedTo: 1 };
+    // DC: no slew limit, but space events so Play Live can stream them (servo-6g9).
+    return { keyframes: _sampleShapeSpaced(shape, t0, t1, low, high, rng, dcMinSpacingMs), reducedTo: 1 };
   }
 
   if (shape === "square") {
@@ -4656,7 +4674,9 @@ function openShapePopover(clientX, clientY, box) {
 function applyShapeToTrack(shape, box) {
   const { spec, t0, t1, low, high } = box;
   const gen = generateShapeKeyframes({
-    shape, t0, t1, low, high, spec, msPerPct: SERVO_FEASIBILITY_MS_PER_PERCENT,
+    shape, t0, t1, low, high, spec,
+    msPerPct: SERVO_FEASIBILITY_MS_PER_PERCENT,
+    dcMinSpacingMs: DC_LIVE_WARN_SPACING_MS,
   });
   let keyframes = gen.keyframes;
   const reducedTo = gen.reducedTo;
