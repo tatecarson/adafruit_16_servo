@@ -1193,7 +1193,7 @@
   .motion-row,
   .motion-board {
     display: grid;
-    grid-template-columns: 170px 70px 1fr;
+    grid-template-columns: 170px 110px 1fr;
   }
   .motion-scale {
     position: sticky;
@@ -4638,6 +4638,13 @@ function openShapePopover(clientX, clientY, box) {
     SHAPE_MENU.map(([id, label]) => `<button data-shape="${id}">${label}</button>`).join("");
   document.body.appendChild(pop);
   shapePopoverEl = pop;
+  // Keep the popover fully on-screen (it can open near the right/bottom edge).
+  const r = pop.getBoundingClientRect();
+  const M = 8;
+  const x = Math.max(M, Math.min(clientX, window.innerWidth - r.width - M));
+  const y = Math.max(M, Math.min(clientY, window.innerHeight - r.height - M));
+  pop.style.left = `${x}px`;
+  pop.style.top = `${y}px`;
   pop.addEventListener("click", (ev) => {
     const shape = ev.target?.dataset?.shape;
     if (!shape) return;

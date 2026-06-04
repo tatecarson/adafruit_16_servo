@@ -30,6 +30,10 @@ Open the printed URL → section **// 06 Motion**. Create/select a Motion so the
 - [ x] Generated keyframes are **normal** — you can drag/double-click-delete them.
 - [ x] Re-painting an overlapping box replaces the keyframes inside it, keeps the
       rest.
+- fail feasability check - wide and tall box 
+      - ramp up/down, sine, triangle, ease in/out, jitter all fail with a wide and tall box 
+- pass feasability check - wide and short box
+      - square 
 
 ## C. Servo feasibility (servo tracks — 0..100%)
 - [ x] Alt-drag a **short, tall** box on a servo track, pick **Sine** → it still
@@ -41,13 +45,18 @@ Open the printed URL → section **// 06 Motion**. Create/select a Motion so the
       - this works really well 
 - [ x] **Square** on a servo, wide box → a trapezoid (ramped edges), not a flat
       line and not a vertical jump.
-- [ ] Bake/feasibility: no track shows red/infeasible segments after inserting
+- [x ] Bake/feasibility: no track shows red/infeasible segments after inserting
       any shape (the editor's feasibility markers stay clean).
+      - true but most shapes show "reduced amplitude to fit (N%)" in amber, which is expected and fine. But, this makes it so the shapes pretty much all look the same and not very useful. 
 
 ## D. Cross-checks
-- [ ] Works on any of the 12 tracks (servo and DC, all 3 boards).
-- [ ] Inserted shapes survive save and re-open (library persistence).
-- [ ] No console errors during any of the above (open DevTools).
+- [x ] Works on any of the 12 tracks (servo and DC, all 3 boards).
+- [ x] Inserted shapes survive save and re-open (library persistence).
+- [ x] No console errors during any of the above (open DevTools).
+
+##. Other 
+
+- When selecting teh whole available space to the right, the menu box shows up partly offscreen to the right. 
 
 ## E. Boundary feasibility (the reported bug)
 - [ ] On a servo track with only the default `0@0` keyframe, Alt-drag a box
