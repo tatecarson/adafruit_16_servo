@@ -4734,7 +4734,16 @@ document.addEventListener("mouseup", (e) => {
   openShapePopover(e.clientX, e.clientY, box);
 });
 
-document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeShapePopover(); });
+document.addEventListener("keydown", (e) => {
+  // Only consume Escape when the popover is open, and stop it bubbling to the
+  // window-level ESC=STOP shortcut so dismissing the menu can't trigger a
+  // hardware STOP. document bubbles before window, so stopPropagation here wins.
+  if (e.key === "Escape" && shapePopoverEl) {
+    e.preventDefault();
+    e.stopPropagation();
+    closeShapePopover();
+  }
+});
 document.addEventListener("mousedown", (e) => {
   if (shapePopoverEl && !e.target.closest(".shape-popover")) closeShapePopover();
 }, true);
