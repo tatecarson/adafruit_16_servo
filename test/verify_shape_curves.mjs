@@ -37,13 +37,13 @@ const core = html.slice(s + START.length, e);
 
 const dir = mkdtempSync(join(tmpdir(), "shape-core-"));
 const modPath = join(dir, "core.mjs");
-writeFileSync(modPath, core + "\nexport { shapeValue, generateShapeKeyframes, mergeShapeIntoKeyframes, fitKeyframesToNeighbors };\n", "utf8");
+writeFileSync(modPath, core + "\nexport { shapeValue, generateShapeKeyframes, mergeShapeIntoKeyframes, fitKeyframesToNeighbors, simplifyKeyframes };\n", "utf8");
 const mod = await import(pathToFileURL(modPath).href);
-for (const fn of ["shapeValue", "generateShapeKeyframes", "mergeShapeIntoKeyframes", "fitKeyframesToNeighbors"]) {
+for (const fn of ["shapeValue", "generateShapeKeyframes", "mergeShapeIntoKeyframes", "fitKeyframesToNeighbors", "simplifyKeyframes"]) {
   if (typeof mod[fn] !== "function") fail(`SHAPE-CORE does not export ${fn}()`);
 }
 if (failed) process.exit(1);
-const { shapeValue, generateShapeKeyframes, mergeShapeIntoKeyframes, fitKeyframesToNeighbors } = mod;
+const { shapeValue, generateShapeKeyframes, mergeShapeIntoKeyframes, fitKeyframesToNeighbors, simplifyKeyframes } = mod;
 
 const MS_PER_PCT = 77;
 function feasible(kfs) {
@@ -182,6 +182,47 @@ function chainFeasible(seq) {
   const fitted = fitKeyframesToNeighbors(gen, prev, next, MS_PER_PCT);
   const merged = mergeShapeIntoKeyframes(existing, fitted, 1000, 3000);
   assert("merged servo track is fully feasible", chainFeasible(merged));
+}
+
+// ---- simplifyKeyframes: drop redundant keyframes per interpolation (servo-5ib)
+{
+  // Servo (linear): a triangle collapses to its 3 corners; output identical.
+  const tri = [
+    { atMs: 0, value: 0 }, { atMs: 100, value: 25 }, { atMs: 200, value: 50 },
+    { atMs: 300, value: 75 }, { atMs: 400, value: 100 }, { atMs: 500, value: 75 },
+    { atMs: 600, value: 50 }, { atMs: 700, value: 25 }, { atMs: 800, value: 0 },
+  ];
+  eq("servo triangle → 3 corner keyframes",
+    simplifyKeyframes(tri, "servo"),
+    [{ atMs: 0, value: 0 }, { atMs: 400, value: 100 }, { atMs: 800, value: 0 }]);
+
+  // Servo ramp collapses to 2 endpoints.
+  const ramp = [{ atMs: 0, value: 0 }, { atMs: 100, value: 25 }, { atMs: 200, value: 50 }, { atMs: 300, value: 75 }, { atMs: 400, value: 100 }];
+  eq("servo ramp → 2 endpoints", simplifyKeyframes(ramp, "servo"), [{ atMs: 0, value: 0 }, { atMs: 400, value: 100 }]);
+
+  // Servo sine (full amplitude, genuinely curved) keeps its samples — not collinear.
+  const sineKf = [
+    { atMs: 0, value: 0 }, { atMs: 1000, value: 15 }, { atMs: 2000, value: 50 },
+    { atMs: 3000, value: 85 }, { atMs: 4000, value: 100 }, { atMs: 5000, value: 85 },
+    { atMs: 6000, value: 50 }, { atMs: 7000, value: 15 }, { atMs: 8000, value: 0 },
+  ];
+  assert("servo sine keeps curved points (not collapsed)", simplifyKeyframes(sineKf, "servo").length >= 7);
+}
+{
+  // DC (step): consecutive equal speed values are redundant.
+  const dc = [{ atMs: 0, value: -100 }, { atMs: 100, value: -100 }, { atMs: 200, value: 50 }, { atMs: 300, value: 50 }, { atMs: 400, value: 100 }];
+  eq("dc drops repeated speed values",
+    simplifyKeyframes(dc, "dc"),
+    [{ atMs: 0, value: -100 }, { atMs: 200, value: 50 }, { atMs: 400, value: 100 }]);
+
+  // DC with all-distinct values is unchanged.
+  const dcRamp = [{ atMs: 0, value: 0 }, { atMs: 100, value: 20 }, { atMs: 200, value: 40 }];
+  eq("dc all-distinct unchanged", simplifyKeyframes(dcRamp, "dc"), dcRamp);
+}
+{
+  // Endpoints are always preserved; tiny inputs pass through.
+  eq("two points pass through", simplifyKeyframes([{ atMs: 0, value: 0 }, { atMs: 100, value: 5 }], "servo"),
+     [{ atMs: 0, value: 0 }, { atMs: 100, value: 5 }]);
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

@@ -4025,6 +4025,39 @@ function mergeShapeIntoKeyframes(existing, generated, t0, t1) {
   const kept = (existing || []).filter(k => k.atMs < lo || k.atMs > hi);
   return _dedupeByAt(kept.concat(generated.map(k => ({ atMs: k.atMs, value: k.value }))));
 }
+
+// Drop redundant keyframes given the track's interpolation (servo-5ib), so
+// shapes don't waste the firmware's 64-keyframe-per-board budget:
+//  - servo (linear interp): remove points within `eps` of the line through
+//    their neighbours, so ramps/triangles/square-edges keep only their corners.
+//    eps=1 (1% of the 0..100 range) absorbs integer-rounding jitter on straight
+//    legs while preserving genuinely curved shapes (sine/ease); the resulting
+//    deviation is ≤1 unit, imperceptible for servo position.
+//  - dc (step interp): remove points whose value repeats the previous kept one
+//    (lossless — the step holds the value anyway).
+// First and last keyframes are always preserved.
+function simplifyKeyframes(keyframes, kind, eps = 1) {
+  const kfs = (keyframes || []).map(k => ({ atMs: k.atMs, value: k.value }));
+  if (kfs.length <= 2) return kfs;
+  if (kind === "dc") {
+    const out = [kfs[0]];
+    for (let i = 1; i < kfs.length; i++) {
+      if (kfs[i].value !== out[out.length - 1].value) out.push(kfs[i]);
+    }
+    const last = kfs[kfs.length - 1];
+    if (out[out.length - 1].atMs !== last.atMs) out.push(last);
+    return out;
+  }
+  const out = [kfs[0]];
+  for (let i = 1; i < kfs.length - 1; i++) {
+    const a = out[out.length - 1], b = kfs[i], c = kfs[i + 1];
+    const dt = c.atMs - a.atMs;
+    const interp = dt === 0 ? a.value : a.value + (c.value - a.value) * (b.atMs - a.atMs) / dt;
+    if (Math.abs(b.value - interp) > eps) out.push(b);
+  }
+  out.push(kfs[kfs.length - 1]);
+  return out;
+}
 // === SHAPE-CORE END ===
 
 // === EDITOR-CORE START ===
@@ -4697,6 +4730,13 @@ function applyShapeToTrack(shape, box) {
     if (JSON.stringify(keyframes) !== before0) fitNote = " · eased to fit neighbours";
   }
 
+  // Drop redundant keyframes per interpolation so shapes stay within the
+  // firmware's 64-keyframe-per-board budget (servo-5ib). Lossless: servo legs
+  // are reproduced by linear interpolation, DC holds repeated speeds.
+  const beforeCount = keyframes.length;
+  keyframes = simplifyKeyframes(keyframes, spec.kind);
+  const savedNote = keyframes.length < beforeCount ? ` · ${beforeCount}→${keyframes.length} kf` : "";
+
   mutateCurrentMotion(m => {
     const tr = findTrack(m, spec);
     if (!tr) return;
@@ -4705,8 +4745,8 @@ function applyShapeToTrack(shape, box) {
   });
   setMotionStatus(
     reducedTo < 1
-      ? `${shape} inserted · reduced amplitude to fit (${Math.round(reducedTo * 100)}%)${fitNote}`
-      : `${shape} inserted · ${spec.label}${fitNote}`,
+      ? `${shape} inserted · reduced amplitude to fit (${Math.round(reducedTo * 100)}%)${fitNote}${savedNote}`
+      : `${shape} inserted · ${spec.label}${fitNote}${savedNote}`,
     reducedTo < 1 || fitNote ? "amber" : "phosphor"
   );
 }
