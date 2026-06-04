@@ -30,7 +30,8 @@ sim-verify:
 	  }; \
 	  node verify_sim_matches_firmware.mjs && \
 	  node verify_sim_analysis.mjs && \
-	  node verify_shape_curves.mjs; \
+	  node verify_shape_curves.mjs && \
+	  node verify_editor_keyframes.mjs; \
 	fi
 
 # Aggregate run of every host suite. The legacy time-multiplier suite was

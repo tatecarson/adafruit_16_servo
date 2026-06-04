@@ -1306,6 +1306,19 @@
     pointer-events: none;
     z-index: 5;
   }
+  /* marquee select (servo-dmu) — distinct from the amber shape rectangle */
+  .marquee-select-rect {
+    position: absolute;
+    border: 1px dashed var(--phosphor, #6fcf8e);
+    background: rgba(111, 207, 142, 0.14);
+    pointer-events: none;
+    z-index: 5;
+  }
+  .motion-key.selected {
+    outline: 2px solid var(--phosphor, #6fcf8e);
+    outline-offset: 1px;
+    z-index: 6;
+  }
   .shape-popover {
     position: fixed;
     z-index: 1000;
@@ -1908,7 +1921,7 @@
     <span class="num">// 06</span>
     <span class="label">Motion</span>
     <span class="rule"></span>
-    <span class="hint">12-track cluster keyframes · servo % down (0=up, 100=down) · dc -100..100 spd · live scrub · ⌥-drag a track to insert a shape · shared library</span>
+    <span class="hint">12-track cluster keyframes · servo % down (0=up, 100=down) · dc -100..100 spd · live scrub · ⌥-drag a shape · ⇧-drag to select (Del removes) · Clr clears a row · shared library</span>
   </div>
 
   <div class="panel motion-editor">
@@ -3306,6 +3319,7 @@ const motionLastDispatched = new Map();
 const motionCollapsedBoards = new Set();
 const motionMutedTracks = new Set();
 let motionSoloTracks = new Set();
+const motionSelectedKeys = new Map();   // trackKey -> Set<atMs> (servo-dmu)
 
 function motionTrackKey(track) {
   return `${track.boardId}:${track.kind}:${track.channel}`;
@@ -3823,12 +3837,13 @@ function renderMotionEditor() {
         <div class="motion-toggles">
           <button class="cmd compact${solo ? " amber" : ""}" data-motion-solo="${escapeHtml(key)}" title="Solo">S</button>
           <button class="cmd compact${muted ? " alert" : ""}" data-motion-mute="${escapeHtml(key)}" title="Mute">M</button>
+          <button class="cmd compact" data-motion-clear="${escapeHtml(key)}" title="Clear all keyframes on this track">Clr</button>
         </div>
         <div class="motion-track" data-track="${escapeHtml(key)}">
           ${segmentHtml}
           <div class="motion-playhead" style="left:${motionTimeToPct(playheadMs, motion.durationMs)}%"></div>
           ${prev ? `<span class="motion-key ghost ${spec.kind}" style="left:${motionTimeToPct(prev.atMs, motion.durationMs)}%; top:${motionValueToPct(prev.value, spec)}%"></span>` : ""}
-          ${(track.keyframes || []).map((kf, idx) => `<span class="motion-key ${spec.kind}" data-track="${escapeHtml(key)}" data-key-index="${idx}" title="${kf.atMs}ms · ${kf.value}${spec.unit}" style="left:${motionTimeToPct(kf.atMs, motion.durationMs)}%; top:${motionValueToPct(kf.value, spec)}%"></span>`).join("")}
+          ${(track.keyframes || []).map((kf, idx) => `<span class="motion-key ${spec.kind}${motionSelectedKeys.get(key)?.has(kf.atMs) ? " selected" : ""}" data-track="${escapeHtml(key)}" data-key-index="${idx}" data-key-at="${kf.atMs}" title="${kf.atMs}ms · ${kf.value}${spec.unit}" style="left:${motionTimeToPct(kf.atMs, motion.durationMs)}%; top:${motionValueToPct(kf.value, spec)}%"></span>`).join("")}
         </div>
       </div>`;
     }
@@ -3981,6 +3996,28 @@ function mergeShapeIntoKeyframes(existing, generated, t0, t1) {
   return _dedupeByAt(kept.concat(generated.map(k => ({ atMs: k.atMs, value: k.value }))));
 }
 // === SHAPE-CORE END ===
+
+// === EDITOR-CORE START ===
+// Pure helpers for marquee select + delete (servo-dmu). Verified by
+// test/verify_editor_keyframes.mjs. No DOM.
+
+// Indices of keyframes inside a marquee box (inclusive, order-independent).
+function keyframesInMarquee(keyframes, tA, tB, vA, vB) {
+  const tLo = Math.min(tA, tB), tHi = Math.max(tA, tB);
+  const vLo = Math.min(vA, vB), vHi = Math.max(vA, vB);
+  const idx = [];
+  (keyframes || []).forEach((k, i) => {
+    if (k.atMs >= tLo && k.atMs <= tHi && k.value >= vLo && k.value <= vHi) idx.push(i);
+  });
+  return idx;
+}
+
+// Return a copy of keyframes with the given indices removed (does not mutate).
+function deleteKeyframeIndices(keyframes, indices) {
+  const drop = new Set(indices);
+  return (keyframes || []).filter((_, i) => !drop.has(i)).map(k => ({ atMs: k.atMs, value: k.value }));
+}
+// === EDITOR-CORE END ===
 
 function addMotionKeyframe(spec, atMs, value) {
   let applied = false;
@@ -4505,6 +4542,15 @@ motionGridEl.addEventListener("click", e => {
     renderMotionEditor();
     return;
   }
+  const clear = e.target.dataset.motionClear;
+  if (clear) { clearMotionTrack(clear); return; }   // servo-8et
+
+  // Shift-click a keyframe toggles its selection (servo-dmu).
+  if (e.shiftKey && e.target.classList.contains("motion-key") && !e.target.classList.contains("ghost")) {
+    toggleKeySelection(e.target.dataset.track, parseInt(e.target.dataset.keyAt, 10));
+    return;
+  }
+  if (suppressNextMotionClick) { suppressNextMotionClick = false; return; }  // after a marquee drag
   if (e.altKey) return;   // Alt is reserved for shape-curve drag (servo-rig)
   const trackEl = e.target.closest(".motion-track");
   if (!trackEl || e.target.classList.contains("motion-key")) return;
@@ -4635,6 +4681,108 @@ document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeShape
 document.addEventListener("mousedown", (e) => {
   if (shapePopoverEl && !e.target.closest(".shape-popover")) closeShapePopover();
 }, true);
+
+// ---- Clear row (servo-8et) + marquee select & delete (servo-dmu) ----------
+let suppressNextMotionClick = false;
+let marqueeDrag = null;   // { trackEl, x0, y0, rectEl, moved }
+
+function clearMotionTrack(key) {
+  const spec = MOTION_TRACK_SPECS.find(s => trackSpecKey(s) === key);
+  if (!spec) return;
+  mutateCurrentMotion(motion => {
+    const track = findTrack(motion, spec);
+    if (!track) return;
+    track.keyframes = normalizeKeyframes({ ...track, keyframes: [{ atMs: 0, value: 0 }] }, motion.durationMs, spec);
+  });
+  motionSelectedKeys.delete(key);
+  setMotionStatus(`cleared · ${spec.label}`, "amber");
+}
+
+function toggleKeySelection(key, atMs) {
+  let set = motionSelectedKeys.get(key);
+  if (!set) { set = new Set(); motionSelectedKeys.set(key, set); }
+  if (set.has(atMs)) set.delete(atMs); else set.add(atMs);
+  if (!set.size) motionSelectedKeys.delete(key);
+  renderMotionEditor();
+}
+
+function motionSelectionCount() {
+  let n = 0;
+  for (const set of motionSelectedKeys.values()) n += set.size;
+  return n;
+}
+
+function deleteSelectedKeyframes() {
+  const n = motionSelectionCount();
+  if (!n) return;
+  mutateCurrentMotion(motion => {
+    for (const [key, atSet] of motionSelectedKeys) {
+      const spec = MOTION_TRACK_SPECS.find(s => trackSpecKey(s) === key);
+      const track = motion.tracks.find(t => motionTrackKey(t) === key);
+      if (!spec || !track) continue;
+      const idx = track.keyframes.map((k, i) => (atSet.has(k.atMs) ? i : -1)).filter(i => i >= 0);
+      let next = deleteKeyframeIndices(track.keyframes, idx);
+      if (!next.length) next = [{ atMs: 0, value: 0 }];
+      track.keyframes = normalizeKeyframes({ ...track, keyframes: next }, motion.durationMs, spec);
+    }
+  });
+  motionSelectedKeys.clear();
+  setMotionStatus(`deleted ${n} keyframe${n === 1 ? "" : "s"}`, "amber");
+}
+
+motionGridEl.addEventListener("mousedown", (e) => {
+  if (!e.shiftKey || e.altKey) return;
+  const trackEl = e.target.closest(".motion-track");
+  if (!trackEl || e.target.classList.contains("motion-key")) return;  // shift-click a key toggles it
+  e.preventDefault();
+  const rectEl = document.createElement("div");
+  rectEl.className = "marquee-select-rect";
+  trackEl.appendChild(rectEl);
+  marqueeDrag = { trackEl, x0: e.clientX, y0: e.clientY, rectEl, moved: false };
+});
+
+document.addEventListener("mousemove", (e) => {
+  if (!marqueeDrag) return;
+  marqueeDrag.moved = true;
+  const rect = marqueeDrag.trackEl.getBoundingClientRect();
+  const left = Math.max(rect.left, Math.min(marqueeDrag.x0, e.clientX));
+  const right = Math.min(rect.right, Math.max(marqueeDrag.x0, e.clientX));
+  const top = Math.max(rect.top, Math.min(marqueeDrag.y0, e.clientY));
+  const bottom = Math.min(rect.bottom, Math.max(marqueeDrag.y0, e.clientY));
+  Object.assign(marqueeDrag.rectEl.style, {
+    left: `${left - rect.left}px`, top: `${top - rect.top}px`,
+    width: `${Math.max(0, right - left)}px`, height: `${Math.max(0, bottom - top)}px`,
+  });
+});
+
+document.addEventListener("mouseup", (e) => {
+  if (!marqueeDrag) return;
+  const { trackEl, x0, y0, rectEl, moved } = marqueeDrag;
+  marqueeDrag = null;
+  rectEl.remove();
+  if (!moved) return;   // plain shift-click (no drag) — let the click handler run
+  suppressNextMotionClick = true;
+  const box = shapeBoxFromDrag(trackEl, x0, y0, e.clientX, e.clientY);
+  const motion = readMotionFromDom();
+  const track = motion.tracks.find(t => motionTrackKey(t) === trackEl.dataset.track);
+  if (!track) return;
+  const idx = keyframesInMarquee(track.keyframes, box.t0, box.t1, box.low, box.high);
+  if (!idx.length) { setMotionStatus("no keyframes in selection", "amber"); return; }
+  const set = motionSelectedKeys.get(trackEl.dataset.track) || new Set();
+  for (const i of idx) set.add(track.keyframes[i].atMs);
+  motionSelectedKeys.set(trackEl.dataset.track, set);
+  renderMotionEditor();
+  setMotionStatus(`selected ${idx.length} keyframe${idx.length === 1 ? "" : "s"} · Delete to remove`, "phosphor");
+});
+
+document.addEventListener("keydown", (e) => {
+  if (e.key !== "Delete" && e.key !== "Backspace") return;
+  const el = document.activeElement;
+  if (el && /^(input|textarea|select)$/i.test(el.tagName)) return;
+  if (!motionSelectionCount()) return;
+  e.preventDefault();
+  deleteSelectedKeyframes();
+});
 
 // Drag-vs-click discrimination. pointerdown on a keyframe stages a
 // potential drag but does NOT mutate state. We only start mutating
