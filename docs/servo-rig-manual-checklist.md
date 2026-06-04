@@ -49,6 +49,17 @@ Open the printed URL → section **// 06 Motion**. Create/select a Motion so the
       any shape (the editor's feasibility markers stay clean).
       - true but most shapes show "reduced amplitude to fit (N%)" in amber, which is expected and fine. But, this makes it so the shapes pretty much all look the same and not very useful. 
 
+## B2. DC live-throughput (servo-6g9)
+- [ ] Insert a shape on a **DC** track → keyframes stay **dense** (fine curve,
+      faithful for baking).
+- [ ] **Play Live** on a dense DC track is **no longer blocked** — it plays a
+      throttled/decimated DC preview (~1 setpoint per ≥1.2s) and the status notes
+      the live preview is approximate.
+- [ ] **Bake** the dense DC shape and run it on-device → the motor steps through
+      the full fine envelope (baked is full-rate, unthrottled).
+- [ ] The DC feasibility marker may still flag dense spacing — that's now just a
+      heads-up that Play Live decimates, not a block.
+
 ## D. Cross-checks
 - [x ] Works on any of the 12 tracks (servo and DC, all 3 boards).
 - [ x] Inserted shapes survive save and re-open (library persistence).

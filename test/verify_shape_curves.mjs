@@ -73,7 +73,9 @@ eq("square(0.75)=1", shapeValue("square", 0.75), 1);
 approx("easeIn(0.5)=0.25", shapeValue("easeIn", 0.5), 0.25);
 approx("easeOut(0.5)=0.75", shapeValue("easeOut", 0.5), 0.75);
 
-// ---- generateShapeKeyframes: DC ramp (no feasibility limit) ------------------
+// ---- generateShapeKeyframes: DC ramp (dense; no slew limit) -----------------
+// DC keyframes stay dense for a faithful baked envelope; Play Live throttles
+// the DC stream at send time instead (servo-6g9).
 {
   const { keyframes, reducedTo } = generateShapeKeyframes(
     { shape: "rampUp", t0: 0, t1: 1000, low: -100, high: 100, spec: DC, msPerPct: MS_PER_PCT });
