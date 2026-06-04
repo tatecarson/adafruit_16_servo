@@ -2676,7 +2676,13 @@ galleryToggle.addEventListener("click", () => {
 // removed in servo-voc — those firmware commands no longer exist.)
 window.addEventListener("keydown", e => {
   if (e.target.tagName === "INPUT" || e.target.tagName === "SELECT") return;
-  if (e.key === "Escape") { broadcastCommand("STOP"); }
+  // Escape clears any motion-editor keyframe selection (servo-p36). It no
+  // longer broadcasts STOP — use the STOP control in MASTER COMMAND for that.
+  if (e.key === "Escape" && motionSelectionCount()) {
+    motionSelectedKeys.clear();
+    renderMotionEditor();
+    setMotionStatus("selection cleared", "phosphor");
+  }
 });
 
 // Double-click any text field to select all its contents. Native double-click
@@ -4096,12 +4102,19 @@ function _nearestUnselected(keyframes, selectedSet, start, step) {
   return null;
 }
 
-// Translate selected keyframes as a rigid group. Time is clamped to the motion
-// bounds and nearest unselected neighbors; values are clamped to the track
-// range. Servo tracks also clamp the group's value shift against the same
-// boundary slew rule used elsewhere (77ms per 1% of travel).
+// Translate selected keyframes as a group. The interior keyframes share a
+// single time shift; boundary keyframes (the synthesized start at atMs 0 and
+// any keyframe sitting at the motion end, atMs === durationMs) stay pinned in
+// time so selecting them — or selecting everything — never freezes the group
+// horizontally. Pinned boundaries still act as walls the sliding keyframes
+// can't cross, and they still take the group's value shift. Time is clamped to
+// the motion bounds and nearest non-sliding neighbors; values are clamped to
+// the track range. Servo tracks also clamp the group's value shift against the
+// same boundary slew rule used elsewhere (77ms per 1% of travel).
 function moveSelectedKeyframes(keyframes, indices, deltaMs, deltaValue, options = {}) {
-  const source = (keyframes || []).map(k => ({ atMs: k.atMs, value: k.value }));
+  // Clone whole keyframes (not just atMs/value) so per-keyframe metadata such
+  // as `easing` survives the move for both untouched and moved keyframes.
+  const source = (keyframes || []).map(k => ({ ...k }));
   const selected = _sortedUniqueIndices(indices, source.length);
   if (!selected.length) {
     return { keyframes: source, selectedAtMs: [], deltaMs: 0, deltaValue: 0, clamped: false, impossible: false };
@@ -4114,24 +4127,31 @@ function moveSelectedKeyframes(keyframes, indices, deltaMs, deltaValue, options 
   const msPerPct = Math.max(1, parseInt(options.msPerPct, 10) || 77);
   const fitToNeighbors = typeof options.fitToNeighbors === "function" ? options.fitToNeighbors : null;
   const selectedSet = new Set(selected);
+  // Boundary keyframes are pinned in time; only the rest slide. movableSet
+  // feeds _nearestUnselected so pinned boundaries count as walls too.
+  const movable = selected.filter(idx => source[idx].atMs !== 0 && source[idx].atMs !== durationMs);
+  const movableSet = new Set(movable);
+  const shiftMs = idx => (movableSet.has(idx) ? appliedDeltaMs : 0);
 
   let minDeltaMs = -Infinity;
   let maxDeltaMs = Infinity;
-  for (const idx of selected) {
+  for (const idx of movable) {
     const frame = source[idx];
     let lo = -frame.atMs;
     let hi = durationMs - frame.atMs;
-    const prev = _nearestUnselected(source, selectedSet, idx, -1);
-    const next = _nearestUnselected(source, selectedSet, idx, +1);
-    if (prev) lo = Math.max(lo, prev.atMs - frame.atMs);
-    if (next) hi = Math.min(hi, next.atMs - frame.atMs);
+    const prev = _nearestUnselected(source, movableSet, idx, -1);
+    const next = _nearestUnselected(source, movableSet, idx, +1);
+    // Strict (±1ms) against neighbors: landing exactly on a neighbor's atMs
+    // would collide in normalizeKeyframes' time-keyed map and drop a keyframe.
+    if (prev) lo = Math.max(lo, prev.atMs - frame.atMs + 1);
+    if (next) hi = Math.min(hi, next.atMs - frame.atMs - 1);
     minDeltaMs = Math.max(minDeltaMs, lo);
     maxDeltaMs = Math.min(maxDeltaMs, hi);
   }
   if (minDeltaMs > maxDeltaMs) {
     return { keyframes: source, selectedAtMs: selected.map(i => source[i].atMs), deltaMs: 0, deltaValue: 0, clamped: false, impossible: true };
   }
-  const appliedDeltaMs = Math.max(minDeltaMs, Math.min(maxDeltaMs, deltaMs));
+  const appliedDeltaMs = movable.length ? Math.max(minDeltaMs, Math.min(maxDeltaMs, deltaMs)) : 0;
 
   let minDeltaValue = -Infinity;
   let maxDeltaValue = Infinity;
@@ -4140,7 +4160,7 @@ function moveSelectedKeyframes(keyframes, indices, deltaMs, deltaValue, options 
     let lo = minValue - frame.value;
     let hi = maxValue - frame.value;
     if (isServo) {
-      const movedAtMs = frame.atMs + appliedDeltaMs;
+      const movedAtMs = frame.atMs + shiftMs(idx);
       const prev = _nearestUnselected(source, selectedSet, idx, -1);
       const next = _nearestUnselected(source, selectedSet, idx, +1);
       if (prev) {
@@ -4166,7 +4186,8 @@ function moveSelectedKeyframes(keyframes, indices, deltaMs, deltaValue, options 
   for (const idx of selected) {
     const frame = source[idx];
     movedByIndex.set(idx, {
-      atMs: frame.atMs + appliedDeltaMs,
+      ...frame,
+      atMs: frame.atMs + shiftMs(idx),
       value: Math.max(minValue, Math.min(maxValue, frame.value + appliedDeltaValue)),
     });
   }
@@ -4175,11 +4196,15 @@ function moveSelectedKeyframes(keyframes, indices, deltaMs, deltaValue, options 
     const moved = selected.map(idx => movedByIndex.get(idx));
     const prev = _nearestUnselected(source, selectedSet, selected[0], -1);
     const next = _nearestUnselected(source, selectedSet, selected[selected.length - 1], +1);
-    const fitted = fitToNeighbors(moved, prev, next, msPerPct).map(p => ({
-      atMs: p.atMs,
-      value: Math.max(minValue, Math.min(maxValue, p.value)),
-    }));
-    fitted.forEach((point, i) => movedByIndex.set(selected[i], point));
+    const fitted = fitToNeighbors(moved, prev, next, msPerPct);
+    fitted.forEach((point, i) => {
+      const idx = selected[i];
+      movedByIndex.set(idx, {
+        ...movedByIndex.get(idx),
+        atMs: point.atMs,
+        value: Math.max(minValue, Math.min(maxValue, point.value)),
+      });
+    });
   }
 
   const nextKeyframes = source.map((frame, idx) => movedByIndex.get(idx) || frame).sort((a, b) => a.atMs - b.atMs);
@@ -4741,6 +4766,14 @@ motionGridEl.addEventListener("click", e => {
   if (e.altKey) return;   // Alt is reserved for shape-curve drag (servo-rig)
   const trackEl = e.target.closest(".motion-track");
   if (!trackEl || e.target.classList.contains("motion-key")) return;
+  // A plain click on empty track space clears an existing selection rather
+  // than adding a keyframe (servo-p36). Click again (nothing selected) to add.
+  if (motionSelectionCount()) {
+    motionSelectedKeys.clear();
+    renderMotionEditor();
+    setMotionStatus("selection cleared", "phosphor");
+    return;
+  }
   const spec = MOTION_TRACK_SPECS.find(s => trackSpecKey(s) === trackEl.dataset.track);
   if (!spec) return;
   const point = motionPointFromEvent(trackEl, spec, e);
@@ -5052,6 +5085,7 @@ motionGridEl.addEventListener("pointerdown", e => {
     startY: e.clientY,
     baseMotion: null,
     anchorPoint: null,
+    selectionIndices: null,
     moved: false,
   };
   keyEl.setPointerCapture(e.pointerId);
@@ -5082,8 +5116,12 @@ window.addEventListener("pointermove", e => {
   motionDrag.anchorPoint = anchor;
 
   if (motionDrag.mode === "group") {
-    const selectedAtMs = motionSelectedKeys.get(motionDrag.trackKey);
-    const selectedIdx = selectedIndicesForTrack(baseTrack, selectedAtMs);
+    if (!motionDrag.selectionIndices) {
+      const selectedAtMs = motionSelectedKeys.get(motionDrag.trackKey);
+      const initialIdx = selectedIndicesForTrack(baseTrack, selectedAtMs);
+      motionDrag.selectionIndices = initialIdx.length ? initialIdx : [motionDrag.keyIndex];
+    }
+    const selectedIdx = motionDrag.selectionIndices;
     const moved = moveSelectedKeyframes(
       baseTrack.keyframes,
       selectedIdx,

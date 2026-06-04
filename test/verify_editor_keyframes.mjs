@@ -68,9 +68,12 @@ eq("original array not mutated", kfs.length, 4);
   ]);
 }
 {
+  // The keyframe at 3000 is unmoved; the slid pair must stop 1ms short of it
+  // rather than landing on 3000 (which would dedup in normalizeKeyframes).
   const moved = moveSelectedKeyframes(kfs, [1, 2], 2000, 0, { durationMs: 3000, minValue: 0, maxValue: 100, kind: "dc" });
-  eq("move clamps time at motion end", moved.selectedAtMs, [2000, 3000]);
+  eq("move stops 1ms before unmoved neighbor", moved.selectedAtMs, [1999, 2999]);
   eq("move reports clamped time", moved.clamped, true);
+  eq("move never collides keyframe count", moved.keyframes.length, kfs.length);
 }
 {
   const servo = [{ atMs: 0, value: 0 }, { atMs: 1000, value: 10 }, { atMs: 2000, value: 20 }, { atMs: 3000, value: 20 }];
@@ -87,6 +90,38 @@ eq("original array not mutated", kfs.length, 4);
   const moved = moveSelectedKeyframes(kfs, [1, 2], 500, 0, { durationMs: 3000, minValue: 0, maxValue: 100, kind: "dc" });
   eq("move does not mutate source array", kfs, [{ atMs: 0, value: 0 }, { atMs: 1000, value: 50 }, { atMs: 2000, value: 100 }, { atMs: 3000, value: 20 }]);
   eq("move keeps unselected keyframes", moved.keyframes[0], { atMs: 0, value: 0 });
+}
+
+// ---- pin boundary keyframes during group move -------------------------------
+// The start keyframe (atMs 0) and any keyframe at the motion end (atMs ===
+// durationMs) are anchored in time. Selecting them must NOT freeze the whole
+// group horizontally — the interior keyframes still slide. (servo: can't-move
+// left/right regression.)
+{
+  const moved = moveSelectedKeyframes(kfs, [0, 1, 2, 3], 500, 0, { durationMs: 3000, minValue: 0, maxValue: 100, kind: "dc" });
+  eq("select-all pins boundaries, slides interior", moved.selectedAtMs, [0, 1500, 2500, 3000]);
+  eq("select-all keyframes", moved.keyframes, [
+    { atMs: 0, value: 0 },
+    { atMs: 1500, value: 50 },
+    { atMs: 2500, value: 100 },
+    { atMs: 3000, value: 20 },
+  ]);
+}
+{
+  const moved = moveSelectedKeyframes(kfs, [0, 1], -500, 0, { durationMs: 3000, minValue: 0, maxValue: 100, kind: "dc" });
+  eq("start keyframe pinned, neighbor slides left", moved.selectedAtMs, [0, 500]);
+}
+{
+  const moved = moveSelectedKeyframes(kfs, [2, 3], 500, 0, { durationMs: 3000, minValue: 0, maxValue: 100, kind: "dc" });
+  eq("end keyframe pinned, neighbor slides right", moved.selectedAtMs, [2500, 3000]);
+}
+{
+  // Per-keyframe metadata (e.g. easing) must survive the move on both the
+  // moved keyframe and the untouched ones.
+  const eased = [{ atMs: 0, value: 0 }, { atMs: 1000, value: 50, easing: "ease-in" }, { atMs: 2000, value: 100, easing: "s-curve" }];
+  const moved = moveSelectedKeyframes(eased, [1], 200, 0, { durationMs: 3000, minValue: 0, maxValue: 100, kind: "dc" });
+  eq("move preserves moved keyframe easing", moved.keyframes.find(k => k.atMs === 1200)?.easing, "ease-in");
+  eq("move preserves untouched keyframe easing", moved.keyframes.find(k => k.atMs === 2000)?.easing, "s-curve");
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);
