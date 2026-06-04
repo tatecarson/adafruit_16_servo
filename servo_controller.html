@@ -4112,7 +4112,9 @@ function _nearestUnselected(keyframes, selectedSet, start, step) {
 // the track range. Servo tracks also clamp the group's value shift against the
 // same boundary slew rule used elsewhere (77ms per 1% of travel).
 function moveSelectedKeyframes(keyframes, indices, deltaMs, deltaValue, options = {}) {
-  const source = (keyframes || []).map(k => ({ atMs: k.atMs, value: k.value }));
+  // Clone whole keyframes (not just atMs/value) so per-keyframe metadata such
+  // as `easing` survives the move for both untouched and moved keyframes.
+  const source = (keyframes || []).map(k => ({ ...k }));
   const selected = _sortedUniqueIndices(indices, source.length);
   if (!selected.length) {
     return { keyframes: source, selectedAtMs: [], deltaMs: 0, deltaValue: 0, clamped: false, impossible: false };
@@ -4139,8 +4141,10 @@ function moveSelectedKeyframes(keyframes, indices, deltaMs, deltaValue, options 
     let hi = durationMs - frame.atMs;
     const prev = _nearestUnselected(source, movableSet, idx, -1);
     const next = _nearestUnselected(source, movableSet, idx, +1);
-    if (prev) lo = Math.max(lo, prev.atMs - frame.atMs);
-    if (next) hi = Math.min(hi, next.atMs - frame.atMs);
+    // Strict (±1ms) against neighbors: landing exactly on a neighbor's atMs
+    // would collide in normalizeKeyframes' time-keyed map and drop a keyframe.
+    if (prev) lo = Math.max(lo, prev.atMs - frame.atMs + 1);
+    if (next) hi = Math.min(hi, next.atMs - frame.atMs - 1);
     minDeltaMs = Math.max(minDeltaMs, lo);
     maxDeltaMs = Math.min(maxDeltaMs, hi);
   }
@@ -4182,6 +4186,7 @@ function moveSelectedKeyframes(keyframes, indices, deltaMs, deltaValue, options 
   for (const idx of selected) {
     const frame = source[idx];
     movedByIndex.set(idx, {
+      ...frame,
       atMs: frame.atMs + shiftMs(idx),
       value: Math.max(minValue, Math.min(maxValue, frame.value + appliedDeltaValue)),
     });
@@ -4191,11 +4196,15 @@ function moveSelectedKeyframes(keyframes, indices, deltaMs, deltaValue, options 
     const moved = selected.map(idx => movedByIndex.get(idx));
     const prev = _nearestUnselected(source, selectedSet, selected[0], -1);
     const next = _nearestUnselected(source, selectedSet, selected[selected.length - 1], +1);
-    const fitted = fitToNeighbors(moved, prev, next, msPerPct).map(p => ({
-      atMs: p.atMs,
-      value: Math.max(minValue, Math.min(maxValue, p.value)),
-    }));
-    fitted.forEach((point, i) => movedByIndex.set(selected[i], point));
+    const fitted = fitToNeighbors(moved, prev, next, msPerPct);
+    fitted.forEach((point, i) => {
+      const idx = selected[i];
+      movedByIndex.set(idx, {
+        ...movedByIndex.get(idx),
+        atMs: point.atMs,
+        value: Math.max(minValue, Math.min(maxValue, point.value)),
+      });
+    });
   }
 
   const nextKeyframes = source.map((frame, idx) => movedByIndex.get(idx) || frame).sort((a, b) => a.atMs - b.atMs);
