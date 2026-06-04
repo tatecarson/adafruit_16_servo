@@ -32,11 +32,6 @@ uint16_t degreesToPulse(uint8_t servo, uint16_t degrees) {
   return map(degrees, 0, servoConfig[servo].totalDegrees, servoConfig[servo].minPulse, servoConfig[servo].maxPulse);
 }
 
-uint16_t sequenceDegreesToPulse(uint8_t servo, uint16_t degrees) {
-  degrees = constrain(degrees, 0, 180);
-  return map(degrees, 0, 180, servoConfig[servo].minPulse, servoConfig[servo].maxPulse);
-}
-
 uint16_t percentToDegrees(uint8_t servo, uint8_t percent) {
   percent = constrain(percent, 0, 100);
   return map(percent, 0, 100, servoConfig[servo].upDegrees, servoConfig[servo].downDegrees);

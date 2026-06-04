@@ -82,7 +82,6 @@ static void sendPacket(const char* type, const char* payload) {
   udp.endPacket();
 }
 
-void broadcastMessage(const char* text) { sendPacket("MSG", text); }
 void broadcastEvent(const char* name)   { sendPacket("EVT", name); }
 
 void broadcastMotionStart(const char* motionId, unsigned long leadMs) {

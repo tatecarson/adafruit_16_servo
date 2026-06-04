@@ -72,10 +72,10 @@ static void sendControlResponse(WiFiClient& client) {
   client.println("<!doctype html><html><body>");
   client.println("<h1>Servo Cluster Control</h1>");
   client.println("<form action=\"/cmd\" method=\"get\">");
-  client.println("<input name=\"c\" placeholder=\"PLAY 1\" autofocus>");
+  client.println("<input name=\"c\" placeholder=\"MOTION tidal-drift\" autofocus>");
   client.println("<button type=\"submit\">Send</button>");
   client.println("</form>");
-  client.println("<p>Examples: PLAY 1, SPLAY 0, STOP. The command is run locally and broadcast to peers.</p>");
+  client.println("<p>Examples: MOTION &lt;id&gt;, RUN &lt;id&gt;, STOP. The command is run locally and broadcast to peers.</p>");
   syncWritePeersHtml(client);
   client.println("</body></html>");
 }

@@ -20,13 +20,6 @@ uint16_t degreesToPulse(uint8_t servo, uint16_t degrees) {
   return map((uint16_t)adjusted, 0, maxDeg, servoConfig[servo].minPulse, servoConfig[servo].maxPulse);
 }
 
-uint16_t sequenceDegreesToPulse(uint8_t servo, uint16_t degrees) {
-  uint16_t maxDeg = servoConfig[servo].downDegrees;
-  if (maxDeg == 0) maxDeg = servoConfig[servo].totalDegrees;
-  degrees = constrain(degrees, 0, maxDeg);
-  return map(degrees, 0, maxDeg, servoConfig[servo].minPulse, servoConfig[servo].maxPulse);
-}
-
 // Convert a percentage of the configured servo travel to degrees.
 uint16_t percentToDegrees(uint8_t servo, uint8_t percent) {
   percent = constrain(percent, 0, 100);
@@ -88,16 +81,6 @@ void setServoDegrees(uint8_t servo, uint16_t degrees) {
   setServoPulse(servo, pulse);
 }
 
-void setServoSpeed(uint8_t servo, int8_t speed) {
-  (void)servo;
-  setMotorSpeed(speed);
-}
-
-void rampServoSpeed(uint8_t servo, int8_t targetSpeed, uint32_t rampMs) {
-  (void)servo;
-  rampMotorSpeed(targetSpeed, rampMs);
-}
-
 void moveServoAnimated(uint8_t servo, uint16_t targetPulse, uint32_t duration, bool linear) {
   if (servo >= NUM_SERVOS) return;
   cancelMotionPlayback();
@@ -113,19 +96,9 @@ void moveServoAnimated(uint8_t servo, uint16_t targetPulse, uint32_t duration, b
   servoState[servo].linearMove = linear;
 }
 
-void moveSequenceDegrees(uint8_t servo, uint16_t degrees, uint32_t duration) {
-  uint16_t pulse = sequenceDegreesToPulse(servo, degrees);
-  moveServoAnimated(servo, pulse, duration);
-}
-
-void moveServoDegrees(uint8_t servo, uint16_t degrees, uint32_t duration) {
-  if (servo >= NUM_SERVOS) return;
-  moveServoAnimated(servo, degreesToPulse(servo, degrees), duration);
-}
-
-// Same as moveServoDegrees but forces linear (constant-velocity) progress
-// instead of the default ease-in-out — used by DMOVE / UMOVE so motion
-// editor segments connect smoothly without per-keyframe accel/decel.
+// Animated move to a degree target, forcing linear (constant-velocity)
+// progress instead of the default ease-in-out — used by DMOVE / UMOVE so
+// motion editor segments connect smoothly without per-keyframe accel/decel.
 void moveServoDegreesLinear(uint8_t servo, uint16_t degrees, uint32_t duration) {
   if (servo >= NUM_SERVOS) return;
   moveServoAnimated(servo, degreesToPulse(servo, degrees), duration, /*linear=*/true);

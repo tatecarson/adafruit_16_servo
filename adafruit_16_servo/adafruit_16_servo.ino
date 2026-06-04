@@ -8,26 +8,23 @@
     Testing / Calibration:
       S<n> <pos>     - Move servo n to position (degrees, range per servo)
       P<n> <pulse>   - Move servo n to raw pulse (150-600)
-      CAL <n> <min> <max> - Set servo n calibration (pulse values)
+      TPULSE <pulse> - Set servos 0-2 to the same raw pulse for comparison
       SWEEP <n>      - Test sweep servo n
-      OFF <n>        - Turn off servo n
-      RELEASE <n>    - Force-release servo n
+      CAL_GET / CAL_SET <n> <minUs> <maxUs> [<offsetDeg>] - Read / set persisted calibration
+      CAL_RESET <n> / CAL_PULSE <n> <us> - Reset to defaults / live raw-microsecond test
       STATUS         - Show all servo calibrations
     Performance / Installation:
-      MOVE <n> <deg> <ms> - Animated move with easing
       UP <n> <pct>   - Move servo n to absolute percent up
       DOWN <n> <pct> - Move servo n to absolute percent down
       UMOVE <n> <pct> <ms> - Animated move to absolute percent up
       DMOVE <n> <pct> <ms> - Animated move to absolute percent down
-      ALLUP <pct> [ms]   - Move all protected winch servos up together
-      ALLDOWN <pct> [ms] - Move all protected winch servos down together
-      RIG <UP|DOWN> <pct> <spd> [ms] - Manual winch + DC motor test
       MOTION <id>       - Play baked browser Motion by id
       RUN <id> [LOOP]    - Run a baked browser Sequence by id
       RUN AUTO           - Run the active baked Setlist (leader schedules)
       GALLERY [ON|OFF]   - Get/set persistent gallery-mode boot auto-run
       STOP [n]           - Stop all motion or hold one servo
       ROTATE <spd>       - Set DC motor rotation speed
+      BOARDID [n] / STORAGEINFO - Read/set board id; show baked-storage info
       HELP               - Show commands
  ****************************************************/
 

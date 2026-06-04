@@ -150,7 +150,6 @@ extern SetlistRuntime setlistScheduler;
 void initServoDefaults();
 
 uint16_t degreesToPulse(uint8_t servo, uint16_t degrees);
-uint16_t sequenceDegreesToPulse(uint8_t servo, uint16_t degrees);
 uint16_t percentToDegrees(uint8_t servo, uint8_t percent);
 uint16_t upPercentToDegrees(uint8_t servo, uint8_t percentUp);
 float easeInOutCubic(float t);
@@ -159,8 +158,6 @@ uint16_t lerpEased(uint16_t start, uint16_t end, float progress);
 void setServoPulse(uint8_t servo, uint16_t pulse);
 void setServoDegrees(uint8_t servo, uint16_t degrees);
 void moveServoAnimated(uint8_t servo, uint16_t targetPulse, uint32_t duration, bool linear = false);
-void moveServoDegrees(uint8_t servo, uint16_t degrees, uint32_t duration);
-void moveSequenceDegrees(uint8_t servo, uint16_t degrees, uint32_t duration);
 void stopActivePatterns();
 void clearServoStop(uint8_t servo);
 void stopServoNow(uint8_t servo);

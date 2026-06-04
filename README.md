@@ -32,15 +32,10 @@ Interactive Serial interface for the Adafruit PCA9685 16-channel PWM/Servo drive
 | `S<n> <deg>` | `S0 90` | Move servo n to degrees (0-180) |
 | `UP <n> <pct>` | `UP 0 80` | Move servo n to absolute percent up |
 | `DOWN <n> <pct>` | `DOWN 0 30` | Move servo n to absolute percent down |
-| `ALLUP <pct> [ms]` | `ALLUP 100 3000` | Move all protected winch servos up together |
-| `ALLDOWN <pct> [ms]` | `ALLDOWN 25` | Move all protected winch servos down together |
-| `RIG <UP\|DOWN> <pct> <spd> [ms]` | `RIG UP 80 35 3000` | Manual test: move all protected winches and set rotation speed together |
 | `P<n> <pulse>` | `P0 375` | Move servo n to raw pulse value |
 | `TPULSE <pulse>` | `TPULSE 320` | Set servos 0-2 to the same raw pulse for comparison |
-| `CAL <n> <min> <max>` | `CAL 0 160 580` | Set min/max pulse calibration |
+| `CAL <n> <min> <max>` | `CAL 0 160 580` | Set min/max pulse calibration (in-RAM; use `CAL_SET` to persist) |
 | `SWEEP <n>` | `SWEEP 0` | Test sweep through full range |
-| `OFF <n>` | `OFF 0` | Stop sending PWM signal; blocked on protected winches |
-| `RELEASE <n>` | `RELEASE 0` | Force-release a servo by stopping PWM |
 | `STATUS` | `STATUS` | Show all servo calibrations |
 | `HELP` | `HELP` | Show available commands |
 
@@ -48,7 +43,6 @@ Interactive Serial interface for the Adafruit PCA9685 16-channel PWM/Servo drive
 
 | Command | Example | Description |
 |---------|---------|-------------|
-| `MOVE <n> <deg> <ms>` | `MOVE 0 180 2000` | Smooth animated move with easing |
 | `UMOVE <n> <pct> <ms>` | `UMOVE 0 80 3000` | Smooth animated move to absolute percent up |
 | `DMOVE <n> <pct> <ms>` | `DMOVE 0 30 3000` | Smooth animated move to absolute percent down |
 | `MOTION <id>` | `MOTION tidal-drift` | Play a browser-baked Motion from EEPROM |
@@ -57,7 +51,6 @@ Interactive Serial interface for the Adafruit PCA9685 16-channel PWM/Servo drive
 | `GALLERY [ON\|OFF]` | `GALLERY ON` | Get or set the persistent gallery-mode boot flag. When on, the board auto-runs the active Setlist after the boot grace period. |
 | `STOP` | `STOP` | Stop all active motion and sequences |
 | `STOP <n>` | `STOP 0` | Stop and hold one servo at its current position |
-| `MODE <n> STD\|CONT` | `MODE 2 CONT` | Set servo to standard or continuous |
 | `ROTATE <spd>` | `ROTATE 50` | Set installation rotation speed (-100 to 100) |
 
 ### Browser-Baked Motions
@@ -113,8 +106,6 @@ UP 0 80
 DOWN 1 25
 UMOVE 2 90 3000
 DMOVE 2 10 3000
-ALLUP 100 3000
-ALLDOWN 20
 ```
 
 - `0` = minimum calibrated position
@@ -133,35 +124,7 @@ Examples:
 UP 0 30    # servo 0 to 30% up
 UP 0 80    # servo 0 further up, not relative
 DOWN 1 60  # servo 1 to 60% down
-ALLUP 100 3000   # all protected winches move fully up together over 3s
-ALLDOWN 25       # all protected winches move to 25% down
-RIG UP 80 35 3000    # winches go 80% up while rotation ramps to 35%
-RIG DOWN 20 -25      # winches go 20% down while rotation immediately runs reverse
 ```
-
-`RIG` is a manual integration-testing command. It targets all protected non-continuous winches plus the first configured continuous servo, for live testing outside of baked Motion/Sequence playback.
-
-`RIG` parameters:
-
-- `UP` or `DOWN` chooses whether the shared winch target is interpreted as percent up or percent down
-- `<pct>` is the shared winch target position from `0` to `100`
-- `<spd>` is the rotation servo target speed from `-100` to `100`
-- `[ms]` is optional:
-  if omitted, the winches jump to position immediately and the rotation servo jumps to the target speed immediately
-  if provided, the winches move over that duration and the rotation servo ramps to the target speed over the same duration
-
-## Release Safety
-
-The configured winch servos are release-protected. For those channels, `OFF <n>` will not disable holding torque.
-
-Use:
-
-```text
-OFF 0       # blocked on protected winches
-RELEASE 0   # intentionally releases the winch
-```
-
-This avoids accidental drops when testing commands.
 
 ## Calibration Guide
 

@@ -23,11 +23,6 @@ MotionRuntime motionRuntime;
 SequenceRuntime sequenceRunner;
 SetlistRuntime setlistScheduler;
 
-uint16_t sequenceDegreesToPulse(uint8_t servo, uint16_t degrees) {
-  degrees = constrain(degrees, 0, 180);
-  return map(degrees, 0, 180, servoConfig[servo].minPulse, servoConfig[servo].maxPulse);
-}
-
 void cancelMotionPlayback() {}
 
 inline void cancelSetlistPlayback();
