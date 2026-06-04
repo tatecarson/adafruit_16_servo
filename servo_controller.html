@@ -4096,10 +4096,15 @@ function _nearestUnselected(keyframes, selectedSet, start, step) {
   return null;
 }
 
-// Translate selected keyframes as a rigid group. Time is clamped to the motion
-// bounds and nearest unselected neighbors; values are clamped to the track
-// range. Servo tracks also clamp the group's value shift against the same
-// boundary slew rule used elsewhere (77ms per 1% of travel).
+// Translate selected keyframes as a group. The interior keyframes share a
+// single time shift; boundary keyframes (the synthesized start at atMs 0 and
+// any keyframe sitting at the motion end, atMs === durationMs) stay pinned in
+// time so selecting them — or selecting everything — never freezes the group
+// horizontally. Pinned boundaries still act as walls the sliding keyframes
+// can't cross, and they still take the group's value shift. Time is clamped to
+// the motion bounds and nearest non-sliding neighbors; values are clamped to
+// the track range. Servo tracks also clamp the group's value shift against the
+// same boundary slew rule used elsewhere (77ms per 1% of travel).
 function moveSelectedKeyframes(keyframes, indices, deltaMs, deltaValue, options = {}) {
   const source = (keyframes || []).map(k => ({ atMs: k.atMs, value: k.value }));
   const selected = _sortedUniqueIndices(indices, source.length);
@@ -4114,15 +4119,20 @@ function moveSelectedKeyframes(keyframes, indices, deltaMs, deltaValue, options 
   const msPerPct = Math.max(1, parseInt(options.msPerPct, 10) || 77);
   const fitToNeighbors = typeof options.fitToNeighbors === "function" ? options.fitToNeighbors : null;
   const selectedSet = new Set(selected);
+  // Boundary keyframes are pinned in time; only the rest slide. movableSet
+  // feeds _nearestUnselected so pinned boundaries count as walls too.
+  const movable = selected.filter(idx => source[idx].atMs !== 0 && source[idx].atMs !== durationMs);
+  const movableSet = new Set(movable);
+  const shiftMs = idx => (movableSet.has(idx) ? appliedDeltaMs : 0);
 
   let minDeltaMs = -Infinity;
   let maxDeltaMs = Infinity;
-  for (const idx of selected) {
+  for (const idx of movable) {
     const frame = source[idx];
     let lo = -frame.atMs;
     let hi = durationMs - frame.atMs;
-    const prev = _nearestUnselected(source, selectedSet, idx, -1);
-    const next = _nearestUnselected(source, selectedSet, idx, +1);
+    const prev = _nearestUnselected(source, movableSet, idx, -1);
+    const next = _nearestUnselected(source, movableSet, idx, +1);
     if (prev) lo = Math.max(lo, prev.atMs - frame.atMs);
     if (next) hi = Math.min(hi, next.atMs - frame.atMs);
     minDeltaMs = Math.max(minDeltaMs, lo);
@@ -4131,7 +4141,7 @@ function moveSelectedKeyframes(keyframes, indices, deltaMs, deltaValue, options 
   if (minDeltaMs > maxDeltaMs) {
     return { keyframes: source, selectedAtMs: selected.map(i => source[i].atMs), deltaMs: 0, deltaValue: 0, clamped: false, impossible: true };
   }
-  const appliedDeltaMs = Math.max(minDeltaMs, Math.min(maxDeltaMs, deltaMs));
+  const appliedDeltaMs = movable.length ? Math.max(minDeltaMs, Math.min(maxDeltaMs, deltaMs)) : 0;
 
   let minDeltaValue = -Infinity;
   let maxDeltaValue = Infinity;
@@ -4140,7 +4150,7 @@ function moveSelectedKeyframes(keyframes, indices, deltaMs, deltaValue, options 
     let lo = minValue - frame.value;
     let hi = maxValue - frame.value;
     if (isServo) {
-      const movedAtMs = frame.atMs + appliedDeltaMs;
+      const movedAtMs = frame.atMs + shiftMs(idx);
       const prev = _nearestUnselected(source, selectedSet, idx, -1);
       const next = _nearestUnselected(source, selectedSet, idx, +1);
       if (prev) {
@@ -4166,7 +4176,7 @@ function moveSelectedKeyframes(keyframes, indices, deltaMs, deltaValue, options 
   for (const idx of selected) {
     const frame = source[idx];
     movedByIndex.set(idx, {
-      atMs: frame.atMs + appliedDeltaMs,
+      atMs: frame.atMs + shiftMs(idx),
       value: Math.max(minValue, Math.min(maxValue, frame.value + appliedDeltaValue)),
     });
   }

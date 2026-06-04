@@ -89,5 +89,29 @@ eq("original array not mutated", kfs.length, 4);
   eq("move keeps unselected keyframes", moved.keyframes[0], { atMs: 0, value: 0 });
 }
 
+// ---- pin boundary keyframes during group move -------------------------------
+// The start keyframe (atMs 0) and any keyframe at the motion end (atMs ===
+// durationMs) are anchored in time. Selecting them must NOT freeze the whole
+// group horizontally — the interior keyframes still slide. (servo: can't-move
+// left/right regression.)
+{
+  const moved = moveSelectedKeyframes(kfs, [0, 1, 2, 3], 500, 0, { durationMs: 3000, minValue: 0, maxValue: 100, kind: "dc" });
+  eq("select-all pins boundaries, slides interior", moved.selectedAtMs, [0, 1500, 2500, 3000]);
+  eq("select-all keyframes", moved.keyframes, [
+    { atMs: 0, value: 0 },
+    { atMs: 1500, value: 50 },
+    { atMs: 2500, value: 100 },
+    { atMs: 3000, value: 20 },
+  ]);
+}
+{
+  const moved = moveSelectedKeyframes(kfs, [0, 1], -500, 0, { durationMs: 3000, minValue: 0, maxValue: 100, kind: "dc" });
+  eq("start keyframe pinned, neighbor slides left", moved.selectedAtMs, [0, 500]);
+}
+{
+  const moved = moveSelectedKeyframes(kfs, [2, 3], 500, 0, { durationMs: 3000, minValue: 0, maxValue: 100, kind: "dc" });
+  eq("end keyframe pinned, neighbor slides right", moved.selectedAtMs, [2500, 3000]);
+}
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);
