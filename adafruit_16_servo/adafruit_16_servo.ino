@@ -234,7 +234,6 @@ void writeStatusJson(WiFiClient& client) {
     s += '}';
   }
   s += F("],\"motor\":{\"speed\":"); s += motorState.currentSpeed;
-  s += F(",\"ramping\":");       s += (motorState.ramping ? F("true") : F("false"));
   s += F("}}");
 
   client.write((const uint8_t*)s.c_str(), s.length());
@@ -550,7 +549,6 @@ void loop() {
   if (!otaInProgress) {
     unsigned long s = millis();
     updateAnimations();
-    updateSpeedRamps();
     updateMotion();
     updateSequenceRunner();
     updateGalleryGrace();     // fires RUN AUTO when the boot grace elapses

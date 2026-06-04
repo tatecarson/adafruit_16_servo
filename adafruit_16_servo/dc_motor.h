@@ -7,11 +7,6 @@
 
 struct MotorState {
   int8_t currentSpeed;
-  int8_t targetSpeed;
-  int8_t startSpeed;
-  unsigned long rampStartMs;
-  uint32_t rampDurationMs;
-  bool ramping;
 };
 
 extern MotorState motorState;
@@ -38,17 +33,11 @@ inline void motorInit() {
   analogWrite(MOTOR_LPWM_PIN, 0);
 
   motorState.currentSpeed = 0;
-  motorState.targetSpeed = 0;
-  motorState.startSpeed = 0;
-  motorState.rampStartMs = 0;
-  motorState.rampDurationMs = 0;
-  motorState.ramping = false;
 }
 
 inline void setMotorSpeed(int8_t speed) {
   speed = constrain(speed, -100, 100);
   motorState.currentSpeed = speed;
-  motorState.ramping = false;
 
   uint8_t pwmVal = writeMotorOutputs(speed);
 
@@ -61,69 +50,12 @@ inline void setMotorSpeed(int8_t speed) {
 inline void setMotorSpeedQuiet(int8_t speed) {
   speed = constrain(speed, -100, 100);
   motorState.currentSpeed = speed;
-  motorState.ramping = false;
   writeMotorOutputs(speed);
 }
 
-inline void rampMotorSpeed(int8_t targetSpeed, uint32_t rampMs) {
-  targetSpeed = constrain(targetSpeed, -100, 100);
-
-  if (rampMs == 0) {
-    setMotorSpeed(targetSpeed);
-    return;
-  }
-
-  motorState.startSpeed = motorState.currentSpeed;
-  motorState.targetSpeed = targetSpeed;
-  motorState.rampStartMs = millis();
-  motorState.rampDurationMs = rampMs;
-  motorState.ramping = true;
-
-  Serial.print(F("Motor ramping "));
-  Serial.print(motorState.currentSpeed);
-  Serial.print(F("% -> "));
-  Serial.print(targetSpeed);
-  Serial.print(F("% over "));
-  Serial.print(rampMs);
-  Serial.println(F("ms"));
-}
-
 inline void stopMotor() {
-  motorState.ramping = false;
   motorState.currentSpeed = 0;
   analogWrite(MOTOR_RPWM_PIN, 0);
   analogWrite(MOTOR_LPWM_PIN, 0);
   Serial.println(F("Motor stopped"));
-}
-
-inline void updateMotorRamp() {
-  if (!motorState.ramping) return;
-
-  unsigned long elapsed = millis() - motorState.rampStartMs;
-
-  if (elapsed >= motorState.rampDurationMs) {
-    setMotorSpeed(motorState.targetSpeed);
-    motorState.ramping = false;
-    return;
-  }
-
-  float t = (float)elapsed / motorState.rampDurationMs;
-  if (t < 0.5f) {
-    t = 4.0f * t * t * t;
-  } else {
-    // Hand-expand pow(u, 3) as u*u*u — same result, avoids pulling in powf
-    // (~936 bytes) and the double-precision math library it transitively
-    // depends on. The "ease-in-out cubic" curve is unchanged.
-    float u = -2.0f * t + 2.0f;
-    t = 1.0f - (u * u * u) / 2.0f;
-  }
-
-  float interp = (float)motorState.startSpeed +
-    ((float)motorState.targetSpeed - (float)motorState.startSpeed) * t;
-  int8_t speed = (int8_t)constrain((int)interp, -100, 100);
-
-  if (speed != motorState.currentSpeed) {
-    motorState.currentSpeed = speed;
-    writeMotorOutputs(speed);
-  }
 }

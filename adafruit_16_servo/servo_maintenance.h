@@ -58,7 +58,6 @@ void showStatus() {
     Serial.println();
   }
   Serial.println(F("--- DC Motor ---"));
-  Serial.print(F("Speed: ")); Serial.print(motorState.currentSpeed);
-  Serial.print(F("% Ramping: ")); Serial.println(motorState.ramping ? F("yes") : F("no"));
+  Serial.print(F("Speed: ")); Serial.print(motorState.currentSpeed); Serial.println(F("%"));
   Serial.println();
 }

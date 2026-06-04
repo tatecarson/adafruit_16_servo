@@ -74,7 +74,6 @@ static void reset_state() {
     servoState[i].stopped = false;
   }
   motorState.currentSpeed = 0;
-  motorState.ramping = false;
   motionRuntime.active = false;
   _mock_millis = 0;
 }

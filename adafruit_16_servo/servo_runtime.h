@@ -183,4 +183,3 @@ void showStatus();
 void showHelp();
 void processCommand(char* cmd);
 void updateAnimations();
-void updateSpeedRamps();

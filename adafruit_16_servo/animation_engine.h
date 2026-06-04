@@ -31,10 +31,6 @@ void updateAnimations() {
   }
 }
 
-void updateSpeedRamps() {
-  updateMotorRamp();
-}
-
 // WAVE command was removed for OTA-flash partition headroom (servo-dz7).
 // Legacy numbered PLAY/SPLAY/RUN-n playback (updateSequence, updateSpeedSequence,
 // updateSequenceProgram, startNextProgram*) was removed in servo-voc — schema-v1
