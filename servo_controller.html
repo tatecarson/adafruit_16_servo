@@ -4084,6 +4084,114 @@ function deleteKeyframeIndices(keyframes, indices) {
   const drop = new Set(indices);
   return (keyframes || []).filter((_, i) => !drop.has(i)).map(k => ({ atMs: k.atMs, value: k.value }));
 }
+
+function _sortedUniqueIndices(indices, len) {
+  return Array.from(new Set((indices || []).filter(i => Number.isInteger(i) && i >= 0 && i < len))).sort((a, b) => a - b);
+}
+
+function _nearestUnselected(keyframes, selectedSet, start, step) {
+  for (let i = start + step; i >= 0 && i < keyframes.length; i += step) {
+    if (!selectedSet.has(i)) return keyframes[i];
+  }
+  return null;
+}
+
+// Translate selected keyframes as a rigid group. Time is clamped to the motion
+// bounds and nearest unselected neighbors; values are clamped to the track
+// range. Servo tracks also clamp the group's value shift against the same
+// boundary slew rule used elsewhere (77ms per 1% of travel).
+function moveSelectedKeyframes(keyframes, indices, deltaMs, deltaValue, options = {}) {
+  const source = (keyframes || []).map(k => ({ atMs: k.atMs, value: k.value }));
+  const selected = _sortedUniqueIndices(indices, source.length);
+  if (!selected.length) {
+    return { keyframes: source, selectedAtMs: [], deltaMs: 0, deltaValue: 0, clamped: false, impossible: false };
+  }
+
+  const durationMs = Math.max(0, parseInt(options.durationMs, 10) || 0);
+  const minValue = Number.isFinite(options.minValue) ? options.minValue : -Infinity;
+  const maxValue = Number.isFinite(options.maxValue) ? options.maxValue : Infinity;
+  const isServo = options.kind === "servo";
+  const msPerPct = Math.max(1, parseInt(options.msPerPct, 10) || 77);
+  const fitToNeighbors = typeof options.fitToNeighbors === "function" ? options.fitToNeighbors : null;
+  const selectedSet = new Set(selected);
+
+  let minDeltaMs = -Infinity;
+  let maxDeltaMs = Infinity;
+  for (const idx of selected) {
+    const frame = source[idx];
+    let lo = -frame.atMs;
+    let hi = durationMs - frame.atMs;
+    const prev = _nearestUnselected(source, selectedSet, idx, -1);
+    const next = _nearestUnselected(source, selectedSet, idx, +1);
+    if (prev) lo = Math.max(lo, prev.atMs - frame.atMs);
+    if (next) hi = Math.min(hi, next.atMs - frame.atMs);
+    minDeltaMs = Math.max(minDeltaMs, lo);
+    maxDeltaMs = Math.min(maxDeltaMs, hi);
+  }
+  if (minDeltaMs > maxDeltaMs) {
+    return { keyframes: source, selectedAtMs: selected.map(i => source[i].atMs), deltaMs: 0, deltaValue: 0, clamped: false, impossible: true };
+  }
+  const appliedDeltaMs = Math.max(minDeltaMs, Math.min(maxDeltaMs, deltaMs));
+
+  let minDeltaValue = -Infinity;
+  let maxDeltaValue = Infinity;
+  for (const idx of selected) {
+    const frame = source[idx];
+    let lo = minValue - frame.value;
+    let hi = maxValue - frame.value;
+    if (isServo) {
+      const movedAtMs = frame.atMs + appliedDeltaMs;
+      const prev = _nearestUnselected(source, selectedSet, idx, -1);
+      const next = _nearestUnselected(source, selectedSet, idx, +1);
+      if (prev) {
+        const maxDv = Math.floor(Math.abs(movedAtMs - prev.atMs) / msPerPct);
+        lo = Math.max(lo, prev.value - maxDv - frame.value);
+        hi = Math.min(hi, prev.value + maxDv - frame.value);
+      }
+      if (next) {
+        const maxDv = Math.floor(Math.abs(next.atMs - movedAtMs) / msPerPct);
+        lo = Math.max(lo, next.value - maxDv - frame.value);
+        hi = Math.min(hi, next.value + maxDv - frame.value);
+      }
+    }
+    minDeltaValue = Math.max(minDeltaValue, lo);
+    maxDeltaValue = Math.min(maxDeltaValue, hi);
+  }
+  if (minDeltaValue > maxDeltaValue) {
+    return { keyframes: source, selectedAtMs: selected.map(i => source[i].atMs), deltaMs: appliedDeltaMs, deltaValue: 0, clamped: appliedDeltaMs !== deltaMs, impossible: true };
+  }
+  const appliedDeltaValue = Math.max(minDeltaValue, Math.min(maxDeltaValue, deltaValue));
+
+  const movedByIndex = new Map();
+  for (const idx of selected) {
+    const frame = source[idx];
+    movedByIndex.set(idx, {
+      atMs: frame.atMs + appliedDeltaMs,
+      value: Math.max(minValue, Math.min(maxValue, frame.value + appliedDeltaValue)),
+    });
+  }
+
+  if (isServo && fitToNeighbors) {
+    const moved = selected.map(idx => movedByIndex.get(idx));
+    const prev = _nearestUnselected(source, selectedSet, selected[0], -1);
+    const next = _nearestUnselected(source, selectedSet, selected[selected.length - 1], +1);
+    const fitted = fitToNeighbors(moved, prev, next, msPerPct).map(p => ({
+      atMs: p.atMs,
+      value: Math.max(minValue, Math.min(maxValue, p.value)),
+    }));
+    fitted.forEach((point, i) => movedByIndex.set(selected[i], point));
+  }
+
+  const nextKeyframes = source.map((frame, idx) => movedByIndex.get(idx) || frame).sort((a, b) => a.atMs - b.atMs);
+  return {
+    keyframes: nextKeyframes,
+    selectedAtMs: selected.map(idx => movedByIndex.get(idx).atMs),
+    deltaMs: appliedDeltaMs,
+    deltaValue: appliedDeltaValue,
+    clamped: appliedDeltaMs !== deltaMs || appliedDeltaValue !== deltaValue,
+    impossible: false,
+  };
+}
 // === EDITOR-CORE END ===
 
 function addMotionKeyframe(spec, atMs, value) {
@@ -4624,12 +4732,12 @@ motionGridEl.addEventListener("click", e => {
   const clear = e.target.dataset.motionClear;
   if (clear) { clearMotionTrack(clear); return; }   // servo-8et
 
+  if (suppressMotionClicks > 0) { suppressMotionClicks--; return; }  // after marquee/key drag
   // Shift-click a keyframe toggles its selection (servo-dmu).
   if (e.shiftKey && e.target.classList.contains("motion-key") && !e.target.classList.contains("ghost")) {
     toggleKeySelection(e.target.dataset.track, parseInt(e.target.dataset.keyAt, 10));
     return;
   }
-  if (suppressNextMotionClick) { suppressNextMotionClick = false; return; }  // after a marquee drag
   if (e.altKey) return;   // Alt is reserved for shape-curve drag (servo-rig)
   const trackEl = e.target.closest(".motion-track");
   if (!trackEl || e.target.classList.contains("motion-key")) return;
@@ -4808,7 +4916,10 @@ document.addEventListener("mousedown", (e) => {
 }, true);
 
 // ---- Clear row (servo-8et) + marquee select & delete (servo-dmu) ----------
-let suppressNextMotionClick = false;
+// Some interactions synthesize trailing clicks after pointerup. Consume a
+// small number of them so finishing a marquee and immediately grabbing a
+// selected keyframe doesn't toggle the selection off before drag starts.
+let suppressMotionClicks = 0;
 let marqueeDrag = null;   // { trackEl, x0, y0, rectEl, moved }
 
 function clearMotionTrack(key) {
@@ -4835,6 +4946,11 @@ function motionSelectionCount() {
   let n = 0;
   for (const set of motionSelectedKeys.values()) n += set.size;
   return n;
+}
+
+function selectedIndicesForTrack(track, atSet) {
+  if (!track || !atSet?.size) return [];
+  return (track.keyframes || []).map((k, i) => (atSet.has(k.atMs) ? i : -1)).filter(i => i >= 0);
 }
 
 function deleteSelectedKeyframes() {
@@ -4886,7 +5002,10 @@ document.addEventListener("mouseup", (e) => {
   marqueeDrag = null;
   rectEl.remove();
   if (!moved) return;   // plain shift-click (no drag) — let the click handler run
-  suppressNextMotionClick = true;
+  // One click is generated by the marquee release itself; keep one more in
+  // reserve so an immediate Shift-drag on a selected keyframe doesn't toggle
+  // the selection off before the drag threshold is crossed.
+  suppressMotionClicks = 2;
   const box = shapeBoxFromDrag(trackEl, x0, y0, e.clientX, e.clientY);
   const motion = readMotionFromDom();
   const track = motion.tracks.find(t => motionTrackKey(t) === trackEl.dataset.track);
@@ -4922,12 +5041,17 @@ const MOTION_DRAG_THRESHOLD = 4;
 motionGridEl.addEventListener("pointerdown", e => {
   const keyEl = e.target.closest(".motion-key:not(.ghost)");
   if (!keyEl) return;
+  const isSelected = motionSelectedKeys.get(keyEl.dataset.track)?.has(parseInt(keyEl.dataset.keyAt, 10));
   e.preventDefault();
   motionDrag = {
+    mode: isSelected ? "group" : "single",
     trackKey: keyEl.dataset.track,
     keyIndex: parseInt(keyEl.dataset.keyIndex, 10),
+    keyAtMs: parseInt(keyEl.dataset.keyAt, 10),
     startX: e.clientX,
     startY: e.clientY,
+    baseMotion: null,
+    anchorPoint: null,
     moved: false,
   };
   keyEl.setPointerCapture(e.pointerId);
@@ -4939,20 +5063,57 @@ window.addEventListener("pointermove", e => {
     const dy = e.clientY - motionDrag.startY;
     if ((dx * dx + dy * dy) < (MOTION_DRAG_THRESHOLD * MOTION_DRAG_THRESHOLD)) return;
     motionDrag.moved = true;
-    // First real movement — snapshot the motion into the draft so
-    // subsequent mutations stay in memory. getCurrentMotion will return
-    // this until pointerup, so renders see the live drag without us
-    // hitting localStorage.
-    motionDraftOverride = getCurrentMotion();
+    motionDrag.baseMotion = JSON.parse(JSON.stringify(getCurrentMotion()));
+    motionDraftOverride = JSON.parse(JSON.stringify(motionDrag.baseMotion));
   }
   const trackEl = e.target.closest(".motion-track") || motionGridEl.querySelector(`.motion-track[data-track="${CSS.escape(motionDrag.trackKey)}"]`);
   const spec = MOTION_TRACK_SPECS.find(s => trackSpecKey(s) === motionDrag.trackKey);
-  if (!trackEl || !spec || !motionDraftOverride) return;
+  if (!trackEl || !spec || !motionDraftOverride || !motionDrag.baseMotion) return;
   const point = motionPointFromEvent(trackEl, spec, e);
-  const motion = motionDraftOverride;
+  const baseMotion = motionDrag.baseMotion;
+  const motion = JSON.parse(JSON.stringify(baseMotion));
+  const baseTrack = baseMotion.tracks.find(t => motionTrackKey(t) === motionDrag.trackKey);
   const track = motion.tracks.find(t => motionTrackKey(t) === motionDrag.trackKey);
-  if (!track || !track.keyframes[motionDrag.keyIndex]) return;
-  const constrained = constrainServoKeyframePoint(track, spec, motion.durationMs, point, motionDrag.keyIndex);
+  if (!baseTrack || !track || !baseTrack.keyframes[motionDrag.keyIndex]) return;
+  const anchor = motionDrag.anchorPoint || {
+    atMs: baseTrack.keyframes[motionDrag.keyIndex].atMs,
+    value: baseTrack.keyframes[motionDrag.keyIndex].value,
+  };
+  motionDrag.anchorPoint = anchor;
+
+  if (motionDrag.mode === "group") {
+    const selectedAtMs = motionSelectedKeys.get(motionDrag.trackKey);
+    const selectedIdx = selectedIndicesForTrack(baseTrack, selectedAtMs);
+    const moved = moveSelectedKeyframes(
+      baseTrack.keyframes,
+      selectedIdx,
+      point.atMs - anchor.atMs,
+      point.value - anchor.value,
+      {
+        durationMs: motion.durationMs,
+        minValue: spec.min,
+        maxValue: spec.max,
+        kind: spec.kind,
+        msPerPct: SERVO_FEASIBILITY_MS_PER_PERCENT,
+        fitToNeighbors: spec.kind === "servo" ? fitKeyframesToNeighbors : null,
+      }
+    );
+    if (moved.impossible) {
+      setMotionStatus(`blocked · ${spec.label} selection cannot move there`, "alert");
+      return;
+    }
+    track.keyframes = normalizeKeyframes({ ...track, keyframes: moved.keyframes }, motion.durationMs, spec);
+    motionSelectedKeys.set(motionDrag.trackKey, new Set(moved.selectedAtMs));
+    motionDraftOverride = motion;
+    motionDirty = true;
+    if (moved.clamped) {
+      setMotionStatus(`clamped · moved ${selectedIdx.length} keyframe${selectedIdx.length === 1 ? "" : "s"} on ${spec.label}`, "amber");
+    }
+    renderMotionEditor();
+    return;
+  }
+
+  const constrained = constrainServoKeyframePoint(baseTrack, spec, motion.durationMs, point, motionDrag.keyIndex);
   if (!constrained?.point) {
     setMotionStatus(`blocked · ${spec.label} needs more time for ${Math.round(point.value)}%`, "alert");
     return;
@@ -4963,12 +5124,9 @@ window.addEventListener("pointermove", e => {
     value: constrained.point.value,
   };
   track.keyframes = normalizeKeyframes(track, motion.durationMs, spec);
-  // normalizeKeyframes resorts by atMs — find the new index of the
-  // keyframe we just moved so subsequent pointermoves keep targeting
-  // the same logical keyframe, not whichever happens to share its old
-  // slot.
   const movedIdx = track.keyframes.findIndex(k => k.atMs === constrained.point.atMs && k.value === constrained.point.value);
   if (movedIdx >= 0) motionDrag.keyIndex = movedIdx;
+  motionDraftOverride = motion;
   motionDirty = true;
   if (constrained.clamped) {
     setMotionStatus(`clamped · ${spec.label} ${Math.round(constrained.point.value)}% needs ${constrained.point.atMs}ms here`, "amber");
@@ -4977,6 +5135,7 @@ window.addEventListener("pointermove", e => {
 });
 window.addEventListener("pointerup", () => {
   if (!motionDrag) return;
+  const drag = motionDrag;
   const moved = motionDrag.moved;
   const draft = motionDraftOverride;
   motionDrag = null;
@@ -4984,9 +5143,10 @@ window.addEventListener("pointerup", () => {
   // Stationary click → no state changed, don't trigger a save/render
   // that would tear down the keyframe element before dblclick can fire.
   if (!moved) return;
+  suppressMotionClicks = 1;
   // Commit the in-memory drag draft to localStorage once, at the end.
   saveCurrentMotion(draft || readMotionFromDom());
-  setMotionStatus("keyframe moved", "phosphor");
+  setMotionStatus(drag.mode === "group" ? "selection moved" : "keyframe moved", "phosphor");
 });
 
 motionScrubEl.addEventListener("input", () => {

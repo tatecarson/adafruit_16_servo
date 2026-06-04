@@ -1,6 +1,6 @@
-// Tests for the Motion-editor keyframe selection/deletion helpers (servo-dmu).
+// Tests for the Motion-editor keyframe selection/deletion/move helpers.
 // Pure logic lives in the EDITOR-CORE block of servo_controller.html:
-//   keyframesInMarquee, deleteKeyframeIndices
+//   keyframesInMarquee, deleteKeyframeIndices, moveSelectedKeyframes
 //
 // Run: node verify_editor_keyframes.mjs   (or via the make test node run)
 
@@ -29,13 +29,13 @@ const core = html.slice(s + START.length, e);
 
 const dir = mkdtempSync(join(tmpdir(), "editor-core-"));
 const modPath = join(dir, "core.mjs");
-writeFileSync(modPath, core + "\nexport { keyframesInMarquee, deleteKeyframeIndices };\n", "utf8");
+writeFileSync(modPath, core + "\nexport { keyframesInMarquee, deleteKeyframeIndices, moveSelectedKeyframes };\n", "utf8");
 const mod = await import(pathToFileURL(modPath).href);
-for (const fn of ["keyframesInMarquee", "deleteKeyframeIndices"]) {
+for (const fn of ["keyframesInMarquee", "deleteKeyframeIndices", "moveSelectedKeyframes"]) {
   if (typeof mod[fn] !== "function") fail(`EDITOR-CORE does not export ${fn}()`);
 }
 if (failed) process.exit(1);
-const { keyframesInMarquee, deleteKeyframeIndices } = mod;
+const { keyframesInMarquee, deleteKeyframeIndices, moveSelectedKeyframes } = mod;
 
 console.log("=== Motion editor keyframe select/delete ===");
 
@@ -55,6 +55,39 @@ eq("delete two indices", deleteKeyframeIndices(kfs, [1, 2]), [{ atMs: 0, value: 
 eq("delete is order-insensitive", deleteKeyframeIndices(kfs, [2, 1]), [{ atMs: 0, value: 0 }, { atMs: 3000, value: 20 }]);
 eq("delete none returns same", deleteKeyframeIndices(kfs, []), kfs);
 eq("original array not mutated", kfs.length, 4);
+
+// ---- move selected keyframes ------------------------------------------------
+{
+  const moved = moveSelectedKeyframes(kfs, [1, 2], 500, -10, { durationMs: 3000, minValue: 0, maxValue: 100, kind: "dc" });
+  eq("move translates selected times", moved.selectedAtMs, [1500, 2500]);
+  eq("move translates selected values", moved.keyframes, [
+    { atMs: 0, value: 0 },
+    { atMs: 1500, value: 40 },
+    { atMs: 2500, value: 90 },
+    { atMs: 3000, value: 20 },
+  ]);
+}
+{
+  const moved = moveSelectedKeyframes(kfs, [1, 2], 2000, 0, { durationMs: 3000, minValue: 0, maxValue: 100, kind: "dc" });
+  eq("move clamps time at motion end", moved.selectedAtMs, [2000, 3000]);
+  eq("move reports clamped time", moved.clamped, true);
+}
+{
+  const servo = [{ atMs: 0, value: 0 }, { atMs: 1000, value: 10 }, { atMs: 2000, value: 20 }, { atMs: 3000, value: 20 }];
+  const moved = moveSelectedKeyframes(servo, [1, 2], 0, 30, { durationMs: 3000, minValue: 0, maxValue: 100, kind: "servo", msPerPct: 77 });
+  eq("servo move clamps value to feasible boundary", moved.keyframes, [
+    { atMs: 0, value: 0 },
+    { atMs: 1000, value: 12 },
+    { atMs: 2000, value: 22 },
+    { atMs: 3000, value: 20 },
+  ]);
+  eq("servo move reports clamped value", moved.clamped, true);
+}
+{
+  const moved = moveSelectedKeyframes(kfs, [1, 2], 500, 0, { durationMs: 3000, minValue: 0, maxValue: 100, kind: "dc" });
+  eq("move does not mutate source array", kfs, [{ atMs: 0, value: 0 }, { atMs: 1000, value: 50 }, { atMs: 2000, value: 100 }, { atMs: 3000, value: 20 }]);
+  eq("move keeps unselected keyframes", moved.keyframes[0], { atMs: 0, value: 0 });
+}
 
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

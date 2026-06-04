@@ -53,6 +53,102 @@
             {
               "atMs": 0,
               "value": 0
+            },
+            {
+              "atMs": 400,
+              "value": -100
+            },
+            {
+              "atMs": 500,
+              "value": -84
+            },
+            {
+              "atMs": 600,
+              "value": -68
+            },
+            {
+              "atMs": 700,
+              "value": -52
+            },
+            {
+              "atMs": 800,
+              "value": -36
+            },
+            {
+              "atMs": 900,
+              "value": -19
+            },
+            {
+              "atMs": 1000,
+              "value": -3
+            },
+            {
+              "atMs": 1100,
+              "value": 13
+            },
+            {
+              "atMs": 1200,
+              "value": 29
+            },
+            {
+              "atMs": 1300,
+              "value": 45
+            },
+            {
+              "atMs": 1400,
+              "value": 61
+            },
+            {
+              "atMs": 1500,
+              "value": 45
+            },
+            {
+              "atMs": 1600,
+              "value": 29
+            },
+            {
+              "atMs": 1700,
+              "value": 13
+            },
+            {
+              "atMs": 1800,
+              "value": -3
+            },
+            {
+              "atMs": 1900,
+              "value": -19
+            },
+            {
+              "atMs": 2000,
+              "value": -36
+            },
+            {
+              "atMs": 2100,
+              "value": -52
+            },
+            {
+              "atMs": 2200,
+              "value": -68
+            },
+            {
+              "atMs": 2300,
+              "value": -84
+            },
+            {
+              "atMs": 2400,
+              "value": -100
+            },
+            {
+              "atMs": 3200,
+              "value": -100
+            },
+            {
+              "atMs": 4400,
+              "value": 95
+            },
+            {
+              "atMs": 5500,
+              "value": 95
             }
           ]
         },
