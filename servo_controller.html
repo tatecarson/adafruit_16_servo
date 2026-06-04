@@ -3920,23 +3920,6 @@ function _sampleShape(shape, t0, t1, low, high, rng) {
   return _dedupeByAt(pts);
 }
 
-// Sample a shape for a DC track at >= minSpacingMs between events (servo-6g9).
-// DC is step interpolation, so dense keyframes don't smooth motion — they just
-// emit more ROTATEs than Play Live can stream. Point COUNT is derived from the
-// spacing floor; points still land on the 100ms grid. A box narrower than the
-// floor collapses to a single setpoint.
-function _sampleShapeSpaced(shape, t0, t1, low, high, rng, minSpacingMs) {
-  const span = Math.max(0, t1 - t0);
-  const n = Math.max(1, Math.floor(span / Math.max(1, minSpacingMs)) + 1);
-  const pts = [];
-  for (let i = 0; i < n; i++) {
-    const u = n === 1 ? 0 : i / (n - 1);
-    const v = shape === "jitter" ? (rng ? rng() : Math.random()) : shapeValue(shape, u);
-    pts.push({ atMs: Math.round((t0 + u * span) / 100) * 100, value: Math.round(low + v * (high - low)) });
-  }
-  return _dedupeByAt(pts);
-}
-
 // Largest amplitude scale s∈[0,1] making every segment respect the slew limit.
 function _feasibleAmplitudeScale(points, msPerPct) {
   let s = 1;
@@ -3984,14 +3967,16 @@ function _servoSquareTrapezoid(t0, t1, low, high, msPerPct) {
 // Generate keyframes for a shape painted into a box. spec = { kind, min, max }.
 // Returns { keyframes, reducedTo } where reducedTo < 1 means servo amplitude was
 // reduced to respect the slew limit.
-function generateShapeKeyframes({ shape, t0, t1, low, high, spec, msPerPct = 77, rng, dcMinSpacingMs = 2000 }) {
+function generateShapeKeyframes({ shape, t0, t1, low, high, spec, msPerPct = 77, rng }) {
   const a = Math.round(_shapeClamp(low, spec.min, spec.max));
   const b = Math.round(_shapeClamp(high, spec.min, spec.max));
   low = a; high = b;
 
   if (spec.kind !== "servo") {
-    // DC: no slew limit, but space events so Play Live can stream them (servo-6g9).
-    return { keyframes: _sampleShapeSpaced(shape, t0, t1, low, high, rng, dcMinSpacingMs), reducedTo: 1 };
+    // DC: step interpolation, no slew limit. Keep keyframes dense for a faithful
+    // baked speed envelope; Play Live throttles the DC stream at send time
+    // (servo-6g9) so density never blocks live preview.
+    return { keyframes: _sampleShape(shape, t0, t1, low, high, rng), reducedTo: 1 };
   }
 
   if (shape === "square") {
@@ -4254,6 +4239,17 @@ async function sendMotionFrame(motion, atMs, force = false) {
     const rawValue = valueAtTrackTime(track, spec, atMs);
     const value = Math.round(clampMotionValue(rawValue, spec));
     if (!force && lastSent[key] === value) continue;
+    // DC live throttle (servo-6g9): cap DC ROTATE rate per track to the live
+    // throughput floor so a dense DC envelope streams sustainably instead of
+    // being blocked. We skip without recording lastSent, so once the window
+    // elapses the next tick sends the *current* (latest) value — a decimated
+    // preview. Baked MOTION playback runs every setpoint at full rate.
+    if (!force && spec.kind === "dc") {
+      const now = performance.now();
+      const lastAt = motionPlayer.lastDcSentAt?.[key] ?? -Infinity;
+      if (now - lastAt < DC_LIVE_MIN_SPACING_MS) continue;
+      (motionPlayer.lastDcSentAt || (motionPlayer.lastDcSentAt = {}))[key] = now;
+    }
     lastSent[key] = value;
     motionLastDispatched.set(key, value);
     const cmd = spec.kind === "servo"
@@ -4274,7 +4270,7 @@ function stopMotionPlayback(sendStop = false) {
   // fetches will reject from the abort signal and their .finally()
   // handlers will find nothing pending, so no re-trigger.
   clearMotionSendQueues();
-  motionPlayer = { active: false, raf: 0, startedAt: 0, lastSendAt: 0, lastSent: {}, segmentDispatched: new Map(), fetchAbort: null };
+  motionPlayer = { active: false, raf: 0, startedAt: 0, lastSendAt: 0, lastSent: {}, lastDcSentAt: {}, segmentDispatched: new Map(), fetchAbort: null };
   motionPlayEl.disabled = false;
   motionStopEl.disabled = true;
   if (sendStop) {
@@ -4425,10 +4421,10 @@ function playMotionLive() {
     setMotionStatus(`blocked · ${formatServoFeasibilityFinding(feasibility.invalid[0])}`, "alert");
     return;
   }
-  if (dcLive.invalid.length) {
-    setMotionStatus(`blocked · ${formatDcLiveFeasibilityFinding(dcLive.invalid[0])}`, "alert");
-    return;
-  }
+  // Dense DC no longer blocks Play Live (servo-6g9): the DC stream is throttled
+  // at send time (sendMotionFrame) to the live throughput floor, so it previews
+  // a decimated version while the baked MOTION still runs every setpoint. The
+  // warning suffix below tells the operator the live preview is approximate.
   saveCurrentMotion(motion);
   stopMotionPlayback(false);
   const preRoll = _planMotionPreRoll(motion);
@@ -4437,6 +4433,7 @@ function playMotionLive() {
     active: true, raf: 0,
     startedAt: performance.now(), lastSendAt: 0,
     lastSent: {},
+    lastDcSentAt: {},   // per-track DC send timestamps for live throttle (servo-6g9)
     // Per-track segment index map (servo-79q). sendMotionFrame dispatches
     // one DMOVE per segment for servo tracks instead of streaming DOWN at
     // 5Hz; this tracks which segment we've already fired so we only emit
@@ -4674,9 +4671,7 @@ function openShapePopover(clientX, clientY, box) {
 function applyShapeToTrack(shape, box) {
   const { spec, t0, t1, low, high } = box;
   const gen = generateShapeKeyframes({
-    shape, t0, t1, low, high, spec,
-    msPerPct: SERVO_FEASIBILITY_MS_PER_PERCENT,
-    dcMinSpacingMs: DC_LIVE_WARN_SPACING_MS,
+    shape, t0, t1, low, high, spec, msPerPct: SERVO_FEASIBILITY_MS_PER_PERCENT,
   });
   let keyframes = gen.keyframes;
   const reducedTo = gen.reducedTo;
