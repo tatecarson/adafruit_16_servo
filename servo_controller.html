@@ -3989,6 +3989,33 @@ function generateShapeKeyframes({ shape, t0, t1, low, high, spec, msPerPct = 77,
   return { keyframes: _clampSlew(scaled, msPerPct), reducedTo: s };
 }
 
+// Clamp generated keyframe values so the whole chain prev → points → next
+// respects the servo slew limit (msPerPct). prev/next are the kept keyframes
+// just outside the painted box (either may be null). Values are only ever
+// pulled toward the anchors, so the shape eases in/out near tight neighbours
+// instead of creating an impossible jump. Assumes prev↔next are mutually
+// feasible (they are: they bounded a previously-valid track).
+function fitKeyframesToNeighbors(points, prev, next, msPerPct) {
+  if (!points.length || (!prev && !next)) return points;
+  const pts = points.map(p => ({ atMs: p.atMs, value: p.value }));
+  const clampTo = (p, anchor) => {
+    const m = Math.abs(anchor.atMs - p.atMs) / msPerPct;
+    p.value = Math.max(anchor.value - m, Math.min(anchor.value + m, p.value));
+  };
+  const forward = () => { let a = prev; for (const p of pts) { if (a) clampTo(p, a); a = p; } };
+  const backward = () => { let a = next; for (let i = pts.length - 1; i >= 0; i--) { if (a) clampTo(pts[i], a); a = pts[i]; } };
+  forward(); backward(); forward();
+  for (const p of pts) p.value = Math.round(p.value);
+  // Integer feasibility: iterate forward/backward clamps to a fixed point so
+  // rounding (and the two-sided anchors) can't leave any red segment. Each pass
+  // only pulls values toward reachability; converges since prev↔next are
+  // mutually feasible.
+  const fwdInt = () => { let a = prev; for (const p of pts) { if (a) { const m = Math.floor(Math.abs(p.atMs - a.atMs) / msPerPct); p.value = Math.max(a.value - m, Math.min(a.value + m, p.value)); } a = p; } };
+  const bwdInt = () => { let a = next; for (let i = pts.length - 1; i >= 0; i--) { if (a) { const m = Math.floor(Math.abs(a.atMs - pts[i].atMs) / msPerPct); pts[i].value = Math.max(a.value - m, Math.min(a.value + m, pts[i].value)); } a = pts[i]; } };
+  for (let iter = 0; iter < pts.length + 2; iter++) { fwdInt(); bwdInt(); }
+  return pts;
+}
+
 // Replace any keyframes inside [t0,t1] with the generated ones; keep the rest.
 function mergeShapeIntoKeyframes(existing, generated, t0, t1) {
   const lo = Math.min(t0, t1), hi = Math.max(t0, t1);
@@ -4621,21 +4648,44 @@ function openShapePopover(clientX, clientY, box) {
 
 function applyShapeToTrack(shape, box) {
   const { spec, t0, t1, low, high } = box;
-  const { keyframes, reducedTo } = generateShapeKeyframes({
+  const gen = generateShapeKeyframes({
     shape, t0, t1, low, high, spec, msPerPct: SERVO_FEASIBILITY_MS_PER_PERCENT,
   });
+  let keyframes = gen.keyframes;
+  const reducedTo = gen.reducedTo;
   if (!keyframes.length) { setMotionStatus("shape produced no keyframes", "amber"); return; }
-  mutateCurrentMotion(motion => {
-    const track = findTrack(motion, spec);
-    if (!track) return;
-    track.keyframes = mergeShapeIntoKeyframes(track.keyframes, keyframes, t0, t1);
-    track.keyframes = normalizeKeyframes(track, motion.durationMs, spec);
+
+  const motion = readMotionFromDom();
+  const track = findTrack(motion, spec);
+  if (!track) return;
+
+  // Servo: clamp the generated keyframes so they connect feasibly to the kept
+  // keyframes on either side of the box (servo-rig boundary fix). Otherwise the
+  // jump from e.g. the default 0@0 to the first shape point can exceed the slew
+  // limit and bake a red segment.
+  let fitNote = "";
+  if (spec.kind === "servo") {
+    const sorted = (track.keyframes || []).slice().sort((a, b) => a.atMs - b.atMs);
+    const before = sorted.filter(k => k.atMs < t0);
+    const after = sorted.filter(k => k.atMs > t1);
+    const prev = before.length ? before[before.length - 1] : null;
+    const next = after.length ? after[0] : null;
+    const before0 = JSON.stringify(keyframes);
+    keyframes = fitKeyframesToNeighbors(keyframes, prev, next, SERVO_FEASIBILITY_MS_PER_PERCENT);
+    if (JSON.stringify(keyframes) !== before0) fitNote = " · eased to fit neighbours";
+  }
+
+  mutateCurrentMotion(m => {
+    const tr = findTrack(m, spec);
+    if (!tr) return;
+    tr.keyframes = mergeShapeIntoKeyframes(tr.keyframes, keyframes, t0, t1);
+    tr.keyframes = normalizeKeyframes(tr, m.durationMs, spec);
   });
   setMotionStatus(
     reducedTo < 1
-      ? `${shape} inserted · reduced amplitude to fit (${Math.round(reducedTo * 100)}%)`
-      : `${shape} inserted · ${spec.label}`,
-    reducedTo < 1 ? "amber" : "phosphor"
+      ? `${shape} inserted · reduced amplitude to fit (${Math.round(reducedTo * 100)}%)${fitNote}`
+      : `${shape} inserted · ${spec.label}${fitNote}`,
+    reducedTo < 1 || fitNote ? "amber" : "phosphor"
   );
 }
 

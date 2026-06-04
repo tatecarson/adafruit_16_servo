@@ -37,13 +37,13 @@ const core = html.slice(s + START.length, e);
 
 const dir = mkdtempSync(join(tmpdir(), "shape-core-"));
 const modPath = join(dir, "core.mjs");
-writeFileSync(modPath, core + "\nexport { shapeValue, generateShapeKeyframes, mergeShapeIntoKeyframes };\n", "utf8");
+writeFileSync(modPath, core + "\nexport { shapeValue, generateShapeKeyframes, mergeShapeIntoKeyframes, fitKeyframesToNeighbors };\n", "utf8");
 const mod = await import(pathToFileURL(modPath).href);
-for (const fn of ["shapeValue", "generateShapeKeyframes", "mergeShapeIntoKeyframes"]) {
+for (const fn of ["shapeValue", "generateShapeKeyframes", "mergeShapeIntoKeyframes", "fitKeyframesToNeighbors"]) {
   if (typeof mod[fn] !== "function") fail(`SHAPE-CORE does not export ${fn}()`);
 }
 if (failed) process.exit(1);
-const { shapeValue, generateShapeKeyframes, mergeShapeIntoKeyframes } = mod;
+const { shapeValue, generateShapeKeyframes, mergeShapeIntoKeyframes, fitKeyframesToNeighbors } = mod;
 
 const MS_PER_PCT = 77;
 function feasible(kfs) {
@@ -131,6 +131,55 @@ approx("easeOut(0.5)=0.75", shapeValue("easeOut", 0.5), 0.75);
   assert("merge drops in-range existing keyframe", !ats.includes(1500));
   assert("merge includes generated", ats.includes(1000) && ats.includes(2000));
   assert("merge is sorted by atMs", ats.every((v, i) => i === 0 || v >= ats[i - 1]));
+}
+
+function chainFeasible(seq) {
+  for (let i = 1; i < seq.length; i++) {
+    const dt = seq[i].atMs - seq[i - 1].atMs;
+    const dv = Math.abs(seq[i].value - seq[i - 1].value);
+    if (dv * MS_PER_PCT > dt + 1e-6) return false;
+  }
+  return true;
+}
+
+// ---- fitKeyframesToNeighbors: boundary feasibility (the reported bug) -------
+{
+  // The exact bug: a track starts at 0@0; shape jumps to 52 by 1200ms.
+  const prev = { atMs: 0, value: 0 };
+  const pts = [{ atMs: 1200, value: 52 }, { atMs: 1300, value: 53 }, { atMs: 2000, value: 60 }];
+  const fitted = fitKeyframesToNeighbors(pts, prev, null, MS_PER_PCT);
+  assert("fit makes prev→shape feasible", chainFeasible([prev, ...fitted]));
+  assert("first point reachable from prev (≤15 in 1200ms)", fitted[0].value <= Math.floor(1200 / MS_PER_PCT));
+}
+{
+  // Trailing anchor: shape must be able to reach a kept keyframe after it.
+  const next = { atMs: 5000, value: 0 };
+  const pts = [{ atMs: 3000, value: 60 }, { atMs: 4900, value: 62 }];
+  const fitted = fitKeyframesToNeighbors(pts, null, next, MS_PER_PCT);
+  assert("fit makes shape→next feasible", chainFeasible([...fitted, next]));
+}
+{
+  // Both anchors (mutually feasible, as they are in a previously-valid track).
+  const prev = { atMs: 0, value: 0 }, next = { atMs: 8000, value: 0 };
+  const pts = [{ atMs: 2000, value: 100 }, { atMs: 4000, value: 0 }, { atMs: 6000, value: 100 }];
+  const fitted = fitKeyframesToNeighbors(pts, prev, next, MS_PER_PCT);
+  assert("fit makes prev→shape→next feasible", chainFeasible([prev, ...fitted, next]));
+}
+{
+  // No neighbors → unchanged (still feasible if input was).
+  const pts = [{ atMs: 0, value: 0 }, { atMs: 1000, value: 10 }];
+  eq("no neighbors leaves points unchanged", fitKeyframesToNeighbors(pts, null, null, MS_PER_PCT), pts);
+}
+
+// ---- end-to-end: generate + fit + merge yields a fully feasible servo track -
+{
+  const existing = [{ atMs: 0, value: 0 }, { atMs: 8000, value: 0 }];
+  const gen = generateShapeKeyframes({ shape: "sine", t0: 1000, t1: 3000, low: 0, high: 100, spec: SERVO, msPerPct: MS_PER_PCT }).keyframes;
+  const prev = { atMs: 0, value: 0 };          // nearest kept before box
+  const next = { atMs: 8000, value: 0 };       // nearest kept after box
+  const fitted = fitKeyframesToNeighbors(gen, prev, next, MS_PER_PCT);
+  const merged = mergeShapeIntoKeyframes(existing, fitted, 1000, 3000);
+  assert("merged servo track is fully feasible", chainFeasible(merged));
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);
