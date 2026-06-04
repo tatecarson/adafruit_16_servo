@@ -5052,6 +5052,7 @@ motionGridEl.addEventListener("pointerdown", e => {
     startY: e.clientY,
     baseMotion: null,
     anchorPoint: null,
+    selectionIndices: null,
     moved: false,
   };
   keyEl.setPointerCapture(e.pointerId);
@@ -5082,8 +5083,12 @@ window.addEventListener("pointermove", e => {
   motionDrag.anchorPoint = anchor;
 
   if (motionDrag.mode === "group") {
-    const selectedAtMs = motionSelectedKeys.get(motionDrag.trackKey);
-    const selectedIdx = selectedIndicesForTrack(baseTrack, selectedAtMs);
+    if (!motionDrag.selectionIndices) {
+      const selectedAtMs = motionSelectedKeys.get(motionDrag.trackKey);
+      const initialIdx = selectedIndicesForTrack(baseTrack, selectedAtMs);
+      motionDrag.selectionIndices = initialIdx.length ? initialIdx : [motionDrag.keyIndex];
+    }
+    const selectedIdx = motionDrag.selectionIndices;
     const moved = moveSelectedKeyframes(
       baseTrack.keyframes,
       selectedIdx,
