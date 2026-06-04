@@ -2676,7 +2676,13 @@ galleryToggle.addEventListener("click", () => {
 // removed in servo-voc — those firmware commands no longer exist.)
 window.addEventListener("keydown", e => {
   if (e.target.tagName === "INPUT" || e.target.tagName === "SELECT") return;
-  if (e.key === "Escape") { broadcastCommand("STOP"); }
+  // Escape clears any motion-editor keyframe selection (servo-p36). It no
+  // longer broadcasts STOP — use the STOP control in MASTER COMMAND for that.
+  if (e.key === "Escape" && motionSelectionCount()) {
+    motionSelectedKeys.clear();
+    renderMotionEditor();
+    setMotionStatus("selection cleared", "phosphor");
+  }
 });
 
 // Double-click any text field to select all its contents. Native double-click
@@ -4751,6 +4757,14 @@ motionGridEl.addEventListener("click", e => {
   if (e.altKey) return;   // Alt is reserved for shape-curve drag (servo-rig)
   const trackEl = e.target.closest(".motion-track");
   if (!trackEl || e.target.classList.contains("motion-key")) return;
+  // A plain click on empty track space clears an existing selection rather
+  // than adding a keyframe (servo-p36). Click again (nothing selected) to add.
+  if (motionSelectionCount()) {
+    motionSelectedKeys.clear();
+    renderMotionEditor();
+    setMotionStatus("selection cleared", "phosphor");
+    return;
+  }
   const spec = MOTION_TRACK_SPECS.find(s => trackSpecKey(s) === trackEl.dataset.track);
   if (!spec) return;
   const point = motionPointFromEvent(trackEl, spec, e);
