@@ -1746,7 +1746,7 @@
 
     <div class="seq-tools">
       <div class="seq-transport">
-        <button class="cmd baked" id="seqPlay" title="Runs this sequence on the boards — dispatches each step as a command (MOTION/RUN steps play baked motions/sequences on-device). Not browser-streamed.">▣ Play</button>
+        <button class="cmd baked" id="seqPlay" title="Runs this sequence on the boards — dispatches each step as a command (MOTION/RUN steps play baked motions/sequences on-device). Not browser-streamed.">▶ Play</button>
         <button class="cmd compact" id="seqPause" disabled>Pause</button>
         <button class="cmd compact alert" id="seqStop" disabled>Stop</button>
         <label style="display:inline-flex; gap:6px; align-items:center; color:var(--ink-dim); font:700 9px/1 var(--label); text-transform:uppercase; letter-spacing:.22em">
@@ -1831,7 +1831,7 @@
 
     <div class="seq-tools">
       <div class="seq-transport">
-        <button class="cmd baked" id="slPlay" title="Runs this setlist on the boards — dispatches RUN <sequence> commands the firmware plays on-device. Not browser-streamed.">▣ Play</button>
+        <button class="cmd baked" id="slPlay" title="Runs this setlist on the boards — dispatches RUN <sequence> commands the firmware plays on-device. Not browser-streamed.">▶ Play</button>
         <button class="cmd compact" id="slPause" disabled>Pause</button>
         <button class="cmd compact alert" id="slStop" disabled>Stop</button>
         <label style="display:inline-flex; gap:6px; align-items:center; color:var(--ink-dim); font:700 9px/1 var(--label); text-transform:uppercase; letter-spacing:.22em">
@@ -1959,7 +1959,7 @@
         <label style="display:inline-flex; gap:6px; align-items:center; color:var(--ink-dim); font:700 9px/1 var(--label); text-transform:uppercase; letter-spacing:.22em">
           <input id="motionLoop" type="checkbox"> Loop
         </label>
-        <button class="cmd compact baked" id="motionFire" title="Plays the BAKED motion on the boards (sends one MOTION command). Full-rate, cluster-synced — this is what the gallery actually runs. Re-bake to apply edits.">▣ Play (baked)</button>
+        <button class="cmd compact baked" id="motionFire" title="Plays the BAKED motion on the boards (sends one MOTION command). Full-rate, cluster-synced — this is what the gallery actually runs. Re-bake to apply edits.">▶ Play (baked)</button>
         <button class="cmd compact amber" id="motionSave">Save</button>
         <label class="motion-time">
           <span>playhead</span>
@@ -3219,7 +3219,7 @@ function renderBakedPanel() {
       return `<div class="baked-row">`
         + `<span class="bn">${escapeHtml(mo.name || mo.id)}</span>`
         + `<code class="bid">id: ${escapeHtml(mo.id)}</code>`
-        + `<button class="cmd compact baked" data-baked-play data-ip="${escapeHtml(ip)}" data-id="${escapeHtml(mo.id)}" title="Plays the BAKED motion ${escapeHtml(mo.id)} on ${escapeHtml(ip)} (on-device, full-rate).">▣ Play</button>`
+        + `<button class="cmd compact baked" data-baked-play data-ip="${escapeHtml(ip)}" data-id="${escapeHtml(mo.id)}" title="Plays the BAKED motion ${escapeHtml(mo.id)} on ${escapeHtml(ip)} (on-device, full-rate).">▶ Play</button>`
         + `<span class="bmeta">${trackCount} track${trackCount === 1 ? "" : "s"}</span>`
         + `</div>`;
     }).join("");
