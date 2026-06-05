@@ -7,7 +7,6 @@
 void syncBegin();
 void syncPoll();
 void sendHeartbeat();
-void broadcastMessage(const char* text);
 void broadcastEvent(const char* name);
 // servo-vna: send a MOTION_START — "begin Motion <id> in <leadMs> ms".
 // Relative, not absolute: every board (originator included) arms the Motion at

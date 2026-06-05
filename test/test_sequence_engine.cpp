@@ -45,11 +45,6 @@ void processCommand(char* cmd) {
 // isn't loaded either — provide one for the runner's own start path.
 void cancelMotionPlayback() {}
 
-uint16_t sequenceDegreesToPulse(uint8_t servo, uint16_t degrees) {
-  degrees = constrain(degrees, 0, 180);
-  return map(degrees, 0, 180, servoConfig[servo].minPulse, servoConfig[servo].maxPulse);
-}
-
 #include "../adafruit_16_servo/sequence_engine.h"
 
 static int _tests_run = 0, _tests_passed = 0, _tests_failed = 0;

@@ -2303,7 +2303,7 @@ function renderDcInstrument(motor) {
   const cls = ["instrument", "dc"];
   if (spd > 0) cls.push("fwd");
   else if (spd < 0) cls.push("rev");
-  const stateWord = motor.ramping ? "ramping" : (spd === 0 ? "stop" : (spd > 0 ? "fwd" : "rev"));
+  const stateWord = spd === 0 ? "stop" : (spd > 0 ? "fwd" : "rev");
   // Bipolar fill — width is |spd|% of half the bar (50%), positioned from center.
   const halfPct = Math.min(100, Math.abs(spd)) / 2;
   const left = spd >= 0 ? 50 : (50 - halfPct);
@@ -2327,7 +2327,7 @@ function renderDcInstrument(motor) {
       <div class="ins-bipolar-labels"><span>← rev</span><span class="mid">0</span><span>fwd →</span></div>
     </div>
     <footer class="ins-foot">
-      <span class="k">${motor.ramping ? 'ramping' : 'commit'}</span><span>−100 ┄ +100</span>
+      <span class="k">commit</span><span>−100 ┄ +100</span>
     </footer>
   </article>`;
 }
@@ -2426,12 +2426,11 @@ function renderPills(s) {
       ? `<span class="pill on">MOTION <span class="v">${motion.id || '—'}</span></span>`
       : `<span class="pill">MOTION <span class="v">idle</span></span>`);
   }
-  // DC motor status — sign-aware speed (-100..+100) plus a ramping indicator
-  // when motorState.ramping is true. Quiet when at rest.
+  // DC motor status — sign-aware speed (-100..+100). Quiet when at rest.
   if (motor) {
     const spd = motor.speed | 0;
     const cls = spd === 0 ? "" : (spd > 0 ? " on" : " warn");
-    out.push(`<span class="pill${cls}">DC <span class="v">${spd > 0 ? '+' : ''}${spd}</span>${motor.ramping ? ' ⇢' : ''}</span>`);
+    out.push(`<span class="pill${cls}">DC <span class="v">${spd > 0 ? '+' : ''}${spd}</span></span>`);
   }
   return out.join("");
 }
