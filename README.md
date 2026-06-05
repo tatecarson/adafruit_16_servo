@@ -23,17 +23,7 @@ limits), see [`docs/sequencer-schema.md`](docs/sequencer-schema.md).
 - **[Adafruit PCA9685](http://www.adafruit.com/products/815)** 16-channel PWM/servo driver (I2C).
 - **goBILDA 2000-series 5-turn winch servos** on channels 0–2 (configured in `servo_setup.h`).
 - **DC gear motor** on a dual-PWM driver (`RPWM` = pin 10, `LPWM` = pin 11) for installation rotation.
-- External 5–6 V supply for the servos and motor — do not power them from USB.
-
-### Wiring (PCA9685 ↔ Arduino)
-
-| PCA9685 | Arduino |
-|---------|---------|
-| VCC     | 5V      |
-| GND     | GND     |
-| SDA     | SDA (A4)|
-| SCL     | SCL (A5)|
-| V+      | External 5–6 V servo power |
+- External 5–6 V supply for the servos and 12V/10A for the motor.
 
 ## Setup
 
