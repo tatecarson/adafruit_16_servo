@@ -1,212 +1,240 @@
-# Adafruit 16-Channel Servo Calibration & Control
+# Servo Cluster — Kinetic Installation Control
 
-Interactive Serial interface for the Adafruit PCA9685 16-channel PWM/Servo driver board.
+Firmware and a browser control surface for a multi-board kinetic installation. Each
+**Arduino UNO R4 WiFi** drives a PCA9685 16-channel PWM board (winch servos) plus a
+DC gear motor, and the boards run as a WiFi cluster that plays browser-authored
+motion timelines in sync.
+
+The system has two halves:
+
+- **Firmware** (`adafruit_16_servo/`) — runs on each board. Drives servos and the DC
+  motor, parses commands over Serial and HTTP, stores baked content in EEPROM, and
+  keeps the cluster in step over UDP.
+- **Browser dashboard** (`servo_controller.html`) — a single-file web app that
+  monitors the boards, authors Motions/Sequences/Setlists, bakes them to the boards,
+  calibrates servos, and pushes firmware over the air.
+
+For the content data model (Motion/Sequence/Setlist JSON, interpolation rules, slew
+limits), see [`docs/sequencer-schema.md`](docs/sequencer-schema.md).
 
 ## Hardware
 
-- [Adafruit 16-Channel PWM/Servo Driver](http://www.adafruit.com/products/815)
-- Arduino (Uno, Nano, Mega, etc.)
-- Standard analog servos
+- **Arduino UNO R4 WiFi** — one per board (the cluster is built around three).
+- **[Adafruit PCA9685](http://www.adafruit.com/products/815)** 16-channel PWM/servo driver (I2C).
+- **goBILDA 2000-series 5-turn winch servos** on channels 0–2 (configured in `servo_setup.h`).
+- **DC gear motor** on a dual-PWM driver (`RPWM` = pin 10, `LPWM` = pin 11) for installation rotation.
+- External 5–6 V supply for the servos and motor — do not power them from USB.
 
-## Wiring
+### Wiring (PCA9685 ↔ Arduino)
 
 | PCA9685 | Arduino |
 |---------|---------|
 | VCC     | 5V      |
 | GND     | GND     |
-| SDA     | A4 (SDA)|
-| SCL     | A5 (SCL)|
-| V+      | External 5-6V servo power |
+| SDA     | SDA (A4)|
+| SCL     | SCL (A5)|
+| V+      | External 5–6 V servo power |
 
-## Installation
+## Setup
 
-1. Install the [Adafruit PWM Servo Driver Library](https://github.com/adafruit/Adafruit-PWM-Servo-Driver-Library) via Arduino Library Manager
-2. Edit `servo_setup.h` to match your servos (min/max pulses, standard vs continuous, stop pulse)
-3. Upload `adafruit_16_servo.ino` to your Arduino
-4. Open Serial Monitor at 9600 baud
+1. **Credentials.** Copy `adafruit_16_servo/Secrets.h.example` to
+   `adafruit_16_servo/Secrets.h` and fill in your WiFi SSID/password and an OTA
+   password. `Secrets.h` is gitignored, so real credentials never get committed.
+2. **Per-channel servo config.** Edit `adafruit_16_servo/servo_setup.h` for your
+   mechanism — travel (`totalDegrees`/`downDegrees`), direction (`reverseDir`), and
+   pulse limits. The shipped config is three 5-turn winches at 1800° travel.
+3. **Flash the first time over USB:**
+   ```bash
+   arduino-cli compile --fqbn arduino:renesas_uno:unor4wifi adafruit_16_servo
+   arduino-cli upload  --fqbn arduino:renesas_uno:unor4wifi -p /dev/<port> adafruit_16_servo
+   ```
+   Or use the Arduino IDE. After the first flash, update boards over the air (see
+   [Firmware updates](#firmware-updates-ota)).
+4. **Open the dashboard.** Serve the page from the project folder so authored content
+   persists to `library.json`:
+   ```bash
+   python3 servo_library_server.py
+   ```
+   Then open <http://127.0.0.1:4173/servo_controller.html>. Without the helper the
+   page still runs, falling back to browser `localStorage`.
 
-## Commands
+On boot each board joins WiFi, prints its IP over Serial (115200 baud), serves its
+HTTP API, and announces itself to the cluster over UDP.
+
+## Browser dashboard
+
+The page is organized into numbered sections:
+
+- **`// 01 Master Command`** — free-text command terminal and a global `STOP`. Commands
+  go to one board over HTTP and mirror to the rest over UDP.
+- **`// 02 Board Telemetry`** — live cards per board: online state, servo positions, DC
+  motor speed, and what's currently playing.
+- **`// 03 Sequencer Bake`** — import/export the library, slice it per board, and POST
+  it to the boards' EEPROM. **Pull from Boards** rebuilds the editor library from
+  what's physically baked.
+- **`// 04 Sequencer`** — author Sequences: ordered steps (each a command + duration +
+  target board), drag-reorder, hold points, record mode, preview, scrub, and looped
+  playback.
+- **`// 05 Setlist`** — group Sequences into playlists for unattended playback, with an
+  ordered or weighted-shuffle scheduler and a **Simulate hour** preview that
+  fast-forwards an hour of scheduling in the browser.
+- **`// 06 Motion`** — the keyframe motion editor: per-channel servo and DC tracks,
+  draggable keyframes, marquee + group selection, shape curves, and slew-feasibility
+  warnings. Play live (browser-streamed) or fire the baked motion (on-device).
+- **`// 07 Firmware Upload`** — OTA flash one board or all of them (see below).
+
+## Content model: Motions, Sequences, Setlists
+
+- A **Motion** is a keyframed timeline of servo (percent-of-travel) and DC (signed
+  speed) tracks. Authored in `// 06`, baked to EEPROM, played by `MOTION <id>`.
+- A **Sequence** is an ordered list of command steps with durations. Played by
+  `RUN <id> [LOOP]`.
+- A **Setlist** is a playlist of Sequences with a scheduler (ordered or weighted
+  shuffle, `minGapEntries`, per-entry `repeat`/`gapMs`). Played by `RUN AUTO`.
+- **Gallery mode** (`GALLERY ON`) makes a board auto-run the active Setlist after a
+  boot grace period, for unattended exhibition.
+
+Each board stores and plays only its own sliced tracks. The full schema, interpolation
+rules, and measured winch slew limits live in
+[`docs/sequencer-schema.md`](docs/sequencer-schema.md).
+
+## Cluster sync
+
+Boards coordinate over UDP (port 4210) with no shared clock:
+
+- Each board broadcasts a **heartbeat** every second; peers track liveness and uptime
+  (visible at `/peers.json`).
+- A command sent to one board is **mirrored** to peers, so `RUN`/`STOP`/etc. apply
+  cluster-wide.
+- **Synchronized Motion start** is relative: the originator unicasts "begin Motion
+  `<id>` in `<leadMs>` ms" to each peer, and every board arms the Motion on its own
+  `millis()` clock — so starts line up without clock synchronization.
+- For `RUN AUTO`, only the configured leader board schedules; it mirrors `RUN`/`STOP`
+  to the followers.
+
+## Command reference
+
+Commands work over Serial (115200 baud) and over HTTP via
+`GET /cmd?c=<command>` (the receiving board mirrors them to the cluster).
+
+### Servo + motor
 
 | Command | Example | Description |
 |---------|---------|-------------|
-| `S<n> <deg>` | `S0 90` | Move servo n to degrees (0-180) |
-| `UP <n> <pct>` | `UP 0 80` | Move servo n to absolute percent up |
-| `DOWN <n> <pct>` | `DOWN 0 30` | Move servo n to absolute percent down |
-| `P<n> <pulse>` | `P0 375` | Move servo n to raw pulse value |
-| `TPULSE <pulse>` | `TPULSE 320` | Set servos 0-2 to the same raw pulse for comparison |
-| `CAL <n> <min> <max>` | `CAL 0 160 580` | Set min/max pulse calibration (in-RAM; use `CAL_SET` to persist) |
-| `SWEEP <n>` | `SWEEP 0` | Test sweep through full range |
-| `STATUS` | `STATUS` | Show all servo calibrations |
-| `HELP` | `HELP` | Show available commands |
+| `S<n> <deg>` | `S0 90` | Move servo n to a degree position |
+| `P<n> <pulse>` | `P0 375` | Move servo n to a raw pulse (testing/calibration) |
+| `UP <n> <pct>` | `UP 0 80` | Move servo n to an absolute percent "up" |
+| `DOWN <n> <pct>` | `DOWN 0 30` | Move servo n to an absolute percent "down" |
+| `UMOVE <n> <pct> <ms>` | `UMOVE 0 80 3000` | Animated `UP` over a duration |
+| `DMOVE <n> <pct> <ms>` | `DMOVE 0 30 3000` | Animated `DOWN` over a duration |
+| `ROTATE <spd>` | `ROTATE 50` | Set DC motor speed, −100…100 (0 = stop) |
+| `SWEEP <n>` | `SWEEP 0` | Sweep servo n through its range |
+| `TPULSE <pulse>` | `TPULSE 320` | Set servos 0–2 to the same raw pulse for comparison |
+| `STOP` / `STOP <n>` | `STOP 0` | Stop all motion, or hold one servo in place |
 
-## Animation Commands
+### Playback
 
 | Command | Example | Description |
 |---------|---------|-------------|
-| `UMOVE <n> <pct> <ms>` | `UMOVE 0 80 3000` | Smooth animated move to absolute percent up |
-| `DMOVE <n> <pct> <ms>` | `DMOVE 0 30 3000` | Smooth animated move to absolute percent down |
-| `MOTION <id>` | `MOTION tidal-drift` | Play a browser-baked Motion from EEPROM |
-| `RUN <id> [LOOP]` | `RUN evening-arc` | Run a browser-baked Sequence by id (schema v1) |
-| `RUN AUTO` | `RUN AUTO` | Run the active baked Setlist forever (schema v1). The leader board (`schedulerConfig.leaderBoardId`) schedules entries — ordered or weighted shuffle honoring `minGapEntries`, per-entry `repeat`/`gapMs` — and mirrors `RUN`/`STOP` to followers. `STOP` halts it. (`avoidSameTag`/`moodArc` are schema-v2, not yet honored.) |
-| `GALLERY [ON\|OFF]` | `GALLERY ON` | Get or set the persistent gallery-mode boot flag. When on, the board auto-runs the active Setlist after the boot grace period. |
-| `STOP` | `STOP` | Stop all active motion and sequences |
-| `STOP <n>` | `STOP 0` | Stop and hold one servo at its current position |
-| `ROTATE <spd>` | `ROTATE 50` | Set installation rotation speed (-100 to 100) |
+| `MOTION <id>` | `MOTION tidal-drift` | Play a baked Motion from EEPROM |
+| `RUN <id> [LOOP]` | `RUN evening-arc LOOP` | Run a baked Sequence (optionally looping) |
+| `RUN AUTO` | `RUN AUTO` | Run the active Setlist forever (leader schedules, followers mirror) |
+| `GALLERY [ON\|OFF]` | `GALLERY ON` | Get/set the persistent gallery-mode boot flag |
 
-### Browser-Baked Motions
+### Calibration + status
 
-`MOTION <id>` plays a Motion from the active EEPROM bake uploaded through the browser `/sequences` endpoint.
+| Command | Example | Description |
+|---------|---------|-------------|
+| `CAL <n> <min> <max>` | `CAL 0 160 580` | Set pulse limits in RAM (lost on reboot) |
+| `CAL_GET` | `CAL_GET` | Print persisted calibration for all channels |
+| `CAL_SET <n> <minUs> <maxUs> [<offsetDeg>]` | `CAL_SET 0 600 2400 3` | Persist calibration + angle trim to EEPROM |
+| `CAL_RESET <n>` | `CAL_RESET 0` | Restore channel n to defaults |
+| `CAL_PULSE <n> <us>` | `CAL_PULSE 0 1500` | Drive a raw microsecond pulse to find limits live |
+| `STATUS` | `STATUS` | Print servo calibrations and DC motor state |
+| `STORAGEINFO` | `STORAGEINFO` | Show baked-storage / board-id info |
+| `BOARDID [n]` | `BOARDID 2` | Read or set this board's cluster id |
+| `HELP` | `HELP` | List commands |
 
-```text
-MOTION tidal-drift
-STOP
+## Calibration
+
+Each channel maps a 0–100% travel range onto a calibrated pulse window, with an
+optional `offsetDeg` trim. Calibration **persists in EEPROM** across power cycles.
+
+Find a channel's limits, then persist them:
+
+1. `SWEEP 0` — watch and listen; buzzing or straining means a pulse is past the
+   physical limit.
+2. `CAL_PULSE 0 600` / `CAL_PULSE 0 2400` — nudge the raw microsecond endpoints until
+   the servo reaches its travel without straining.
+3. `CAL_SET 0 600 2400` — persist the window (add a fourth value to trim the angle,
+   e.g. `CAL_SET 0 600 2400 3` if the horn reads 3° low).
+4. `CAL_GET` — verify, and `CAL_RESET 0` to start over.
+
+`CAL` still sets limits for the current session only; use `CAL_SET` to keep them.
+
+## Firmware updates (OTA)
+
+After the first USB flash, update boards wirelessly:
+
+- **From the browser:** `./compile-firmware.sh --serve`, open the dashboard, go to
+  `// 07 Firmware Upload`, click **Use compiled bin**, enter the OTA password, and
+  upload to one board or all. The script writes `firmware/adafruit_16_servo.ino.bin`
+  and `firmware/manifest.json` (both gitignored).
+- **From the command line:** `./ota-all.sh` flashes every board listed in the script.
+  The OTA password comes from the environment or a local `Secrets.h`; it is never
+  baked into the script.
+
+The build is held under the UNO R4 WiFi's 122,880-byte OTA partition cap.
+
+## HTTP API (per board)
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| GET | `/status.json` | Telemetry: servos, DC motor, active Motion/Sequence, gallery flag, OTA status |
+| GET | `/cmd?c=<command>` | Run a command locally and mirror it to peers |
+| GET/POST | `/boardId` | Read or set the board's cluster id |
+| GET | `/sequences` | Stream the board's baked library |
+| GET | `/sequences/info` | Baked-library metadata |
+| POST | `/sequences` | Bake a (sliced) library to EEPROM |
+| POST | `/sequences/restore` | Restore the previous baked library |
+| GET | `/peers.json` | Cluster peers and their uptimes |
+| POST | `/ota` | Firmware upload |
+
+## Project layout
+
+```
+adafruit_16_servo/      Firmware (one sketch, modular headers)
+  adafruit_16_servo.ino   Setup/loop, Serial + HTTP dispatch, status.json
+  command_interface.h     Command parser
+  servo_control.h         Servo motion + animation
+  dc_motor.h              DC motor output
+  servo_calibration.h     EEPROM-persisted calibration
+  motion_engine.h         Motion playback
+  sequence_engine.h       Sequence playback
+  setlist_scheduler.h     RUN AUTO scheduler
+  gallery_mode.h          Unattended boot autoplay
+  Sync.cpp / Sync.h       UDP cluster sync
+  Web.cpp / Web.h         HTTP server + OTA
+  storage.h               EEPROM bake storage
+  servo_setup.h           Per-channel hardware config
+  Secrets.h.example       WiFi + OTA credential template
+servo_controller.html   Browser dashboard (single file)
+servo_library_server.py Local helper: serves the page, persists library.json
+compile-firmware.sh     Build the OTA bin (and optionally serve the page)
+ota-all.sh              OTA-flash every board
+docs/sequencer-schema.md  Content data model and interpolation rules
+test/                   Host-side tests (C++ engines + JS editor logic)
 ```
 
-- Motion ids come from `docs/sequencer-schema.md` / `servo_controller.html`
-- Servo tracks interpolate linearly between absolute percent-down keyframes and map through each channel's calibrated travel before writing PCA9685 pulses every loop tick
-- DC tracks interpolate signed speed values from `-100` to `100`
-- Each board executes only its local sliced tracks; if a baked track still has `boardId`, mismatched boards skip it
-- Manual servo/DC commands, `RUN <id>`, `MOTION`, or `STOP` cancel the active Motion cleanly
-- For the current goBILDA 5-turn winches, see `docs/sequencer-schema.md` for measured slew-rate limits: full-range moves physically bottom out around `7.7s`, while very slow full-range moves can become visibly staccato.
-
-### Browser Sequence Editor
-
-Serve `servo_controller.html` through the local helper to author schema v1 Sequences in a shared project-folder library before exporting or baking:
+## Tests
 
 ```bash
-python3 servo_library_server.py
+make -C test          # firmware engine tests + browser editor-logic tests
 ```
-
-Then open `http://127.0.0.1:4173/servo_controller.html`. The helper serves the page and lets any browser read/write `library.json` in this project folder. If the helper is not running, the page falls back to browser `localStorage`.
-
-- Section `// 04 Sequencer` creates, duplicates, renames, deletes, tags, and saves Sequences in the shared library
-- Steps support free-text commands, duration, target board, private labels, hold points, drag reorder, preview, scrub, looped playback, and pause/resume
-- Record mode appends commands sent through the free-form terminal and fills each new step's duration from elapsed time
-- Section `// 03 Sequencer Bake` still imports, exports, slices, and POSTs the same library to the boards
-- **Pull from Boards** reads the baked library back from every reachable board (`GET /sequences`) and rebuilds the editor library: motion tracks are unioned by board, and the full-library fields (sequences/setlists/active/scheduler) must match across boards or the operator is asked to pick a source-of-truth board. Use it to recover the library on a fresh machine, after a branch swap, or after a cleared cache — it reflects what's physically baked on the boards. It never overwrites a non-empty local library without confirmation.
-- The masthead **Gallery** toggle reads `/status.json` `gallery`, confirms before enabling unattended boot behavior, and sends `GALLERY ON/OFF` to every currently reachable board.
-
-### Compile Firmware for Browser OTA
-
-To avoid exporting a `.bin` from the Arduino IDE by hand:
-
-```bash
-./compile-firmware.sh --serve
-```
-
-Then open `http://127.0.0.1:4173/servo_controller.html`, go to `// 07 Firmware Upload`, click **Use compiled bin**, enter the OTA password, and upload to one board or all boards. The script writes `firmware/adafruit_16_servo.ino.bin` and `firmware/manifest.json`; those generated artifacts are ignored by git.
-
-
-## Percent-of-Travel Commands
-
-For winches or other long-travel servos, percentage commands are often easier than working in raw degrees.
-
-```text
-UP 0 80
-DOWN 1 25
-UMOVE 2 90 3000
-DMOVE 2 10 3000
-```
-
-- `0` = minimum calibrated position
-- `100` = maximum calibrated position
-- Intermediate percentages are mapped linearly across the servo's configured `totalDegrees`
-
-For winches, the more explicit commands are usually better:
-
-- `DOWN <n> <pct>` treats `0` as fully up/retracted and `100` as fully down/lowered
-- `UP <n> <pct>` treats `0` as fully down/lowered and `100` as fully up/retracted
-- `UMOVE` and `DMOVE` are the animated versions of those absolute commands
-
-Examples:
-
-```text
-UP 0 30    # servo 0 to 30% up
-UP 0 80    # servo 0 further up, not relative
-DOWN 1 60  # servo 1 to 60% down
-```
-
-## Calibration Guide
-
-Each servo has different physical limits. Calibration finds the safe pulse range.
-
-1. **Test the default range**
-   ```
-   SWEEP 0
-   ```
-   Watch and listen - buzzing or straining means the pulse is past the physical limit.
-
-2. **Find minimum position**
-   ```
-   P0 150
-   ```
-   Increase the value if the servo buzzes (e.g., `P0 160`, `P0 170`).
-
-3. **Find maximum position**
-   ```
-   P0 600
-   ```
-   Decrease the value if the servo buzzes (e.g., `P0 580`, `P0 560`).
-
-4. **Save calibration**
-   ```
-   CAL 0 160 580
-   ```
-
-5. **Verify**
-   ```
-   SWEEP 0
-   ```
-   Should move smoothly without straining.
-
-6. Repeat for each servo.
-
-## Default Values
-
-| Parameter | Value | Description |
-|-----------|-------|-------------|
-| `DEFAULT_MIN` | 150 | Minimum pulse (0°) |
-| `DEFAULT_MAX` | 600 | Maximum pulse (180°) |
-| `SERVO_FREQ` | 50 Hz | Standard servo frequency |
-| `NUM_SERVOS` | 16 | Total servo channels |
-
-## Continuous Servo Mode
-
-Continuous rotation servos spin instead of moving to positions. The PWM signal controls speed and direction rather than angle.
-
-1. **Set servo to continuous mode**
-   ```
-   MODE 0 CONT
-   ```
-
-2. **Control installation rotation** (-100 to 100, 0 = stop)
-   ```
-   ROTATE 50      # 50% speed forward
-   ROTATE -50     # 50% speed reverse
-   ROTATE 0       # Stop
-   ```
-
-3. **Stop the servo**
-   ```
-   ROTATE 0       # Stop the primary continuous rotation servo
-   STOP           # Stops all continuous servos
-   ```
-
-4. **Calibration for continuous servos**
-   - `CAL` sets the speed range (min = full reverse, max = full forward)
-   - The stop pulse is auto-calculated as the midpoint
-   - Use `P<n> <pulse>` to find the exact stop point, then adjust calibration
-
-5. **Switch back to standard mode**
-   ```
-   MODE 0 STD
-   ```
 
 ## Notes
 
-- Calibration is stored in RAM and resets on power cycle
-- Pulse values are out of 4096 (12-bit resolution)
-- Typical servo range: 150-600 pulse counts (adjust per servo)
-- Always use external power for servos (not USB power)
-- Sequences are stored in PROGMEM (flash) to conserve RAM
-- Serial input uses a fixed 50-byte buffer for long-term stability
+- Pulse values are 12-bit (out of 4096); the servo PWM runs at 50 Hz.
+- Calibration persists in EEPROM (`CAL_SET`); `CAL` alone is RAM-only.
+- Serial input uses a fixed 50-byte command buffer.
+- `NUM_SERVOS` is 16 (the channel count of the PCA9685); this installation wires three.
