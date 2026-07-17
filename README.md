@@ -22,8 +22,41 @@ limits), see [`docs/sequencer-schema.md`](docs/sequencer-schema.md).
 - **Arduino UNO R4 WiFi** — one per board (the cluster is built around three).
 - **[Adafruit PCA9685](http://www.adafruit.com/products/815)** 16-channel PWM/servo driver (I2C).
 - **goBILDA 2000-series 5-turn winch servos** on channels 0–2 (configured in `servo_setup.h`).
-- **DC gear motor** on a dual-PWM driver (`RPWM` = pin 10, `LPWM` = pin 11) for installation rotation.
+- **DC gear motor** on an [IBT_2 (BTS7960)](https://www.handsontec.com/dataspecs/module/BTS7960%20Motor%20Driver.pdf) dual-PWM driver (`RPWM` = pin 10, `LPWM` = pin 11) for installation rotation.
 - External 5–6 V supply for the servos and 12V/10A for the motor.
+
+### Motor driver wiring (IBT_2 ↔ UNO R4 WiFi)
+
+The firmware drives only `RPWM`/`LPWM` and leaves the enable pins alone, so
+`R_EN` and `L_EN` must be jumpered to **5 V** or the driver stays disabled. The
+motor supply ground and the Arduino ground **must be common**.
+
+```
+      Arduino UNO R4 WiFi                 IBT_2 (BTS7960)              12V/10A supply
+     ┌────────────────────┐            ┌──────────────────┐          ┌─────────────┐
+     │              pin 10 ├──────────► │ RPWM             │          │             │
+     │              pin 11 ├──────────► │ LPWM        B+   ├──────────┤ +12V        │
+     │                     │            │             B-   ├────┬─────┤ GND         │
+     │                 5V  ├──────┬───► │ R_EN             │    │     └─────────────┘
+     │                     │      ├───► │ L_EN             │    │
+     │                     │      └───► │ VCC          M+  ├──┐ │
+     │                 GND ├──────┬───► │ GND          M-  ├┐ │ │      ┌─────────────┐
+     │                     │      │     │ R_IS  (n/c)      ││ └─┼────► │  +  DC gear │
+     └────────────────────┘      │     │ L_IS  (n/c)      │└───┼────► │  -   motor  │
+                                 │     └──────────────────┘    │      └─────────────┘
+                                 └───────── common ground ─────┘
+```
+
+| IBT_2 pin      | Connects to                | Notes                                   |
+| -------------- | -------------------------- | --------------------------------------- |
+| `RPWM`         | Arduino pin 10             | Forward PWM (speed > 0)                 |
+| `LPWM`         | Arduino pin 11             | Reverse PWM (speed < 0)                 |
+| `R_EN`, `L_EN` | Arduino 5 V                | Tie high to enable the driver           |
+| `VCC`          | Arduino 5 V                | Logic-side supply for the driver        |
+| `GND`          | Arduino GND                | Must share ground with the 12 V supply  |
+| `R_IS`, `L_IS` | not connected              | Current-alarm outputs, unused here      |
+| `B+` / `B-`    | 12 V/10 A supply + / −      | Motor power input                       |
+| `M+` / `M-`    | DC gear motor leads        | Motor output (swap to reverse spin)     |
 
 ## Setup
 
