@@ -234,6 +234,25 @@
   button.cmd.compact { min-width: 0; padding: 6px 10px; font-size: 10px; }
   button.cmd[disabled] { opacity: .35; pointer-events: none; }
 
+  .bake-target {
+    appearance: none;
+    -webkit-appearance: none;
+    min-width: 178px;
+    border: 1px solid var(--rule-hi);
+    background-color: var(--bg-deep);
+    background-image: linear-gradient(45deg, transparent 50%, var(--ink-dim) 50%),
+                      linear-gradient(135deg, var(--ink-dim) 50%, transparent 50%);
+    background-position: calc(100% - 14px) 50%, calc(100% - 9px) 50%;
+    background-size: 5px 5px, 5px 5px;
+    background-repeat: no-repeat;
+    color: var(--ink);
+    font: 500 11px/1 var(--mono);
+    padding: 8px 28px 8px 10px;
+    outline: none;
+  }
+  .bake-target:focus { border-color: var(--amber); }
+  .bake-target[disabled] { opacity: .35; }
+
   button.cmd .tag {
     font-family: var(--label);
     font-size: 9px;
@@ -1694,6 +1713,8 @@
       <div class="gname">Bake</div>
       <div class="btns">
         <button class="cmd amber" id="bakeAll" disabled>Bake to Boards</button>
+        <select class="bake-target" id="bakeTarget" title="Board to receive a single-board bake" aria-label="Single-board bake target"></select>
+        <button class="cmd baked" id="bakeOne" disabled title="Bake only the selected board; other configured boards are not contacted">Bake One</button>
         <button class="cmd compact" id="bakeRetry" disabled title="Re-bake only the boards that failed/were unreachable in the last bake">Retry Failed</button>
         <button class="cmd compact" id="bakeRestore">Restore Previous</button>
       </div>
@@ -2056,6 +2077,7 @@ let pollHandle = null;
 const lastSeen = new Map();
 const lastStatus = new Map();
 const boardIdByIp = new Map();
+let bakeTargetManuallySelected = false;
 // Track the most recent command we sent to each board, for the audit tail at
 // the bottom of each instrument panel. Value: { cmd, ts }. "broadcast" target
 // records on whichever board actually accepted it (the one returned by
@@ -2173,6 +2195,13 @@ function onlineBoardIps() {
   });
 }
 
+function preferSoleOnlineBakeTarget() {
+  if (bakeTargetManuallySelected) return;
+  const target = $("#bakeTarget");
+  const online = onlineBoardIps();
+  if (target && online.length === 1) target.value = online[0];
+}
+
 // ============================================================
 // FORMATTERS
 // ============================================================
@@ -2198,6 +2227,13 @@ function pad2(n) { return String(n).padStart(2, "0"); }
 function renderBoardList() {
   boardListEl.value = boards.join(",");
   freeTargetEl.innerHTML = boards.map(ip => `<option value="${ip}">${ip}</option>`).join("");
+  const bakeTargetEl = $("#bakeTarget");
+  if (bakeTargetEl) {
+    const selected = bakeTargetEl.value;
+    bakeTargetEl.innerHTML = boards.map(ip => `<option value="${ip}">${ip}</option>`).join("");
+    bakeTargetEl.value = boards.includes(selected) ? selected : (onlineBoardIps()[0] || boards[0] || "");
+    bakeTargetEl.disabled = boards.length === 0;
+  }
 }
 
 // This installation uses servos on PCA9685 channels 0, 1, 2 plus a single
@@ -2506,6 +2542,7 @@ function render() {
   boardsEl.innerHTML = cards.join("");
 
   const onlineCount = onlineBoardIps().length;
+  preferSoleOnlineBakeTarget();
   metaOnline.textContent = `${pad2(onlineCount)}/${pad2(boards.length)}`;
   metaPoll.textContent = `${pollMsEl.value} ms`;
   metaUptime.textContent = fmtUptime(Date.now() - startedAt);
@@ -2654,6 +2691,7 @@ $("#saveBoards").addEventListener("click", () => {
   const list = boardListEl.value.split(",").map(s => s.trim()).filter(Boolean);
   if (!list.length) return;
   boards = list;
+  bakeTargetManuallySelected = false;
   localStorage.setItem(LS_KEY, JSON.stringify(boards));
   renderBoardList();
   renderOtaBoardButtons();
@@ -2958,6 +2996,8 @@ const bakeExportEl  = $("#bakeExport");
 const bakeClearEl   = $("#bakeClear");
 const bakePullEl    = $("#bakePull");
 const bakeAllEl     = $("#bakeAll");
+const bakeTargetEl  = $("#bakeTarget");
+const bakeOneEl     = $("#bakeOne");
 const bakeRetryEl   = $("#bakeRetry");
 const bakeRestoreEl = $("#bakeRestore");
 const bakeLogEl     = $("#bakeLog");
@@ -3099,6 +3139,7 @@ function renderLibSummary() {
   if (!lib) {
     bakeSummaryEl.textContent = "no library — import a JSON file to begin";
     bakeAllEl.disabled = true;
+    bakeOneEl.disabled = true;
     return;
   }
   const m = (lib.motions || []).length;
@@ -3107,6 +3148,7 @@ function renderLibSummary() {
   const active = lib.activeSetlistId || "none";
   bakeSummaryEl.textContent = `${m} motion${m===1?"":"s"} · ${s} sequence${s===1?"":"s"} · ${l} setlist${l===1?"":"s"} · active=${active}`;
   bakeAllEl.disabled = boards.length === 0;
+  bakeOneEl.disabled = boards.length === 0;
   renderBakedPanel();
   renderBakeInventory();
 }
@@ -5785,8 +5827,9 @@ async function postSequences(ip, payload) {
 let lastBakeFailedIps = [];
 
 // onlyIps: when provided (and non-empty), bake just those boards instead of
-// the whole configured cluster — used by Retry Failed.
-async function bakeToAllBoards(onlyIps = null) {
+// the whole configured cluster. mode supplies operator-facing context for a
+// targeted single-board bake versus Retry Failed.
+async function bakeToAllBoards(onlyIps = null, mode = onlyIps ? "targeted" : "all") {
   const lib = loadLibrary();
   if (!lib) { bakeLog("no library loaded", "alert"); return; }
   if (lib.schemaVersion !== SCHEMA_VERSION) {
@@ -5813,6 +5856,8 @@ async function bakeToAllBoards(onlyIps = null) {
   if (targetBoards.length === 0) { bakeLog("no boards configured", "alert"); return; }
 
   bakeAllEl.disabled = true;
+  bakeOneEl.disabled = true;
+  bakeTargetEl.disabled = true;
   bakeRetryEl.disabled = true;
   // Pause status polling for the whole bake (servo-fee): the UNO R4 is
   // single-threaded and a bake blocks its web server for 60-120s; polling
@@ -5822,7 +5867,9 @@ async function bakeToAllBoards(onlyIps = null) {
   const wasPolling = !!pollHandle;
   stopPolling();
   const failedIps = [];
-  bakeLog(onlyIps ? `retrying ${targetBoards.length} board(s): ${targetBoards.join(", ")}` : "resolving boardId for each board...");
+  if (mode === "single") bakeLog(`single-board bake: ${targetBoards[0]}`);
+  else if (mode === "retry") bakeLog(`retrying ${targetBoards.length} board(s): ${targetBoards.join(", ")}`);
+  else bakeLog("resolving boardId for each board...");
 
   try {
   // Step 1: resolve boardIds, retrying once before giving up so a momentarily
@@ -5922,6 +5969,10 @@ async function bakeToAllBoards(onlyIps = null) {
   } finally {
     // Always resume polling we paused, on every exit path (servo-fee).
     if (wasPolling) startPolling();
+    const hasLibrary = !!loadLibrary();
+    bakeAllEl.disabled = !hasLibrary || boards.length === 0;
+    bakeOneEl.disabled = !hasLibrary || boards.length === 0;
+    bakeTargetEl.disabled = boards.length === 0;
   }
 }
 
@@ -6187,9 +6238,15 @@ bakeClearEl.addEventListener("click", () => {
 });
 
 bakeAllEl.addEventListener("click", () => bakeToAllBoards());
+bakeTargetEl.addEventListener("change", () => { bakeTargetManuallySelected = true; });
+bakeOneEl.addEventListener("click", () => {
+  const ip = bakeTargetEl.value;
+  if (!ip || !boards.includes(ip)) { bakeLog("select a configured board", "alert"); return; }
+  bakeToAllBoards([ip], "single");
+});
 bakeRetryEl.addEventListener("click", () => {
   if (!lastBakeFailedIps.length) { bakeLog("no failed boards to retry", "amber"); return; }
-  bakeToAllBoards(lastBakeFailedIps.slice());
+  bakeToAllBoards(lastBakeFailedIps.slice(), "retry");
 });
 bakeRestoreEl.addEventListener("click", restorePreviousBake);
 

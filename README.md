@@ -60,8 +60,9 @@ The page is organized into numbered sections:
 - **`// 02 Board Telemetry`** — live cards per board: online state, servo positions, DC
   motor speed, and what's currently playing.
 - **`// 03 Sequencer Bake`** — import/export the library, slice it per board, and POST
-  it to the boards' EEPROM. **Pull from Boards** rebuilds the editor library from
-  what's physically baked.
+  it to the boards' EEPROM. Use **Bake One** with the adjacent board picker when
+  only one board is connected; the other configured boards are not contacted.
+  **Pull from Boards** rebuilds the editor library from what's physically baked.
 - **`// 04 Sequencer`** — author Sequences: ordered steps (each a command + duration +
   target board), drag-reorder, hold points, record mode, preview, scrub, and looped
   playback.

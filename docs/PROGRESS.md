@@ -210,6 +210,10 @@ adafruit_16_servo/
 
 38. `feat: persist browser library to project file (servo-1xt)` — adds `servo_library_server.py`, a local helper that serves `servo_controller.html` and accepts POST/PUT writes to `library.json` so Motion/Sequence/Setlist authoring is shared across browsers and git-versionable. The browser loads `library.json` before editor initialization, saves edits back to the file when available, and keeps localStorage as fallback cache only. Verification: `python3 -m py_compile servo_library_server.py`; helper GET/POST smoke; in-app browser preview. `make -C test` passed storage/motion/sequence before hanging in `run_setlist_tests`; follow-up tracked as `servo-6tm`.
 
+## Git Commits (Single-Board Bake)
+
+39. `feat: add single-board bake control (servo-k6h)` — adds a board picker and **Bake One** action to // 03 so the browser resolves and POSTs only the selected board, without probing offline peers. When exactly one configured board is reachable, telemetry selects it automatically until the operator makes a manual choice. The existing per-board slice, size guard, confirmation, timeout recovery, snapshot, and polling pause remain shared with cluster bake and Retry Failed. Verification: `make -C test`; inline browser script syntax check. Hardware bake smoke remains in `docs/TESTING.md`.
+
 ## Future Features
 
 - [ ] **EEPROM calibration storage** - Save/load servo calibrations (type, min, max, stop pulse) to persist across power cycles. Commands: `SAVE`, `LOAD`, `CLEAR`

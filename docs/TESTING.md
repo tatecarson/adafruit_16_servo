@@ -1196,6 +1196,12 @@ leader. `schedulerConfig.graceMs` is the grace window (default 10000).
 - [ ] `make -C test` — storage 22/22, motion 8/8, and sequence 8/8 passed; aggregate run then hung in `run_setlist_tests` and left the child process uninterruptible in this host environment. No firmware files changed in servo-1xt.
 - Hardware bake smoke — not run; this change is browser/helper persistence only and does not modify firmware or board endpoints.
 
+**2026-07-17 (servo-k6h single-board bake):**
+- [x] `make -C test` — storage 22/22, motion 8/8, sequence 8/8, setlist 11/11, gallery 9/9, and all browser simulation/editor checks passed.
+- [x] `node` syntax validation of the extracted `servo_controller.html` script — pass.
+- [x] Source smoke confirmed the board picker, **Bake One** control, and targeted `[ip]` bake dispatch are wired in the dashboard.
+- [ ] Hardware bake smoke — select the sole reachable board in // 03, click **Bake One**, accept the one-board confirmation, and verify the log names only that IP and reports one successful POST. Confirm the other configured/offline boards produce no unreachable/failed log entries. Not run in this session because no Arduino was attached to the test environment.
+
 ---
 
 ## Servo Calibration Notes
