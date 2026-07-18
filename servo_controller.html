@@ -1180,11 +1180,15 @@
     opacity: .9;
     pointer-events: none;
   }
-  .seq-arrange-preview-row { position: relative; height: 11px; border-bottom: 1px solid rgba(255,182,39,.09); }
-  .seq-arrange-preview-row svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+  .seq-arrange-preview-row { position: relative; height: 13px; border-bottom: 1px solid rgba(255,182,39,.09); }
+  .seq-arrange-preview-row svg { position: absolute; inset: 0 24px; width: calc(100% - 48px); height: 100%; overflow: visible; }
   .seq-arrange-preview-row polyline { fill: none; stroke: var(--amber); stroke-width: 2; vector-effect: non-scaling-stroke; }
   .seq-arrange-preview-row.dc { border-bottom-color: rgba(75,227,193,.09); }
   .seq-arrange-preview-row.dc polyline { stroke: var(--phosphor); }
+  .seq-arrange-preview-value { position: absolute; top: 50%; transform: translateY(-50%); color: var(--amber); background: rgba(7,12,12,.84); font: 700 6px/1 var(--mono); z-index: 2; pointer-events: none; }
+  .seq-arrange-preview-value.start { left: 0; }
+  .seq-arrange-preview-value.end { right: 0; text-align: right; }
+  .seq-arrange-preview-row.dc .seq-arrange-preview-value { color: var(--phosphor); }
   .seq-arrange-preview-empty { color: var(--ink-mute); font: 600 8px/1.2 var(--mono); }
   .seq-arrange-playhead { position: absolute; top: 35px; bottom: 44px; width: 1px; background: var(--amber); pointer-events: none; z-index: 4; box-shadow: 0 0 10px rgba(255,182,39,.75); }
   .seq-arrange-playhead::before { content: ""; position: absolute; left: -4px; top: 0; border-left: 5px solid transparent; border-right: 5px solid transparent; border-top: 7px solid var(--amber); }
@@ -1231,6 +1235,8 @@
   .seq-arrange-motion-card .dur { color: var(--phosphor); white-space: nowrap; }
   .seq-arrange-motion-card .mini { height: 36px; margin: 8px 0; position: relative; display: grid; align-content: center; gap: 2px; overflow: hidden; }
   .seq-arrange-motion-card .mini .seq-arrange-preview-row { height: 7px; }
+  .seq-arrange-motion-card .mini .seq-arrange-preview-row svg { inset: 0; width: 100%; }
+  .seq-arrange-motion-card .mini .seq-arrange-preview-value { display: none; }
   .seq-arrange-motion-card .actions { display: flex; gap: 6px; }
   .seq-arrange-motion-card .actions .cmd { flex: 1; padding: 6px 5px; font-size: 7px; }
   .seq-arrange-library-empty { padding: 14px; color: var(--ink-mute); font: 600 10px/1.3 var(--mono); }
@@ -1599,6 +1605,29 @@
     border-color: rgba(157,149,130,.14);
     opacity: .45;
   }
+  .motion-connection {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    overflow: visible;
+    pointer-events: none;
+    z-index: 2;
+    opacity: .82;
+  }
+  .motion-connection polyline {
+    fill: none;
+    stroke: var(--amber);
+    stroke-width: 1.5;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    vector-effect: non-scaling-stroke;
+    filter: drop-shadow(0 0 2px rgba(255,182,39,.32));
+  }
+  .motion-connection.dc polyline {
+    stroke: var(--phosphor);
+    filter: drop-shadow(0 0 2px rgba(75,227,193,.32));
+  }
   .motion-key {
     position: absolute;
     width: 13px;
@@ -1608,7 +1637,7 @@
     transform: translate(-50%, -50%) rotate(45deg);
     cursor: grab;
     box-shadow: 0 0 0 2px rgba(14,14,12,.85);
-    z-index: 2;
+    z-index: 4;
   }
   .motion-key:active { cursor: grabbing; }
   .motion-key.dc { border-color: var(--phosphor); }
@@ -1628,6 +1657,43 @@
     box-shadow: 0 0 6px var(--alert);
     pointer-events: none;
     z-index: 3;
+  }
+  .motion-drag-value {
+    position: absolute;
+    min-width: 48px;
+    padding: 5px 7px 4px;
+    border: 1px solid var(--amber);
+    background: rgba(14,14,12,.94);
+    color: var(--amber);
+    transform: translate(12px, -50%);
+    box-shadow: 0 0 0 2px rgba(14,14,12,.75), 0 0 12px rgba(255,182,39,.22);
+    font: 800 11px/1 var(--mono);
+    text-align: right;
+    pointer-events: none;
+    z-index: 8;
+  }
+  .motion-drag-value::before {
+    content: "value";
+    display: block;
+    margin-bottom: 3px;
+    color: var(--ink-mute);
+    font: 700 6px/1 var(--label);
+    letter-spacing: .22em;
+    text-transform: uppercase;
+  }
+  .motion-drag-value::after {
+    content: "";
+    position: absolute;
+    right: 100%;
+    top: 50%;
+    width: 12px;
+    border-top: 1px solid currentColor;
+    opacity: .72;
+  }
+  .motion-drag-value.dc {
+    border-color: var(--phosphor);
+    color: var(--phosphor);
+    box-shadow: 0 0 0 2px rgba(14,14,12,.75), 0 0 12px rgba(75,227,193,.22);
   }
   .motion-status {
     color: var(--ink-dim);
@@ -1698,7 +1764,7 @@
   }
   .seq-mini-row {
     display: grid;
-    grid-template-columns: 54px 1fr;
+    grid-template-columns: 54px minmax(180px, 1fr) 132px;
     align-items: stretch;
     gap: 8px;
   }
@@ -1740,6 +1806,36 @@
     pointer-events: none;
   }
   .seq-mini-row.dc .seq-mini-dot { border-color: var(--phosphor); }
+  .seq-mini-values {
+    align-self: center;
+    min-width: 0;
+    border-left: 1px solid var(--rule);
+    padding-left: 9px;
+    font-family: var(--mono);
+  }
+  .seq-mini-values .journey {
+    display: block;
+    color: var(--amber);
+    font-size: 10px;
+    font-weight: 700;
+    line-height: 1;
+    white-space: nowrap;
+  }
+  .seq-mini-row.dc .seq-mini-values .journey { color: var(--phosphor); }
+  .seq-mini-values .range {
+    display: block;
+    margin-top: 4px;
+    color: var(--ink-mute);
+    font: 600 7px/1 var(--label);
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+  @media (max-width: 720px) {
+    .seq-mini-row { grid-template-columns: 48px 1fr; }
+    .seq-mini-values { grid-column: 2; border-left: 0; padding: 2px 0 5px; display: flex; align-items: baseline; gap: 8px; }
+    .seq-mini-values .range { margin-top: 0; }
+  }
 
   /* ---------- setlist additions ---------- */
   .sl-mode {
@@ -4355,12 +4451,18 @@ function motionPreviewStrips(motion, specs) {
       const yPct = Math.max(0, Math.min(100, oriented * 100));
       return { atMs, value, xPct, yPct };
     });
+    const values = points.map(point => point.value);
     strips.push({
       key: `${spec.boardId}:${spec.kind}:${spec.channel}`,
       boardId: spec.boardId,
       label: spec.label,
       kind: spec.kind,
       unit: spec.unit,
+      startValue: values[0],
+      endValue: values[values.length - 1],
+      minValue: Math.min(...values),
+      maxValue: Math.max(...values),
+      keyframeCount: points.length,
       points,
     });
   }
@@ -4408,6 +4510,18 @@ function renderMotionFeasibilitySegments(findings, durationMs) {
     const width = Math.max(0.6, right - left);
     return `<span class="motion-segment ${finding.level}" title="${escapeHtml(formatFeasibilityFinding(finding))}" style="left:${left}%; width:${width}%"></span>`;
   }).join("");
+}
+
+function renderMotionConnection(keyframes, durationMs, spec) {
+  const points = motionConnectionPoints(keyframes, durationMs, {
+    kind: spec.kind,
+    minValue: spec.min,
+    maxValue: spec.max,
+    axisInsetPct: MOTION_AXIS_INSET_PCT,
+  });
+  if (points.length < 2) return "";
+  const pointAttr = points.map(point => `${point.xPct.toFixed(3)},${point.yPct.toFixed(3)}`).join(" ");
+  return `<svg class="motion-connection ${spec.kind}" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"><polyline points="${pointAttr}"></polyline></svg>`;
 }
 
 function renderMotionEditor() {
@@ -4465,6 +4579,21 @@ function renderMotionEditor() {
       // Both servo (slew) and DC (live throughput) tracks now surface
       // feasibility markers (servo-a1e).
       const segmentHtml = renderMotionFeasibilitySegments(feasibilityByTrack.get(key), motion.durationMs);
+      const connectionHtml = renderMotionConnection(track.keyframes, motion.durationMs, spec);
+      const liveDragReadout = motionDrag?.moved && motionDrag.trackKey === key
+        ? motionDragReadout(motionDrag.liveValue, {
+            kind: spec.kind,
+            minValue: spec.min,
+            maxValue: spec.max,
+            unit: spec.unit,
+            atMs: motionDrag.liveAtMs,
+            durationMs: motion.durationMs,
+            axisInsetPct: MOTION_AXIS_INSET_PCT,
+          })
+        : null;
+      const liveDragHtml = liveDragReadout === null
+        ? ""
+        : `<output class="motion-drag-value ${spec.kind}" style="left:${liveDragReadout.leftPct}%; top:${liveDragReadout.topPct}%">${escapeHtml(liveDragReadout.text)}</output>`;
       html += `<div class="motion-row ${spec.kind}${collapsed ? " hidden" : ""}${muted ? " muted" : ""}" data-track="${escapeHtml(key)}">
         <div class="motion-label">
           <span class="id">${escapeHtml(spec.label)}</span>
@@ -4477,9 +4606,11 @@ function renderMotionEditor() {
         </div>
         <div class="motion-track" data-track="${escapeHtml(key)}">
           ${segmentHtml}
+          ${connectionHtml}
           <div class="motion-playhead" style="left:${motionTimeToPct(playheadMs, motion.durationMs)}%"></div>
           ${prev ? `<span class="motion-key ghost ${spec.kind}" style="left:${motionTimeToPct(prev.atMs, motion.durationMs)}%; top:${motionValueToPct(prev.value, spec)}%"></span>` : ""}
           ${(track.keyframes || []).map((kf, idx) => `<span class="motion-key ${spec.kind}${motionSelectedKeys.get(key)?.has(kf.atMs) ? " selected" : ""}" data-track="${escapeHtml(key)}" data-key-index="${idx}" data-key-at="${kf.atMs}" title="${kf.atMs}ms · ${kf.value}${spec.unit}" style="left:${motionTimeToPct(kf.atMs, motion.durationMs)}%; top:${motionValueToPct(kf.value, spec)}%"></span>`).join("")}
+          ${liveDragHtml}
         </div>
       </div>`;
     }
@@ -4699,6 +4830,52 @@ function simplifyKeyframes(keyframes, kind, eps = 1) {
 // === EDITOR-CORE START ===
 // Pure helpers for marquee select + delete (servo-dmu). Verified by
 // test/verify_editor_keyframes.mjs. No DOM.
+
+// Convert keyframes into normalized SVG points for the editor's connecting
+// line. Servo tracks are linear, matching their playback interpolation. DC
+// tracks use a horizontal-then-vertical step at each keyframe so the line
+// communicates the motor's actual held-speed behavior instead of implying a
+// ramp. Values share the editor's inset axis, keeping extrema inside the row.
+function motionConnectionPoints(keyframes, durationMs, options = {}) {
+  const duration = Math.max(1, Number(durationMs) || 0);
+  const minValue = Number.isFinite(options.minValue) ? options.minValue : 0;
+  const maxValue = Number.isFinite(options.maxValue) ? options.maxValue : 100;
+  const span = maxValue - minValue || 1;
+  const inset = Number.isFinite(options.axisInsetPct) ? options.axisInsetPct : 15;
+  const kind = options.kind === "dc" ? "dc" : "servo";
+  const source = (keyframes || [])
+    .filter(frame => frame && Number.isFinite(Number(frame.atMs)) && Number.isFinite(Number(frame.value)))
+    .map(frame => ({ atMs: Number(frame.atMs), value: Number(frame.value) }))
+    .sort((a, b) => a.atMs - b.atMs);
+  const mapped = source.map(frame => {
+    const xPct = Math.max(0, Math.min(100, frame.atMs / duration * 100));
+    const linear = Math.max(0, Math.min(1, (frame.value - minValue) / span));
+    const insetPct = inset + linear * (100 - 2 * inset);
+    return { xPct, yPct: kind === "servo" ? insetPct : 100 - insetPct };
+  });
+  if (kind !== "dc" || mapped.length < 2) return mapped;
+  const stepped = [mapped[0]];
+  for (let i = 1; i < mapped.length; i++) {
+    stepped.push({ xPct: mapped[i].xPct, yPct: mapped[i - 1].yPct });
+    stepped.push(mapped[i]);
+  }
+  return stepped;
+}
+
+function motionDragReadout(value, options = {}) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return null;
+  const minValue = Number.isFinite(options.minValue) ? options.minValue : 0;
+  const maxValue = Number.isFinite(options.maxValue) ? options.maxValue : 100;
+  const clamped = Math.max(minValue, Math.min(maxValue, numeric));
+  const point = motionConnectionPoints([{ atMs: 0, value: clamped }], 1, options)[0];
+  const durationMs = Math.max(1, Number(options.durationMs) || 1);
+  const atMs = Number(options.atMs);
+  const leftPct = Number.isFinite(atMs) ? Math.max(0, Math.min(100, atMs / durationMs * 100)) : null;
+  const formatted = Number.isInteger(clamped) ? String(clamped) : clamped.toFixed(1);
+  const unit = options.unit === "%" ? "%" : (options.unit ? ` ${options.unit}` : "");
+  return { value: clamped, text: `${formatted}${unit}`, leftPct, topPct: point.yPct };
+}
 
 // Indices of keyframes inside a marquee box (inclusive, order-independent).
 function keyframesInMarquee(keyframes, tA, tB, vA, vB) {
@@ -5685,6 +5862,8 @@ motionGridEl.addEventListener("pointerdown", e => {
     baseMotion: null,
     anchorPoint: null,
     selectionIndices: null,
+    liveAtMs: null,
+    liveValue: null,
     moved: false,
   };
   keyEl.setPointerCapture(e.pointerId);
@@ -5740,6 +5919,9 @@ window.addEventListener("pointermove", e => {
       return;
     }
     track.keyframes = normalizeKeyframes({ ...track, keyframes: moved.keyframes }, motion.durationMs, spec);
+    const movedAnchor = moved.keyframes[motionDrag.keyIndex];
+    motionDrag.liveAtMs = movedAnchor?.atMs ?? point.atMs;
+    motionDrag.liveValue = movedAnchor?.value ?? point.value;
     motionSelectedKeys.set(motionDrag.trackKey, new Set(moved.selectedAtMs));
     motionDraftOverride = motion;
     motionDirty = true;
@@ -5760,6 +5942,8 @@ window.addEventListener("pointermove", e => {
     atMs: constrained.point.atMs,
     value: constrained.point.value,
   };
+  motionDrag.liveAtMs = constrained.point.atMs;
+  motionDrag.liveValue = constrained.point.value;
   track.keyframes = normalizeKeyframes(track, motion.durationMs, spec);
   const movedIdx = track.keyframes.findIndex(k => k.atMs === constrained.point.atMs && k.value === constrained.point.value);
   if (movedIdx >= 0) motionDrag.keyIndex = movedIdx;
@@ -5964,11 +6148,23 @@ function renderSequenceArrangementPreview(motion, wrapperClass = "seq-arrange-pr
   if (!strips.length) return `<div class="${wrapperClass}"><span class="seq-arrange-preview-empty">no animated tracks</span></div>`;
   const rows = strips.map(strip => {
     const points = strip.points.map(point => `${point.xPct.toFixed(2)},${point.yPct.toFixed(2)}`).join(" ");
-    return `<div class="seq-arrange-preview-row ${strip.kind}" title="${escapeHtml(strip.label)}">
+    const start = formatSequencePreviewValue(strip.startValue, strip.unit, true);
+    const end = formatSequencePreviewValue(strip.endValue, strip.unit, true);
+    const range = `${formatSequencePreviewValue(strip.minValue, strip.unit)}…${formatSequencePreviewValue(strip.maxValue, strip.unit)}`;
+    return `<div class="seq-arrange-preview-row ${strip.kind}" title="${escapeHtml(`${strip.label} · ${start} → ${end} · range ${range}`)}">
+      <span class="seq-arrange-preview-value start">${escapeHtml(start)}</span>
       <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"><polyline points="${points}"></polyline></svg>
+      <span class="seq-arrange-preview-value end">${escapeHtml(end)}</span>
     </div>`;
   }).join("");
   return `<div class="${wrapperClass}">${rows}</div>`;
+}
+
+function formatSequencePreviewValue(value, unit, compact = false) {
+  const numeric = Number(value);
+  const text = Number.isFinite(numeric) ? (Number.isInteger(numeric) ? String(numeric) : numeric.toFixed(1)) : "—";
+  if (unit === "%") return `${text}%`;
+  return compact ? text : `${text} ${unit || ""}`.trim();
 }
 
 function renderSequenceArrangementMotionLibrary(lib) {
@@ -6114,6 +6310,10 @@ function renderSeqStepPreview(step, lib) {
     const boardTag = strip.boardId !== lastBoard
       ? `<div class="seq-mini-board">board ${strip.boardId}</div>` : "";
     lastBoard = strip.boardId;
+    const start = formatSequencePreviewValue(strip.startValue, strip.unit);
+    const end = formatSequencePreviewValue(strip.endValue, strip.unit);
+    const low = formatSequencePreviewValue(strip.minValue, strip.unit);
+    const high = formatSequencePreviewValue(strip.maxValue, strip.unit);
     return `${boardTag}<div class="seq-mini-row ${strip.kind}">
         <div class="seq-mini-label">${escapeHtml(strip.label)}</div>
         <div class="seq-mini-plot">
@@ -6121,6 +6321,10 @@ function renderSeqStepPreview(step, lib) {
             <polyline points="${line}"></polyline>
           </svg>
           ${dots}
+        </div>
+        <div class="seq-mini-values" title="${escapeHtml(`${strip.label} values`)}">
+          <span class="journey">${escapeHtml(start)} → ${escapeHtml(end)}</span>
+          <span class="range">range ${escapeHtml(low)}…${escapeHtml(high)} · ${strip.keyframeCount} key${strip.keyframeCount === 1 ? "" : "s"}</span>
         </div>
       </div>`;
   }).join("");

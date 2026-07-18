@@ -107,13 +107,17 @@ The page is organized into numbered sections:
   time-proportional blocks can be dragged to reorder the same steps without replacing
   the detailed table editor. MOTION blocks show compact keyframe previews; the Motion
   Library strip previews every available Motion and can add one after the selected
-  step or replace the selected step in place.
+  step or replace the selected step in place. Expanded MOTION previews show each
+  track's start/end values, full range, and key count; Arrange blocks label their
+  line endpoints for quick comparison.
 - **`// 05 Setlist`** — group Sequences into playlists for unattended playback, with an
   ordered or weighted-shuffle scheduler and a **Simulate hour** preview that
   fast-forwards an hour of scheduling in the browser.
 - **`// 06 Motion`** — the keyframe motion editor: per-channel servo and DC tracks,
-  draggable keyframes, marquee + group selection, shape curves, and slew-feasibility
-  warnings. Play live (browser-streamed) or fire the baked motion (on-device).
+  connected keyframe curves, marquee + group selection, shape curves, and
+  slew-feasibility warnings. Dragging a keyframe shows its changing value directly
+  beside the moving diamond. Play live (browser-streamed) or fire the baked motion
+  (on-device).
 - **`// 07 Firmware Upload`** — OTA flash one board or all of them (see below).
 
 ## Content model: Motions, Sequences, Setlists
