@@ -1599,6 +1599,77 @@
     .masthead .meta { text-align: left; }
     .masthead .meta .row { justify-content: flex-start; flex-wrap: wrap; gap: 10px 14px; }
   }
+
+  /* ---------- motor test drawer (servo-4kp) ----------
+     Quick per-motor hardware check: slides in over the page, sends live
+     commands to one board. Nothing baked. */
+  .mtest-backdrop {
+    position: fixed; inset: 0;
+    background: rgba(4,4,6,0.66);
+    z-index: 1400;
+    opacity: 0; visibility: hidden;
+    transition: opacity .18s ease, visibility .18s ease;
+  }
+  .mtest-backdrop.open { opacity: 1; visibility: visible; }
+  .mtest-drawer {
+    position: fixed; top: 0; right: 0; bottom: 0;
+    width: min(440px, 92vw);
+    background: var(--bg-elev);
+    border-left: 1px solid var(--rule-hi);
+    box-shadow: -12px 0 40px rgba(0,0,0,.5);
+    z-index: 1401;
+    transform: translateX(100%);
+    transition: transform .2s ease;
+    display: flex; flex-direction: column;
+    overflow-y: auto;
+  }
+  .mtest-backdrop.open .mtest-drawer { transform: translateX(0); }
+  .mtest-head {
+    display: flex; align-items: baseline; gap: 12px;
+    padding: 18px 20px 14px;
+    border-bottom: 1px solid var(--rule);
+    position: sticky; top: 0; background: var(--bg-elev); z-index: 1;
+  }
+  .mtest-head .num {
+    font-family: var(--display); font-size: 13px; color: var(--amber);
+    letter-spacing: 0.1em;
+  }
+  .mtest-head .label {
+    font-family: var(--label); font-size: 12px; font-weight: 600;
+    text-transform: uppercase; letter-spacing: 0.22em; color: var(--ink);
+  }
+  .mtest-head .hint { font-size: 10px; color: var(--ink-mute); }
+  .mtest-close {
+    margin-left: auto; appearance: none; border: 1px solid var(--rule-hi);
+    background: transparent; color: var(--ink-dim);
+    font: 500 14px/1 var(--mono); width: 30px; height: 30px; cursor: pointer;
+    align-self: center;
+  }
+  .mtest-close:hover { border-color: var(--alert); color: var(--alert); }
+  .mtest-body { padding: 16px 20px 24px; }
+  .mtest-target-row {
+    display: grid; grid-template-columns: auto 1fr; align-items: center;
+    gap: 12px; padding-bottom: 14px; margin-bottom: 6px;
+    border-bottom: 1px dashed var(--rule);
+  }
+  .mtest-target-row .k {
+    font-family: var(--label); font-size: 9px; text-transform: uppercase;
+    letter-spacing: 0.24em; color: var(--ink-dim); font-weight: 600;
+  }
+  .mtest-row {
+    display: grid; grid-template-columns: 70px 1fr;
+    align-items: center; gap: 14px; padding: 12px 0;
+  }
+  .mtest-row + .mtest-row { border-top: 1px dashed var(--rule); }
+  .mtest-row .rname {
+    font-family: var(--label); font-size: 9px; text-transform: uppercase;
+    letter-spacing: 0.2em; color: var(--ink-dim); font-weight: 600;
+  }
+  .mtest-row .rname .sub { display: block; color: var(--ink-mute); letter-spacing: 0.14em; }
+  .mtest-btns { display: flex; gap: 8px; flex-wrap: wrap; }
+  .mtest-btns button.cmd { min-width: 0; flex: 1 1 auto; padding: 8px 10px; }
+  .mtest-stop-row { margin-bottom: 16px; }
+  .mtest-stop-row button.cmd { width: 100%; }
 </style>
 </head>
 <body>
@@ -1643,6 +1714,7 @@
       <div class="btns">
         <button class="cmd alert" data-cmd="STOP">STOP</button>
         <button class="cmd amber" data-cmd="STATUS">STATUS</button>
+        <button class="cmd" id="motorTestOpen" title="Quick per-motor hardware check">⊹ Motor Test</button>
       </div>
     </div>
 
@@ -2057,6 +2129,51 @@
 
 </div>
 
+<!-- ============================================================
+     MOTOR TEST DRAWER (servo-4kp)
+     Slide-in quick check: sweep/jog each servo, spin the DC motor,
+     on one chosen board. Live commands only — nothing baked.
+     ============================================================ -->
+<div class="mtest-backdrop" id="motorTestBackdrop" aria-hidden="true">
+  <aside class="mtest-drawer" role="dialog" aria-modal="true" aria-labelledby="mtestTitle">
+    <div class="mtest-head">
+      <span class="num">⊹</span>
+      <span class="label" id="mtestTitle">Motor Test</span>
+      <span class="hint">live · not baked</span>
+      <button class="mtest-close" id="motorTestClose" title="Close (Esc)">✕</button>
+    </div>
+    <div class="mtest-body">
+      <div class="mtest-target-row">
+        <span class="k">Board</span>
+        <select class="bake-target" id="motorTestTarget" title="Board under test"></select>
+      </div>
+
+      <div class="mtest-stop-row">
+        <button class="cmd alert" data-mtest="STOP">STOP ALL</button>
+      </div>
+
+      <div class="mtest-row">
+        <span class="rname">All<span class="sub">servos</span></span>
+        <div class="mtest-btns">
+          <button class="cmd" data-mtest-all="0">All Down</button>
+          <button class="cmd" data-mtest-all="100">All Up</button>
+        </div>
+      </div>
+
+      <div id="motorTestServos"></div>
+
+      <div class="mtest-row">
+        <span class="rname">DC<span class="sub">motor · 30%</span></span>
+        <div class="mtest-btns">
+          <button class="cmd" data-mtest="ROTATE -30">◄ Rev 30</button>
+          <button class="cmd" data-mtest="ROTATE 0">Stop</button>
+          <button class="cmd" data-mtest="ROTATE 30">Fwd 30 ►</button>
+        </div>
+      </div>
+    </div>
+  </aside>
+</div>
+
 <script>
 "use strict";
 
@@ -2233,6 +2350,13 @@ function renderBoardList() {
     bakeTargetEl.innerHTML = boards.map(ip => `<option value="${ip}">${ip}</option>`).join("");
     bakeTargetEl.value = boards.includes(selected) ? selected : (onlineBoardIps()[0] || boards[0] || "");
     bakeTargetEl.disabled = boards.length === 0;
+  }
+  const mtestTargetEl = $("#motorTestTarget");
+  if (mtestTargetEl) {
+    const selected = mtestTargetEl.value;
+    mtestTargetEl.innerHTML = boards.map(ip => `<option value="${ip}">${ip}</option>`).join("");
+    mtestTargetEl.value = boards.includes(selected) ? selected : (onlineBoardIps()[0] || boards[0] || "");
+    mtestTargetEl.disabled = boards.length === 0;
   }
 }
 
@@ -2686,6 +2810,85 @@ $("#freeSend").addEventListener("click", async () => {
   $("#freeCmd").value = "";
 });
 $("#freeCmd").addEventListener("keydown", e => { if (e.key === "Enter") $("#freeSend").click(); });
+
+// ============================================================
+// MOTOR TEST DRAWER (servo-4kp)
+// Quick hardware check: sweep/jog each wired servo and spin the DC
+// motor on one chosen board. Live commands only; nothing is baked.
+// ============================================================
+(function setupMotorTest() {
+  const backdrop = $("#motorTestBackdrop");
+  const targetEl = $("#motorTestTarget");
+  const servosEl = $("#motorTestServos");
+  if (!backdrop || !targetEl || !servosEl) return;
+
+  // One row per wired servo: SWEEP end-to-end, then jog to fixed positions.
+  // UP <n> <pct> reads intuitively — 0 = fully down, 100 = fully up.
+  servosEl.innerHTML = Array.from({ length: VISIBLE_SERVO_CHANNELS }, (_, n) => `
+    <div class="mtest-row">
+      <span class="rname">Servo<span class="sub">ch ${pad2(n)}</span></span>
+      <div class="mtest-btns">
+        <button class="cmd" data-mtest="SWEEP ${n}">Sweep</button>
+        <button class="cmd" data-mtest="UP ${n} 0">Down</button>
+        <button class="cmd" data-mtest="UP ${n} 50">Mid</button>
+        <button class="cmd" data-mtest="UP ${n} 100">Up</button>
+      </div>
+    </div>`).join("");
+
+  function openDrawer() {
+    backdrop.classList.add("open");
+    backdrop.setAttribute("aria-hidden", "false");
+  }
+  function closeDrawer() {
+    backdrop.classList.remove("open");
+    backdrop.setAttribute("aria-hidden", "true");
+  }
+
+  $("#motorTestOpen").addEventListener("click", openDrawer);
+  $("#motorTestClose").addEventListener("click", closeDrawer);
+  // Click the dark backdrop (but not the drawer itself) to dismiss.
+  backdrop.addEventListener("click", e => { if (e.target === backdrop) closeDrawer(); });
+  document.addEventListener("keydown", e => {
+    if (e.key === "Escape" && backdrop.classList.contains("open")) closeDrawer();
+  });
+
+  // Flash a button amber on success / red on failure — same feedback pattern
+  // as the // 01 [data-cmd] buttons. Send-work is passed in as a callback so
+  // single-command and "all servos" buttons share the visuals.
+  async function runTest(btn, send) {
+    const ip = targetEl.value;
+    if (!ip) {
+      btn.classList.add("alert");
+      setTimeout(() => btn.classList.remove("alert"), 600);
+      return;
+    }
+    btn.disabled = true;
+    const ok = await send(ip);
+    btn.disabled = false;
+    btn.classList.add(ok ? "amber" : "alert");
+    setTimeout(() => btn.classList.remove(ok ? "amber" : "alert"), ok ? 250 : 600);
+    if (ok) setTimeout(pollOnce, 200);
+  }
+
+  // Single-command buttons carry their command in data-mtest.
+  backdrop.querySelectorAll("[data-mtest]").forEach(btn => {
+    btn.addEventListener("click", () => runTest(btn, ip => sendCommand(ip, btn.dataset.mtest)));
+  });
+
+  // "All Down" / "All Up" send an absolute UP <n> <pct> to every wired servo.
+  // These are absolute positions, so a servo already at the target simply
+  // holds — nothing runs in reverse (servo-4kp).
+  backdrop.querySelectorAll("[data-mtest-all]").forEach(btn => {
+    const pct = btn.dataset.mtestAll;
+    btn.addEventListener("click", () => runTest(btn, async ip => {
+      let allOk = true;
+      for (let n = 0; n < VISIBLE_SERVO_CHANNELS; n++) {
+        if (!(await sendCommand(ip, `UP ${n} ${pct}`))) allOk = false;
+      }
+      return allOk;
+    }));
+  });
+})();
 
 $("#saveBoards").addEventListener("click", () => {
   const list = boardListEl.value.split(",").map(s => s.trim()).filter(Boolean);
