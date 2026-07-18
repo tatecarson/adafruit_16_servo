@@ -112,8 +112,10 @@ The page is organized into numbered sections:
   ordered or weighted-shuffle scheduler and a **Simulate hour** preview that
   fast-forwards an hour of scheduling in the browser.
 - **`// 06 Motion`** — the keyframe motion editor: per-channel servo and DC tracks,
-  draggable keyframes, marquee + group selection, shape curves, and slew-feasibility
-  warnings. Play live (browser-streamed) or fire the baked motion (on-device).
+  connected keyframe curves, marquee + group selection, shape curves, and
+  slew-feasibility warnings. Dragging a keyframe shows its changing value directly
+  beside the moving diamond. Play live (browser-streamed) or fire the baked motion
+  (on-device).
 - **`// 07 Firmware Upload`** — OTA flash one board or all of them (see below).
 
 ## Content model: Motions, Sequences, Setlists

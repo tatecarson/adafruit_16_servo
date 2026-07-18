@@ -1214,6 +1214,13 @@ leader. `schedulerConfig.graceMs` is the grace window (default 10000).
 - [ ] Follow-up aggregate rerun — the first attempt was killed by the host at storage startup; storage then passed independently. A second aggregate passed storage and stalled starting `run_motion_tests`; the direct motion invocation then entered the same host-level uninterruptible state previously documented for other native suites. No firmware/runtime files changed in this browser-only follow-up; the initial full aggregate above remains green.
 - Hardware upload is not applicable: this feature changes only the browser editor (`servo_controller.html`) and does not alter firmware, commands, storage schema, or board endpoints.
 
+**2026-07-18 (servo-bzh Motion keyframe readability):**
+- [x] `node test/verify_editor_keyframes.mjs` — 30/30 passed, including linear servo connection geometry, held-speed DC step geometry, axis inset, out-of-range clamping, and servo/DC live-value readout text + horizontal/vertical placement beside the dragged keyframe.
+- [x] Inline `servo_controller.html` script syntax and `git diff --check` — passed.
+- [x] Live browser preview at `http://127.0.0.1:4175/servo_controller.html` — amber servo connections and phosphor DC step connections rendered behind the existing keyframe diamonds and feasibility bands. Nine moving tracks rendered connection lines; static one-keyframe tracks remained uncluttered.
+- [x] Isolated pointer-drag smoke at `http://127.0.0.1:4176/servo_controller.html` — copied the page and library into `/tmp`, dragged a servo keyframe, and observed the normal `keyframe moved` completion without touching the operator's project `library.json`. The badge's transient text/placement is covered by the pure readout tests above.
+- Hardware upload is not applicable: this feature changes only the browser Motion editor and does not alter firmware, commands, storage schema, or board endpoints.
+
 ---
 
 ## Servo Calibration Notes
