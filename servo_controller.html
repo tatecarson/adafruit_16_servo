@@ -1927,11 +1927,10 @@
     <div class="seq-picker">
       <select id="seqSelect" title="Sequence"></select>
       <input id="seqName" type="text" placeholder="sequence name" autocomplete="off" spellcheck="false">
-      <code id="seqIdLabel" class="motion-id" title="Sequence id — what you type after RUN and what Setlist entries reference. Use Rename ID to change it."></code>
+      <code id="seqIdLabel" class="motion-id" title="Sequence id — the auto-generated internal key used by RUN and Setlist entries. Edit the name; the id stays fixed."></code>
       <div class="seq-actions">
         <button class="cmd compact" id="seqNew">New</button>
         <button class="cmd compact" id="seqDuplicate">Duplicate</button>
-        <button class="cmd compact" id="seqRename" title="Change this sequence's id (updates Setlist entries + RUN steps; re-bake after)">Rename ID</button>
         <button class="cmd compact alert" id="seqDelete">Delete</button>
       </div>
     </div>
@@ -2133,7 +2132,7 @@
     <div class="motion-picker">
       <select id="motionSelect" title="Motion"></select>
       <input id="motionName" type="text" placeholder="motion name" autocomplete="off" spellcheck="false">
-      <code id="motionIdLabel" class="motion-id" title="Motion id — what you type after MOTION and what Sequence steps reference. Use Rename ID to change it."></code>
+      <code id="motionIdLabel" class="motion-id" title="Motion id — the auto-generated internal key used by MOTION and Sequence steps. Edit the name; the id stays fixed."></code>
       <label class="motion-time" title="Total Motion duration">
         <span>duration</span>
         <input id="motionDuration" type="number" min="100" max="120000" step="100" value="8000">
@@ -2141,7 +2140,6 @@
       <div class="motion-actions">
         <button class="cmd compact" id="motionNew">New</button>
         <button class="cmd compact" id="motionDuplicate">Duplicate</button>
-        <button class="cmd compact" id="motionRename" title="Change this motion's id (updates Sequence references; re-bake after)">Rename ID</button>
         <button class="cmd compact alert" id="motionDelete">Delete</button>
       </div>
     </div>
@@ -3594,13 +3592,39 @@ function sequenceLibrary() {
   return lib;
 }
 
+// === ID-CORE START ===
+// Motion and Sequence ids are opaque random tokens (servo-d91), never derived
+// from the name. The name is the only human-facing label; the id is a stable
+// internal key used by MOTION/RUN, Sequence steps, Setlist entries, and the
+// baked EEPROM library. Keeping ids opaque removes the name/id-divergence
+// confusion — there is nothing to "rename" and no slug that drifts from the
+// name (e.g. a duplicate no longer becomes "arc-copy").
+function randomToken(prefix) {
+  // 6 base36 chars (~2 billion values); the dedupe loop guards the rare clash.
+  return `${prefix}-${Math.random().toString(36).slice(2, 8).padEnd(6, "0")}`;
+}
+function uniqueId(prefix, used) {
+  let id;
+  do { id = randomToken(prefix); } while (used.has(id));
+  return id;
+}
+function uniqueMotionId(lib) {
+  return uniqueId("mt", new Set((lib.motions || []).map(m => m.id)));
+}
+function uniqueSequenceId(lib) {
+  return uniqueId("sq", new Set((lib.sequences || []).map(s => s.id)));
+}
+// === ID-CORE END ===
+
+// Setlists still derive a slug id from their name (they were not part of the
+// motion/sequence opaque-id change, servo-d91). Kept as its own helper.
 function slugifyId(name) {
-  const base = String(name || "sequence")
+  const base = String(name || "setlist")
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "")
     .replace(/^[^a-z]+/, "")
-    .slice(0, 24) || "sequence";
+    .slice(0, 24) || "setlist";
   return base.slice(0, 32);
 }
 
@@ -3693,40 +3717,9 @@ function trackSpecKey(spec) {
   return `${spec.boardId}:${spec.kind}:${spec.channel}`;
 }
 
-function uniqueMotionId(lib, seed) {
-  const used = new Set((lib.motions || []).map(m => m.id));
-  const base = slugifyId(seed || "motion") || "motion";
-  if (!used.has(base)) return base;
-  for (let i = 2; i < 1000; i++) {
-    const candidate = `${base}-${i}`.slice(0, 32);
-    if (!used.has(candidate)) return candidate;
-  }
-  return `mot-${Date.now().toString(36)}`.slice(0, 32);
-}
-
-// Rewrite every Sequence step that fires `MOTION <oldId>` so it points at
-// <newId> (servo-sqx). The cmd is free text like "MOTION my-id"; we match
-// on the MOTION verb + exact id token so "MOTION my-id-2" isn't clobbered.
-// Mutates lib in place and returns the count of rewritten steps.
-function rewriteMotionIdReferences(lib, oldId, newId) {
-  let count = 0;
-  for (const seq of lib.sequences || []) {
-    for (const step of seq.steps || []) {
-      const parts = String(step.cmd || "").trim().split(/\s+/);
-      if (parts[0]?.toUpperCase() === "MOTION" && parts[1] === oldId) {
-        parts[1] = newId;
-        step.cmd = parts.join(" ");
-        count++;
-      }
-    }
-  }
-  return count;
-}
-
 function defaultMotion(lib, name = "New Motion") {
-  // Derive the id from the name so motions are descriptive by default
-  // (servo-sqx). slugifyId dedupes against the library.
-  const id = uniqueMotionId(lib, name);
+  // Opaque random id (servo-d91); the name is the only human label.
+  const id = uniqueMotionId(lib);
   const durationMs = 8000;
   return {
     id,
@@ -5041,10 +5034,10 @@ motionDurationEl.addEventListener("change", () => {
 });
 
 $("#motionNew").addEventListener("click", () => {
-  // Ask for the name up front so the id is descriptive at creation and a
-  // separate Rename ID step isn't needed (servo-cs3). Cancel aborts;
-  // blank falls back to the default name.
-  const raw = prompt("Name this motion (the id is derived from it):", "");
+  // Ask for the name up front (servo-cs3). The id is an opaque random token
+  // (servo-d91), so the name is the only thing to set. Cancel aborts; blank
+  // falls back to the default name.
+  const raw = prompt("Name this motion:", "");
   if (raw == null) return;                       // cancelled — create nothing
   const name = raw.trim().slice(0, 64) || "New Motion";
   if (motionDirty) saveCurrentMotion(readMotionFromDom());
@@ -5061,7 +5054,7 @@ $("#motionDuplicate").addEventListener("click", () => {
   const lib = sequenceLibrary();
   const motion = readMotionFromDom();
   const copy = JSON.parse(JSON.stringify(motion));
-  copy.id = uniqueMotionId(lib, `${motion.id}-copy`);
+  copy.id = uniqueMotionId(lib);   // fresh opaque id (servo-d91)
   copy.name = `${motion.name || motion.id} Copy`;
   lib.motions.push(copy);
   currentMotionId = copy.id;
@@ -5070,33 +5063,6 @@ $("#motionDuplicate").addEventListener("click", () => {
   renderLibSummary();
   renderMotionEditor();
   setMotionStatus(`duplicated ${motion.name || motion.id}`, "phosphor");
-});
-// Rename ID (servo-sqx): the id is the key used by localStorage, the
-// dropdown, and the `MOTION <id>` play command, so changing it must also
-// rewrite any Sequence steps that reference it and remind the operator to
-// re-bake (boards still hold the old baked id until then).
-$("#motionRename").addEventListener("click", () => {
-  if (motionDirty) saveCurrentMotion(readMotionFromDom());
-  const lib = sequenceLibrary();
-  const motion = getCurrentMotion(lib);
-  if (!motion) return;
-  const oldId = motion.id;
-  const suggested = slugifyId(motion.name || oldId) || oldId;
-  const raw = prompt(`Rename ID for "${motion.name || oldId}"\nUsed by the MOTION command and Sequence steps.`, suggested);
-  if (raw == null) return;                       // cancelled
-  const newId = uniqueMotionId(lib, raw);        // slugify + dedupe
-  if (newId === oldId) { setMotionStatus("id unchanged", "amber"); return; }
-  const target = lib.motions.find(m => m.id === oldId);
-  if (!target) return;
-  target.id = newId;
-  const refs = rewriteMotionIdReferences(lib, oldId, newId);
-  currentMotionId = newId;
-  saveLibrary(lib);
-  motionDirty = false;
-  renderLibSummary();
-  renderMotionEditor();
-  const refNote = refs ? ` · ${refs} sequence ref${refs === 1 ? "" : "s"} updated` : "";
-  setMotionStatus(`id → ${newId}${refNote} · re-bake boards to update them`, "phosphor");
 });
 $("#motionDelete").addEventListener("click", () => {
   const lib = sequenceLibrary();
@@ -5611,55 +5577,8 @@ $("#motionSave").addEventListener("click", () => {
   setMotionStatus(`saved to ${libraryStorageLabel()}`, libraryFileWriteFailed ? "amber" : "phosphor");
 });
 
-function motionOptionsForCommands() {
-  const lib = sequenceLibrary();
-  return (lib.motions || []).map(m => `MOTION ${m.id}`);
-}
-
-function uniqueSequenceId(lib, seed) {
-  const used = new Set((lib.sequences || []).map(s => s.id));
-  const base = slugifyId(seed);
-  if (!used.has(base)) return base;
-  for (let i = 2; i < 1000; i++) {
-    const candidate = `${base}-${i}`.slice(0, 32);
-    if (!used.has(candidate)) return candidate;
-  }
-  return `seq-${Date.now().toString(36)}`.slice(0, 32);
-}
-
-// True while a sequence still carries its placeholder auto-id ("new-sequence"
-// or "new-sequence-N"). Naming such a sequence derives a meaningful id from the
-// name (servo-3ks); once it has a real id we keep it stable across name edits.
-function isAutoSequenceId(id) {
-  return /^new-sequence(-\d+)?$/.test(String(id || ""));
-}
-
-// Rewrite references to a sequence id when it changes (servo-3ks), mirroring
-// rewriteMotionIdReferences: Setlist entries point at sequences via seqId, and
-// a Sequence step can chain another with `RUN <id>` (the optional LOOP suffix
-// is preserved). Mutates lib in place; returns the count of rewritten refs.
-function rewriteSequenceIdReferences(lib, oldId, newId) {
-  let count = 0;
-  for (const sl of lib.setlists || []) {
-    for (const entry of sl.entries || []) {
-      if (entry.seqId === oldId) { entry.seqId = newId; count++; }
-    }
-  }
-  for (const seq of lib.sequences || []) {
-    for (const step of seq.steps || []) {
-      const parts = String(step.cmd || "").trim().split(/\s+/);
-      if (parts[0]?.toUpperCase() === "RUN" && parts[1] === oldId) {
-        parts[1] = newId;
-        step.cmd = parts.join(" ");
-        count++;
-      }
-    }
-  }
-  return count;
-}
-
 function defaultSequence(lib) {
-  const id = uniqueSequenceId(lib, "new-sequence");
+  const id = uniqueSequenceId(lib);   // opaque random id (servo-d91)
   return {
     id,
     name: "New Sequence",
@@ -5763,10 +5682,13 @@ const CMD_HELP =
   "DMOVE/UMOVE <ch> <pct> <ms> · DOWN/UP <ch> <pct> · S<ch> <deg> · STOP";
 
 function cmdSuggestOptions() {
-  // Datalist <option>s = baked Motion ids only (MOTION <id>). Everything else
-  // is typed by hand; the firmware sequence runner accepts any command string.
-  return motionOptionsForCommands()
-    .map(cmd => `<option value="${escapeHtml(cmd)}"></option>`)
+  // Datalist <option>s = baked Motion ids (MOTION <id>). Ids are opaque tokens
+  // (servo-d91), so surface the motion name as the option label to keep the
+  // suggestions recognizable. Everything else is typed by hand; the firmware
+  // sequence runner accepts any command string.
+  const lib = sequenceLibrary();
+  return (lib.motions || [])
+    .map(m => `<option value="MOTION ${escapeHtml(m.id)}" label="${escapeHtml(m.name || m.id)}"></option>`)
     .join("");
 }
 
@@ -6728,31 +6650,8 @@ function commitSequenceName() {
   const seq = readSequenceFromDom();
   const nextName = seqNameEl.value.trim().slice(0, 64);
   if (!nextName || nextName === seq.name) return;
+  // Ids are opaque and fixed (servo-d91); naming only ever sets the name.
   seq.name = nextName;
-
-  // While the sequence still has its placeholder auto-id, derive a meaningful
-  // id from the name (servo-3ks) so naming it "arc" yields id "arc" instead of
-  // "new-sequence". Once it has a real id, naming leaves the id alone (schema
-  // contract: id stable, name free-form — use Rename ID to change it).
-  if (isAutoSequenceId(seq.id)) {
-    const lib = sequenceLibrary();
-    const oldId = seq.id;
-    const newId = uniqueSequenceId(lib, nextName);
-    if (newId !== oldId) {
-      const refs = rewriteSequenceIdReferences(lib, oldId, newId);
-      seq.id = newId;
-      lib.sequences = lib.sequences.filter(s => s.id !== oldId);
-      lib.sequences.push(seq);
-      currentSeqId = newId;
-      saveLibrary(lib);
-      seqDirty = false;
-      renderLibSummary();
-      renderSequencer();
-      const note = refs ? ` (${refs} ref${refs === 1 ? "" : "s"} updated)` : "";
-      setSeqStatus(`renamed ${seq.name} · id → ${newId}${note}`, "phosphor");
-      return;
-    }
-  }
   saveCurrentSequence(seq);
   setSeqStatus(`renamed ${seq.name}`, "phosphor");
 }
@@ -6780,35 +6679,11 @@ $("#seqNew").addEventListener("click", () => {
   setSeqStatus(`created ${seq.name}`, "phosphor");
 });
 
-$("#seqRename").addEventListener("click", () => {
-  if (seqDirty) saveCurrentSequence(readSequenceFromDom());
-  const lib = sequenceLibrary();
-  const seq = getCurrentSequence(lib);
-  if (!seq) return;
-  const oldId = seq.id;
-  const suggested = slugifyId(seq.name || oldId) || oldId;
-  const raw = prompt(`Rename ID for "${seq.name || oldId}"\nUsed by RUN <id> steps and Setlist entries.`, suggested);
-  if (raw == null) return;                       // cancelled
-  const newId = uniqueSequenceId(lib, raw);      // slugify + dedupe
-  if (newId === oldId) { setSeqStatus("id unchanged", "amber"); return; }
-  const target = lib.sequences.find(s => s.id === oldId);
-  if (!target) return;
-  target.id = newId;
-  const refs = rewriteSequenceIdReferences(lib, oldId, newId);
-  currentSeqId = newId;
-  saveLibrary(lib);
-  seqDirty = false;
-  renderLibSummary();
-  renderSequencer();
-  const refNote = refs ? ` · ${refs} ref${refs === 1 ? "" : "s"} updated` : "";
-  setSeqStatus(`id → ${newId}${refNote} · re-bake boards to update them`, "phosphor");
-});
-
 $("#seqDuplicate").addEventListener("click", () => {
   const lib = sequenceLibrary();
   const seq = readSequenceFromDom();
   const copy = JSON.parse(JSON.stringify(seq));
-  copy.id = uniqueSequenceId(lib, `${seq.id}-copy`);
+  copy.id = uniqueSequenceId(lib);   // fresh opaque id (servo-d91)
   copy.name = `${seq.name || seq.id} Copy`;
   lib.sequences.push(copy);
   currentSeqId = copy.id;
@@ -7112,9 +6987,9 @@ function sequenceOptions(selected, lib) {
   const opts = [`<option value=""${selected ? "" : " selected"}>—</option>`];
   for (const s of seqs) {
     const isSel = s.id === selected;
-    // Lead with the name; keep the id secondary (and in the title) so pickers
-    // read as "arc" not "new-sequence-2 · arc" (servo-3ks).
-    const label = s.name && s.name !== s.id ? `${s.name} · ${s.id}` : s.id;
+    // Show the human name only; ids are opaque tokens (servo-d91) so keep them
+    // out of the visible label and just in the hover title for reference.
+    const label = s.name || s.id;
     opts.push(`<option value="${escapeHtml(s.id)}" title="id: ${escapeHtml(s.id)}"${isSel ? " selected" : ""}>${escapeHtml(label)}</option>`);
   }
   return opts.join("");

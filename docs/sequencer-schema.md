@@ -22,10 +22,14 @@ Each Arduino persists a stable integer in EEPROM under `boardId`. Values: **1**,
 
 ### IDs
 
-`id` fields on Motions, Sequences, Setlists are short kebab-case strings (`tidal-drift`, `mechanical-pulse-2`). Stable across rebakes. The browser generates them; the user can rename via a separate `name` field without breaking references.
+`id` fields are short stable strings the browser generates and never reuses; the user identifies content by the separate free-form `name` field. Ids stay fixed across rebakes and renames, so references never break.
 
-- `id` regex: `^[a-z][a-z0-9-]{0,31}$`
+- **Motions** and **Sequences** use opaque random tokens — `mt-<6 base36>` / `sq-<6 base36>` (e.g. `mt-k7f2q3`, `sq-swgvbr`). They are deliberately not derived from the name, so there is no id to "rename" and nothing that drifts from the name.
+- **Setlists** still derive a kebab-case id from their name (`gallery-evening`).
+- `id` regex (both forms): `^[a-z][a-z0-9-]{0,31}$`
 - `name`: free-form UTF-8 string, ≤64 chars, display-only.
+
+(Older content keeps whatever id it already has — including legacy kebab-case motion/sequence ids like `tidal-drift`; only newly created content gets the opaque form.)
 
 ### Tags
 
