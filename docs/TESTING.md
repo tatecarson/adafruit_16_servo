@@ -1202,6 +1202,17 @@ leader. `schedulerConfig.graceMs` is the grace window (default 10000).
 - [x] Source smoke confirmed the board picker, **Bake One** control, and targeted `[ip]` bake dispatch are wired in the dashboard.
 - [ ] Hardware bake smoke — select the sole reachable board in // 03, click **Bake One**, accept the one-board confirmation, and verify the log names only that IP and reports one successful POST. Confirm the other configured/offline boards produce no unreachable/failed log entries. Not run in this session because no Arduino was attached to the test environment.
 
+**2026-07-18 (servo-uyb Sequence arrangement timeline):**
+- [x] Initial `make -C test` — storage 22/22, motion 8/8, sequence 8/8, setlist 11/11, gallery 9/9, and all browser simulation/editor checks passed with the original Sequence arrangement suite (11/11).
+- [x] `make -C test motion` — 8/8 passed.
+- [x] `make -C test storage` — 22/22 passed.
+- [x] Inline `servo_controller.html` script syntax check — passed.
+- [x] Browser UI at `http://127.0.0.1:4174/servo_controller.html` — **Arrange ↗** opened a 1248×688 overlay in a 1280×720 viewport; Fit rendered 1s / 10.9s / 1s blocks at 85px / 926.5px / 85px; clicking step 3 synchronized the table scrub, selected block, and playhead; pointer-dragging step 2 to step 1 persisted `MOTION library-test` as the first table row and showed the re-bake notice. No browser console errors.
+- [x] Follow-up browser UI at `http://127.0.0.1:4175/servo_controller.html` — the MOTION timeline block rendered four compact track curves; the Motion Library card rendered the same preview plus enabled **+ After** / **Use Here** controls. The overlay remained fully usable at 1280×720 with no browser console errors. The choice mutation itself is covered by the pure host suite to avoid rewriting the operator's live `library.json` during verification.
+- [x] Follow-up focused suite — `node test/verify_seq_arrangement.mjs` passed 17/17, including Motion add/replace semantics, duration autofill, source immutability, and metadata preservation. Inline browser script syntax and `git diff --check` passed; `make -C test storage` passed 22/22.
+- [ ] Follow-up aggregate rerun — the first attempt was killed by the host at storage startup; storage then passed independently. A second aggregate passed storage and stalled starting `run_motion_tests`; the direct motion invocation then entered the same host-level uninterruptible state previously documented for other native suites. No firmware/runtime files changed in this browser-only follow-up; the initial full aggregate above remains green.
+- Hardware upload is not applicable: this feature changes only the browser editor (`servo_controller.html`) and does not alter firmware, commands, storage schema, or board endpoints.
+
 ---
 
 ## Servo Calibration Notes

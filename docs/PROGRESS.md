@@ -214,6 +214,10 @@ adafruit_16_servo/
 
 39. `feat: add single-board bake control (servo-k6h)` — adds a board picker and **Bake One** action to // 03 so the browser resolves and POSTs only the selected board, without probing offline peers. When exactly one configured board is reachable, telemetry selects it automatically until the operator makes a manual choice. The existing per-board slice, size guard, confirmation, timeout recovery, snapshot, and polling pause remain shared with cluster bake and Retry Failed. Verification: `make -C test`; inline browser script syntax check. Hardware bake smoke remains in `docs/TESTING.md`.
 
+## Git Commits (Sequence Arrangement Timeline)
+
+40. `feat: add Sequence arrangement timeline (servo-uyb)` — adds an additive, full-screen **Arrange** surface to // 04: duration-proportional step blocks on a time ruler, inline MOTION keyframe previews, a visual Motion Library with **+ After** / **Use Here** choices, Fit/Zoom controls, synchronized scrub/playhead selection, and dependency-free pointer drag reorder persisted back into the existing table/library model. The table remains the detailed editor. Verification is recorded in `docs/TESTING.md`.
+
 ## Future Features
 
 - [ ] **EEPROM calibration storage** - Save/load servo calibrations (type, min, max, stop pulse) to persist across power cycles. Commands: `SAVE`, `LOAD`, `CLEAR`

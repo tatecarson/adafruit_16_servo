@@ -1063,6 +1063,178 @@
   .seq-scrub input[type=range] {
     accent-color: var(--amber);
   }
+
+  /* Full-screen Sequence arrangement view (servo-uyb). The table remains the
+     detailed editor; this is the timing/reorder surface. */
+  .seq-arrange-dialog {
+    width: calc(100vw - 32px);
+    max-width: none;
+    height: calc(100vh - 32px);
+    max-height: none;
+    margin: 16px;
+    padding: 0;
+    color: var(--ink);
+    background: var(--bg);
+    border: 1px solid var(--amber);
+    box-shadow: 0 0 0 1px var(--bg-deep), 0 18px 70px rgba(0,0,0,.7);
+  }
+  .seq-arrange-dialog::backdrop { background: rgba(2,8,10,.86); backdrop-filter: blur(3px); }
+  .seq-arrange-shell { min-height: 100%; display: flex; flex-direction: column; }
+  .seq-arrange-head {
+    display: grid;
+    grid-template-columns: minmax(240px, 1fr) auto auto;
+    gap: 18px;
+    align-items: center;
+    padding: 18px 20px;
+    border-bottom: 1px solid var(--rule-hi);
+    background: linear-gradient(90deg, rgba(255,182,39,.08), transparent 45%);
+  }
+  .seq-arrange-kicker {
+    display: block;
+    margin-bottom: 6px;
+    color: var(--amber);
+    font: 800 8px/1 var(--label);
+    letter-spacing: .32em;
+    text-transform: uppercase;
+  }
+  .seq-arrange-title { font: 600 19px/1.2 var(--mono); color: var(--ink); }
+  .seq-arrange-meta { margin-top: 6px; color: var(--ink-dim); font: 600 10px/1 var(--mono); }
+  .seq-arrange-zoom {
+    display: grid;
+    grid-template-columns: auto minmax(120px, 220px) auto;
+    gap: 10px;
+    align-items: center;
+    color: var(--ink-dim);
+    font: 700 8px/1 var(--label);
+    letter-spacing: .2em;
+    text-transform: uppercase;
+  }
+  .seq-arrange-zoom input { accent-color: var(--amber); }
+  .seq-arrange-stage { flex: 1; min-height: 0; padding: 24px 20px 20px; display: flex; flex-direction: column; }
+  .seq-arrange-instructions {
+    display: flex;
+    justify-content: space-between;
+    gap: 20px;
+    margin-bottom: 12px;
+    color: var(--ink-mute);
+    font: 600 9px/1.4 var(--mono);
+  }
+  .seq-arrange-scroll {
+    flex: 1;
+    min-height: 280px;
+    overflow: auto;
+    border: 1px solid var(--rule-hi);
+    background-color: var(--bg-deep);
+    background-image:
+      linear-gradient(rgba(75,227,193,.035) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(75,227,193,.035) 1px, transparent 1px);
+    background-size: 24px 24px;
+  }
+  .seq-arrange-canvas { position: relative; min-width: 100%; min-height: 100%; padding: 54px 18px 74px; }
+  .seq-arrange-ruler {
+    position: absolute;
+    inset: 0 18px auto;
+    height: 38px;
+    border-bottom: 1px solid var(--rule);
+    color: var(--ink-mute);
+    font: 600 9px/1 var(--mono);
+  }
+  .seq-arrange-tick { position: absolute; bottom: 7px; transform: translateX(-1px); white-space: nowrap; }
+  .seq-arrange-tick::after { content: ""; position: absolute; left: 0; top: 15px; height: 9px; border-left: 1px solid var(--rule-hi); }
+  .seq-arrange-track { position: relative; display: flex; align-items: stretch; height: 152px; margin-top: 12px; }
+  .seq-arrange-block {
+    position: relative;
+    flex: 0 0 auto;
+    min-width: 30px;
+    overflow: hidden;
+    padding: 15px 14px 13px;
+    border: 1px solid var(--rule-hi);
+    border-left: 3px solid var(--phosphor);
+    background: linear-gradient(145deg, rgba(75,227,193,.13), rgba(75,227,193,.035));
+    color: var(--ink);
+    cursor: grab;
+    touch-action: none;
+    user-select: none;
+    transition: filter .12s ease, border-color .12s ease, transform .12s ease;
+  }
+  .seq-arrange-block + .seq-arrange-block { border-left-color: var(--phosphor); }
+  .seq-arrange-block:hover { border-color: var(--phosphor); filter: brightness(1.13); }
+  .seq-arrange-block.selected { background: linear-gradient(145deg, rgba(255,182,39,.2), rgba(255,182,39,.055)); border-color: var(--amber); }
+  .seq-arrange-block.dragging { opacity: .35; transform: translateY(6px); }
+  .seq-arrange-block.drop-target { box-shadow: inset 4px 0 0 var(--amber); }
+  .seq-arrange-block.zero { border-style: dashed; }
+  .seq-arrange-block .n { color: var(--amber); font: 800 9px/1 var(--label); letter-spacing: .22em; }
+  .seq-arrange-block .cmdline { margin-top: 17px; font: 700 12px/1.25 var(--mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .seq-arrange-block .label { margin-top: 8px; color: var(--ink-dim); font: 500 10px/1.2 var(--mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .seq-arrange-block .timing { position: absolute; inset: auto 12px 12px; color: var(--phosphor); font: 700 10px/1 var(--mono); }
+  .seq-arrange-block .target { position: absolute; right: 10px; top: 10px; color: var(--ink-mute); font: 700 8px/1 var(--label); letter-spacing: .14em; text-transform: uppercase; }
+  .seq-arrange-block.has-preview .cmdline { margin-top: 12px; }
+  .seq-arrange-block.has-preview .label { display: none; }
+  .seq-arrange-preview {
+    position: absolute;
+    inset: 63px 12px 28px;
+    display: grid;
+    align-content: center;
+    gap: 3px;
+    overflow: hidden;
+    opacity: .9;
+    pointer-events: none;
+  }
+  .seq-arrange-preview-row { position: relative; height: 11px; border-bottom: 1px solid rgba(75,227,193,.09); }
+  .seq-arrange-preview-row svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+  .seq-arrange-preview-row polyline { fill: none; stroke: var(--phosphor); stroke-width: 2; vector-effect: non-scaling-stroke; }
+  .seq-arrange-preview-row.dc polyline { stroke: var(--amber); }
+  .seq-arrange-preview-empty { color: var(--ink-mute); font: 600 8px/1.2 var(--mono); }
+  .seq-arrange-playhead { position: absolute; top: 35px; bottom: 44px; width: 1px; background: var(--amber); pointer-events: none; z-index: 4; box-shadow: 0 0 10px rgba(255,182,39,.75); }
+  .seq-arrange-playhead::before { content: ""; position: absolute; left: -4px; top: 0; border-left: 5px solid transparent; border-right: 5px solid transparent; border-top: 7px solid var(--amber); }
+  .seq-arrange-foot {
+    display: flex;
+    justify-content: space-between;
+    gap: 18px;
+    align-items: center;
+    padding: 12px 20px;
+    border-top: 1px solid var(--rule-hi);
+    color: var(--ink-dim);
+    font: 600 10px/1.3 var(--mono);
+  }
+  .seq-arrange-library {
+    flex: 0 0 auto;
+    margin-top: 14px;
+    border: 1px solid var(--rule-hi);
+    background: rgba(2,8,10,.72);
+  }
+  .seq-arrange-library-head {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    align-items: baseline;
+    padding: 9px 12px;
+    border-bottom: 1px solid var(--rule);
+  }
+  .seq-arrange-library-head .title { color: var(--amber); font: 800 8px/1 var(--label); letter-spacing: .28em; text-transform: uppercase; }
+  .seq-arrange-library-head .help { color: var(--ink-mute); font: 600 9px/1 var(--mono); }
+  .seq-arrange-motion-list { display: flex; gap: 9px; overflow-x: auto; padding: 10px; }
+  .seq-arrange-motion-card {
+    flex: 0 0 210px;
+    min-width: 0;
+    padding: 10px;
+    border: 1px solid var(--rule);
+    background: linear-gradient(145deg, rgba(75,227,193,.08), rgba(75,227,193,.018));
+  }
+  .seq-arrange-motion-card:hover { border-color: var(--phosphor); }
+  .seq-arrange-motion-card .head { display: flex; justify-content: space-between; gap: 8px; color: var(--ink); font: 700 10px/1.1 var(--mono); }
+  .seq-arrange-motion-card .dur { color: var(--phosphor); white-space: nowrap; }
+  .seq-arrange-motion-card .mini { height: 36px; margin: 8px 0; position: relative; display: grid; align-content: center; gap: 2px; overflow: hidden; }
+  .seq-arrange-motion-card .mini .seq-arrange-preview-row { height: 7px; }
+  .seq-arrange-motion-card .actions { display: flex; gap: 6px; }
+  .seq-arrange-motion-card .actions .cmd { flex: 1; padding: 6px 5px; font-size: 7px; }
+  .seq-arrange-library-empty { padding: 14px; color: var(--ink-mute); font: 600 10px/1.3 var(--mono); }
+  @media (max-width: 760px) {
+    .seq-arrange-dialog { width: 100vw; height: 100vh; margin: 0; }
+    .seq-arrange-head { grid-template-columns: 1fr auto; }
+    .seq-arrange-zoom { grid-column: 1 / -1; grid-row: 2; }
+    .seq-arrange-instructions span:last-child { display: none; }
+  }
   .seq-status {
     color: var(--ink-dim);
     font: 500 10px/1.4 var(--mono);
@@ -1953,6 +2125,7 @@
         <button class="cmd compact" id="seqRecord">Record</button>
         <button class="cmd compact amber" id="seqSave">Save</button>
         <button class="cmd compact" id="seqDryRun">Dry Run</button>
+        <button class="cmd compact" id="seqArrangeOpen" title="Open the full-screen timing and reorder view">Arrange ↗</button>
       </div>
       <div class="seq-scrub">
         <span>Scrub</span>
@@ -1989,6 +2162,47 @@
     <div id="seqLog" class="seq-log"></div>
 
   </div>
+
+  <dialog id="seqArrangeDialog" class="seq-arrange-dialog" aria-labelledby="seqArrangeTitle">
+    <div class="seq-arrange-shell">
+      <header class="seq-arrange-head">
+        <div>
+          <span class="seq-arrange-kicker">// Sequence Arrangement</span>
+          <div id="seqArrangeTitle" class="seq-arrange-title">Sequence</div>
+          <div id="seqArrangeMeta" class="seq-arrange-meta">0 steps · total 0ms</div>
+        </div>
+        <label class="seq-arrange-zoom">
+          <span>Zoom</span>
+          <input id="seqArrangeZoom" type="range" min="25" max="300" step="5" value="90">
+          <span id="seqArrangeZoomLabel">90 px/s</span>
+        </label>
+        <div style="display:flex;gap:8px">
+          <button class="cmd compact" id="seqArrangeFit">Fit</button>
+          <button class="cmd compact alert" id="seqArrangeClose">Close</button>
+        </div>
+      </header>
+      <main class="seq-arrange-stage">
+        <div class="seq-arrange-instructions">
+          <span>Drag blocks to reorder · click a block to move the scrub position</span>
+          <span>Block width follows step duration</span>
+        </div>
+        <div id="seqArrangeScroll" class="seq-arrange-scroll">
+          <div id="seqArrangeCanvas" class="seq-arrange-canvas"></div>
+        </div>
+        <section class="seq-arrange-library" aria-labelledby="seqArrangeLibraryTitle">
+          <div class="seq-arrange-library-head">
+            <span id="seqArrangeLibraryTitle" class="title">Motion Library</span>
+            <span class="help">preview · add after selected · replace selected</span>
+          </div>
+          <div id="seqArrangeMotionList" class="seq-arrange-motion-list"></div>
+        </section>
+      </main>
+      <footer class="seq-arrange-foot">
+        <span id="seqArrangeStatus">Ready</span>
+        <span>Detailed command, target, label, and hold editing stays in the table.</span>
+      </footer>
+    </div>
+  </dialog>
 
   <!-- ============================================================
        SETLIST EDITOR
@@ -3331,10 +3545,23 @@ const seqPauseEl      = $("#seqPause");
 const seqStopEl       = $("#seqStop");
 const seqRecordEl     = $("#seqRecord");
 const seqDryRunEl     = $("#seqDryRun");
+const seqArrangeDialogEl = $("#seqArrangeDialog");
+const seqArrangeTitleEl = $("#seqArrangeTitle");
+const seqArrangeMetaEl = $("#seqArrangeMeta");
+const seqArrangeZoomEl = $("#seqArrangeZoom");
+const seqArrangeZoomLabelEl = $("#seqArrangeZoomLabel");
+const seqArrangeScrollEl = $("#seqArrangeScroll");
+const seqArrangeCanvasEl = $("#seqArrangeCanvas");
+const seqArrangeStatusEl = $("#seqArrangeStatus");
+const seqArrangeMotionListEl = $("#seqArrangeMotionList");
 
 let currentSeqId = null;
 let seqDirty = false;
 let seqDragIndex = null;
+let seqArrangeDragIndex = null;
+let seqArrangeSelectedIndex = 0;
+let seqArrangePointer = null;
+let seqArrangeSuppressClick = false;
 // Step indices whose read-only motion preview is expanded (servo-seqviz).
 // Transient view state; cleared on any structural change (reorder / add /
 // remove / sequence switch) because indices would otherwise go stale.
@@ -5671,6 +5898,145 @@ function formatMs(ms) {
   return `${s.toFixed(s % 1 ? 1 : 0)}s`;
 }
 
+// === SEQ-ARRANGE-CORE START ===
+// Pure arrangement helpers are kept extractable for host-side browser tests.
+function sequenceArrangementLayout(steps, pixelsPerSecond = 90, minBlockPx = 30) {
+  const scale = Math.max(1, Number(pixelsPerSecond) || 90) / 1000;
+  let elapsedMs = 0;
+  let visualLeftPx = 0;
+  const blocks = (Array.isArray(steps) ? steps : []).map((step, index) => {
+    const durationMs = Math.max(0, parseInt(step?.durationMs, 10) || 0);
+    const widthPx = Math.max(minBlockPx, durationMs * scale);
+    const block = { index, startMs: elapsedMs, endMs: elapsedMs + durationMs, durationMs, leftPx: visualLeftPx, widthPx };
+    elapsedMs += durationMs;
+    visualLeftPx += widthPx;
+    return block;
+  });
+  return { blocks, totalMs: elapsedMs, widthPx: visualLeftPx, pixelsPerSecond: scale * 1000 };
+}
+
+function reorderSequenceSteps(steps, fromIndex, toIndex) {
+  const copy = Array.isArray(steps) ? steps.slice() : [];
+  const from = parseInt(fromIndex, 10);
+  const to = parseInt(toIndex, 10);
+  if (!Number.isInteger(from) || !Number.isInteger(to) || from < 0 || to < 0 || from >= copy.length || to >= copy.length || from === to) return copy;
+  const [moved] = copy.splice(from, 1);
+  copy.splice(to, 0, moved);
+  return copy;
+}
+
+function sequenceStepForMotion(motion, baseStep = {}) {
+  const id = String(motion?.id || "").trim();
+  if (!id) return null;
+  return {
+    ...baseStep,
+    cmd: `MOTION ${id}`,
+    durationMs: Math.max(0, parseInt(motion?.durationMs, 10) || 0),
+    target: baseStep?.target ?? "all",
+    label: String(baseStep?.label || ""),
+    hold: !!baseStep?.hold,
+  };
+}
+
+function chooseSequenceArrangementMotion(steps, motion, selectedIndex, mode = "add") {
+  const copy = Array.isArray(steps) ? steps.slice() : [];
+  const selected = Math.max(0, Math.min(parseInt(selectedIndex, 10) || 0, Math.max(0, copy.length - 1)));
+  const replacing = mode === "replace" && copy.length > 0;
+  const next = sequenceStepForMotion(motion, replacing ? copy[selected] : {});
+  if (!next) return copy;
+  if (replacing) copy[selected] = next;
+  else copy.splice(copy.length ? selected + 1 : 0, 0, next);
+  return copy;
+}
+// === SEQ-ARRANGE-CORE END ===
+
+function renderSequenceArrangementPreview(motion, wrapperClass = "seq-arrange-preview") {
+  const strips = motionPreviewStrips(motion, MOTION_TRACK_SPECS).slice(0, 4);
+  if (!strips.length) return `<div class="${wrapperClass}"><span class="seq-arrange-preview-empty">no animated tracks</span></div>`;
+  const rows = strips.map(strip => {
+    const points = strip.points.map(point => `${point.xPct.toFixed(2)},${point.yPct.toFixed(2)}`).join(" ");
+    return `<div class="seq-arrange-preview-row ${strip.kind}" title="${escapeHtml(strip.label)}">
+      <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"><polyline points="${points}"></polyline></svg>
+    </div>`;
+  }).join("");
+  return `<div class="${wrapperClass}">${rows}</div>`;
+}
+
+function renderSequenceArrangementMotionLibrary(lib) {
+  const motions = lib.motions || [];
+  if (!motions.length) {
+    seqArrangeMotionListEl.innerHTML = `<div class="seq-arrange-library-empty">No Motions in this library yet. Create one in // 06 Motion, then return here.</div>`;
+    return;
+  }
+  seqArrangeMotionListEl.innerHTML = motions.map(motion => `<article class="seq-arrange-motion-card">
+    <div class="head"><span>${escapeHtml(motion.name || motion.id)}</span><span class="dur">${formatMs(Math.max(0, parseInt(motion.durationMs, 10) || 0))}</span></div>
+    ${renderSequenceArrangementPreview(motion, "mini")}
+    <div class="actions">
+      <button class="cmd compact" data-arrange-motion="${escapeHtml(motion.id)}" data-mode="add"${seqPlayer.active ? " disabled" : ""}>+ After</button>
+      <button class="cmd compact amber" data-arrange-motion="${escapeHtml(motion.id)}" data-mode="replace"${seqPlayer.active ? " disabled" : ""}>Use Here</button>
+    </div>
+  </article>`).join("");
+}
+
+function renderSequenceArrangement() {
+  if (!seqArrangeDialogEl?.open) return;
+  const lib = sequenceLibrary();
+  const seq = getCurrentSequence(lib);
+  if (!seq) return;
+  const steps = (seq.steps || []).map(normalizeStep);
+  const zoom = parseInt(seqArrangeZoomEl.value, 10) || 90;
+  const layout = sequenceArrangementLayout(steps, zoom);
+  const available = Math.max(0, (seqArrangeScrollEl.clientWidth || 0) - 36);
+  const trackWidth = Math.max(layout.widthPx, available);
+  const selected = seqPlayer.active
+    ? Math.max(0, Math.min(seqPlayer.index, steps.length - 1))
+    : Math.max(0, Math.min(seqArrangeSelectedIndex, steps.length - 1));
+  seqArrangeSelectedIndex = selected;
+  seqArrangeTitleEl.textContent = seq.name || seq.id;
+  seqArrangeMetaEl.textContent = `${steps.length} step${steps.length === 1 ? "" : "s"} · total ${formatMs(layout.totalMs)} · id ${seq.id}`;
+  seqArrangeZoomLabelEl.textContent = `${zoom} px/s`;
+
+  const ticks = layout.blocks.map(block =>
+    `<span class="seq-arrange-tick" style="left:${block.leftPx.toFixed(2)}px">${formatMs(block.startMs)}</span>`
+  ).join("") + `<span class="seq-arrange-tick" style="left:${layout.widthPx.toFixed(2)}px">${formatMs(layout.totalMs)}</span>`;
+  const blocks = steps.map((step, index) => {
+    const geometry = layout.blocks[index];
+    const target = String(step.target) === "all" ? "cluster" : `board ${escapeHtml(String(step.target))}`;
+    const motionId = seqStepMotionId(step.cmd);
+    const motion = motionId ? (lib.motions || []).find(item => item.id === motionId) : null;
+    const preview = motion ? renderSequenceArrangementPreview(motion) : "";
+    return `<article class="seq-arrange-block${index === selected ? " selected" : ""}${geometry.durationMs === 0 ? " zero" : ""}${motion ? " has-preview" : ""}"
+        data-arrange-index="${index}" style="width:${geometry.widthPx.toFixed(2)}px"
+        title="Step ${index + 1} · ${escapeHtml(step.cmd)} · ${formatMs(geometry.durationMs)}">
+      <span class="n">STEP ${pad2(index + 1)}</span>
+      <span class="target">${target}</span>
+      <div class="cmdline">${escapeHtml(step.cmd || "(empty command)")}</div>
+      <div class="label">${escapeHtml(step.label || (step.hold ? "hold point" : "unlabeled"))}</div>
+      ${preview}
+      <div class="timing">${formatMs(geometry.durationMs)}${step.hold ? " · HOLD" : ""}</div>
+    </article>`;
+  }).join("");
+  const playheadLeft = layout.blocks[selected]?.leftPx ?? 0;
+  seqArrangeCanvasEl.innerHTML = `<div class="seq-arrange-ruler" style="width:${trackWidth.toFixed(2)}px">${ticks}</div>
+    <div class="seq-arrange-playhead" style="left:${(18 + playheadLeft).toFixed(2)}px"></div>
+    <div class="seq-arrange-track" style="width:${trackWidth.toFixed(2)}px">${blocks}</div>`;
+  seqArrangeStatusEl.textContent = seqPlayer.active
+    ? `Playing step ${pad2(selected + 1)} · arrangement locked during playback`
+    : `Scrub ${pad2(selected + 1)} / ${pad2(steps.length)} · drag to reorder`;
+  renderSequenceArrangementMotionLibrary(lib);
+}
+
+function fitSequenceArrangement() {
+  const seq = getCurrentSequence();
+  if (!seq) return;
+  const totalMs = (seq.steps || []).reduce((sum, step) => sum + Math.max(0, parseInt(step.durationMs, 10) || 0), 0);
+  const available = Math.max(240, (seqArrangeScrollEl.clientWidth || window.innerWidth) - 56);
+  const fit = totalMs > 0 ? Math.max(25, Math.min(300, Math.floor(available / (totalMs / 1000) / 5) * 5)) : 90;
+  seqArrangeZoomEl.value = String(fit);
+  renderSequenceArrangement();
+  seqArrangeScrollEl.scrollLeft = 0;
+}
+
 // The step command field is an editable combobox (servo-vy6): the datalist
 // suggests the library's baked Motions (the clean, motion-first default), but
 // any firmware command can be typed freely — fixing the old closed <select>
@@ -5802,6 +6168,7 @@ function renderSequencer() {
       : "";
     return row + previewRow;
   }).join("");
+  renderSequenceArrangement();
 }
 
 function setSeqStatus(msg, color) {
@@ -6805,6 +7172,106 @@ seqStepsEl.addEventListener("drop", e => {
   seqExpandedSteps.clear();   // indices no longer map to the same steps
   saveCurrentSequence(seq);
   setSeqStatus(`moved step ${pad2(to + 1)}`, "phosphor");
+});
+
+$("#seqArrangeOpen").addEventListener("click", () => {
+  if (seqDirty) saveCurrentSequence(readSequenceFromDom());
+  seqArrangeSelectedIndex = parseInt(seqScrubEl.value, 10) || 0;
+  seqArrangeDialogEl.showModal();
+  requestAnimationFrame(() => fitSequenceArrangement());
+});
+$("#seqArrangeClose").addEventListener("click", () => seqArrangeDialogEl.close());
+$("#seqArrangeFit").addEventListener("click", fitSequenceArrangement);
+seqArrangeZoomEl.addEventListener("input", renderSequenceArrangement);
+seqArrangeDialogEl.addEventListener("close", () => {
+  seqArrangeDragIndex = null;
+  seqArrangePointer = null;
+  seqArrangeCanvasEl.innerHTML = "";
+});
+seqArrangeCanvasEl.addEventListener("click", e => {
+  if (seqArrangeSuppressClick) return;
+  const block = e.target.closest("[data-arrange-index]");
+  if (!block) return;
+  const index = parseInt(block.dataset.arrangeIndex, 10) || 0;
+  seqArrangeSelectedIndex = index;
+  seqScrubEl.value = index;
+  const seq = getCurrentSequence();
+  seqScrubLabelEl.textContent = `${pad2(index + 1)} / ${pad2((seq.steps || []).length)}`;
+  renderSequenceArrangement();
+});
+
+function commitSequenceArrangementReorder(from, to) {
+  if (from == null || to == null || from === to) return;
+  const seq = readSequenceFromDom();
+  seq.steps = reorderSequenceSteps(seq.steps, from, to);
+  seqArrangeSelectedIndex = to;
+  seqExpandedSteps.clear();
+  saveCurrentSequence(seq);
+  seqScrubEl.value = to;
+  setSeqStatus(`arranged step ${pad2(from + 1)} → ${pad2(to + 1)} · re-bake boards to update them`, "phosphor");
+  seqArrangeStatusEl.textContent = `Order saved · step ${pad2(to + 1)} selected · re-bake required`;
+}
+
+function chooseMotionInSequenceArrangement(motionId, mode) {
+  if (seqPlayer.active) return;
+  const lib = sequenceLibrary();
+  const motion = (lib.motions || []).find(item => item.id === motionId);
+  if (!motion) return;
+  const seq = readSequenceFromDom();
+  const oldLength = seq.steps.length;
+  const selected = Math.max(0, Math.min(seqArrangeSelectedIndex, Math.max(0, oldLength - 1)));
+  seq.steps = chooseSequenceArrangementMotion(seq.steps, motion, selected, mode);
+  const replaced = mode === "replace" && oldLength > 0;
+  seqArrangeSelectedIndex = replaced ? selected : Math.min(selected + 1, seq.steps.length - 1);
+  seqExpandedSteps.clear();
+  saveCurrentSequence(seq);
+  seqScrubEl.value = seqArrangeSelectedIndex;
+  const action = replaced ? "replaced" : "added";
+  setSeqStatus(`${action} MOTION ${motion.id} at step ${pad2(seqArrangeSelectedIndex + 1)} · re-bake boards to update them`, "phosphor");
+  seqArrangeStatusEl.textContent = `${action} ${motion.name || motion.id} · step ${pad2(seqArrangeSelectedIndex + 1)} selected · re-bake required`;
+}
+
+seqArrangeMotionListEl.addEventListener("click", e => {
+  const button = e.target.closest("[data-arrange-motion]");
+  if (!button) return;
+  chooseMotionInSequenceArrangement(button.dataset.arrangeMotion, button.dataset.mode);
+});
+
+seqArrangeCanvasEl.addEventListener("pointerdown", e => {
+  const block = e.target.closest("[data-arrange-index]");
+  if (!block || seqPlayer.active || (e.button != null && e.button !== 0)) return;
+  seqArrangeDragIndex = parseInt(block.dataset.arrangeIndex, 10);
+  seqArrangePointer = { pointerId: e.pointerId, from: seqArrangeDragIndex, to: seqArrangeDragIndex, startX: e.clientX, startY: e.clientY, moved: false };
+  block.setPointerCapture?.(e.pointerId);
+});
+seqArrangeCanvasEl.addEventListener("pointermove", e => {
+  if (!seqArrangePointer || e.pointerId !== seqArrangePointer.pointerId) return;
+  if (!seqArrangePointer.moved && Math.hypot(e.clientX - seqArrangePointer.startX, e.clientY - seqArrangePointer.startY) < 6) return;
+  seqArrangePointer.moved = true;
+  e.preventDefault();
+  const origin = seqArrangeCanvasEl.querySelector(`[data-arrange-index="${seqArrangePointer.from}"]`);
+  origin?.classList.add("dragging");
+  const block = document.elementFromPoint(e.clientX, e.clientY)?.closest("[data-arrange-index]");
+  if (!block || !seqArrangeCanvasEl.contains(block)) return;
+  seqArrangePointer.to = parseInt(block.dataset.arrangeIndex, 10);
+  seqArrangeCanvasEl.querySelectorAll(".drop-target").forEach(el => el.classList.remove("drop-target"));
+  block.classList.add("drop-target");
+});
+seqArrangeCanvasEl.addEventListener("pointerup", e => {
+  if (!seqArrangePointer || e.pointerId !== seqArrangePointer.pointerId) return;
+  const { from, to, moved } = seqArrangePointer;
+  seqArrangePointer = null;
+  seqArrangeDragIndex = null;
+  seqArrangeCanvasEl.querySelectorAll(".dragging,.drop-target").forEach(el => el.classList.remove("dragging", "drop-target"));
+  if (!moved) return;
+  seqArrangeSuppressClick = true;
+  setTimeout(() => { seqArrangeSuppressClick = false; }, 0);
+  commitSequenceArrangementReorder(from, to);
+});
+seqArrangeCanvasEl.addEventListener("pointercancel", () => {
+  seqArrangePointer = null;
+  seqArrangeDragIndex = null;
+  seqArrangeCanvasEl.querySelectorAll(".dragging,.drop-target").forEach(el => el.classList.remove("dragging", "drop-target"));
 });
 
 $("#seqAddStep").addEventListener("click", addSequenceStep);

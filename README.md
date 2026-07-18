@@ -103,7 +103,11 @@ The page is organized into numbered sections:
   **Pull from Boards** rebuilds the editor library from what's physically baked.
 - **`// 04 Sequencer`** — author Sequences: ordered steps (each a command + duration +
   target board), drag-reorder, hold points, record mode, preview, scrub, and looped
-  playback.
+  playback. **Arrange ↗** opens a full-screen, zoomable DAW-style timeline whose
+  time-proportional blocks can be dragged to reorder the same steps without replacing
+  the detailed table editor. MOTION blocks show compact keyframe previews; the Motion
+  Library strip previews every available Motion and can add one after the selected
+  step or replace the selected step in place.
 - **`// 05 Setlist`** — group Sequences into playlists for unattended playback, with an
   ordered or weighted-shuffle scheduler and a **Simulate hour** preview that
   fast-forwards an hour of scheduling in the browser.
