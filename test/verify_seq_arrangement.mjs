@@ -18,6 +18,10 @@ function eq(name, got, want) {
   if (JSON.stringify(got) === JSON.stringify(want)) ok(name);
   else fail(`${name}\n    expected: ${JSON.stringify(want)}\n    got:      ${JSON.stringify(got)}`);
 }
+function matches(name, pattern) {
+  if (pattern.test(html)) ok(name);
+  else fail(`${name}\n    pattern not found: ${pattern}`);
+}
 
 const start = html.indexOf(START);
 const end = html.indexOf(END, start + START.length);
@@ -73,6 +77,9 @@ const replaced = chooseSequenceArrangementMotion(replaceSource, motion, 0, "repl
 eq("replace choice swaps command and duration", [replaced[0].cmd, replaced[0].durationMs], ["MOTION tidal-drift", 4800]);
 eq("replace choice preserves step metadata", [replaced[0].target, replaced[0].label, replaced[0].hold], ["2", "finale", true]);
 eq("invalid Motion choice is a no-op", chooseSequenceArrangementMotion(original, {}, 0, "add").map(step => step.cmd), ["A", "B", "C", "D"]);
+
+matches("servo preview uses the Motion editor's amber color", /\.seq-arrange-preview-row polyline\s*\{[^}]*stroke:\s*var\(--amber\)/s);
+matches("DC preview uses the Motion editor's phosphor color", /\.seq-arrange-preview-row\.dc polyline\s*\{[^}]*stroke:\s*var\(--phosphor\)/s);
 
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

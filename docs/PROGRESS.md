@@ -216,7 +216,7 @@ adafruit_16_servo/
 
 ## Git Commits (Sequence Arrangement Timeline)
 
-40. `feat: add Sequence arrangement timeline (servo-uyb)` — adds an additive, full-screen **Arrange** surface to // 04: duration-proportional step blocks on a time ruler, inline MOTION keyframe previews, a visual Motion Library with **+ After** / **Use Here** choices, Fit/Zoom controls, synchronized scrub/playhead selection, and dependency-free pointer drag reorder persisted back into the existing table/library model. The table remains the detailed editor. Verification is recorded in `docs/TESTING.md`.
+40. `feat: add Sequence arrangement timeline (servo-uyb)` — adds an additive, full-screen **Arrange** surface to // 04: duration-proportional step blocks on a time ruler, inline MOTION keyframe previews, a visual Motion Library with **+ After** / **Use Here** choices, Fit/Zoom controls, synchronized scrub/playhead selection, and dependency-free pointer drag reorder persisted back into the existing table/library model. Preview lines now follow the Motion editor's established color language—yellow for servos and green for DC motors—with an explicit legend. The table remains the detailed editor. Verification is recorded in `docs/TESTING.md`.
 
 ## Future Features
 
