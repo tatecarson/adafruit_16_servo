@@ -222,6 +222,8 @@ adafruit_16_servo/
 
 41. `feat: connect Motion keyframes and show live drag values (servo-bzh)` — draws interpolation-aware lines through Motion editor keyframes (linear amber/yellow servo curves and held-speed green DC steps) and adds a live value badge directly beside the dragged diamond, joined by a short pointer tick. The existing feasibility clamps and file-backed library model remain unchanged.
 
+42. `feat: add value context to Sequencer Motion previews (servo-9f9)` — enriches expanded step previews with visible per-track start/end values, low/high range, and key count. Fullscreen Arrange blocks now label both ends of each preview line; Motion Library cards keep the compact unlabeled treatment. Servo remains amber/yellow and DC remains phosphor/green.
+
 ## Future Features
 
 - [ ] **EEPROM calibration storage** - Save/load servo calibrations (type, min, max, stop pulse) to persist across power cycles. Commands: `SAVE`, `LOAD`, `CLEAR`

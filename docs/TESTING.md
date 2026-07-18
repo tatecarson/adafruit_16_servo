@@ -1221,6 +1221,13 @@ leader. `schedulerConfig.graceMs` is the grace window (default 10000).
 - [x] Isolated pointer-drag smoke at `http://127.0.0.1:4176/servo_controller.html` — copied the page and library into `/tmp`, dragged a servo keyframe, and observed the normal `keyframe moved` completion without touching the operator's project `library.json`. The badge's transient text/placement is covered by the pure readout tests above.
 - Hardware upload is not applicable: this feature changes only the browser Motion editor and does not alter firmware, commands, storage schema, or board endpoints.
 
+**2026-07-18 (servo-9f9 Sequencer preview value context):**
+- [x] `node test/verify_seq_preview.mjs` — 20/20 passed, including per-track start/end values, low/high range, key count, servo/DC orientation, clamping, and defensive inputs.
+- [x] Inline `servo_controller.html` script syntax and `git diff --check` — passed.
+- [x] Expanded live preview at `http://127.0.0.1:4175/servo_controller.html` — nine animated tracks rendered with visible `start → end`, `range low…high`, and key-count summaries without horizontal scrolling.
+- [x] Fullscreen Arrange preview — Motion blocks rendered compact start/end labels at each line edge; servo labels stayed amber/yellow, DC labels stayed phosphor/green, and Motion Library cards retained their compact unlabeled curves.
+- Hardware upload is not applicable: this is a browser-only presentation/data-summary change.
+
 ---
 
 ## Servo Calibration Notes

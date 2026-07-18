@@ -107,7 +107,9 @@ The page is organized into numbered sections:
   time-proportional blocks can be dragged to reorder the same steps without replacing
   the detailed table editor. MOTION blocks show compact keyframe previews; the Motion
   Library strip previews every available Motion and can add one after the selected
-  step or replace the selected step in place.
+  step or replace the selected step in place. Expanded MOTION previews show each
+  track's start/end values, full range, and key count; Arrange blocks label their
+  line endpoints for quick comparison.
 - **`// 05 Setlist`** — group Sequences into playlists for unattended playback, with an
   ordered or weighted-shuffle scheduler and a **Simulate hour** preview that
   fast-forwards an hour of scheduling in the browser.

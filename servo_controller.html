@@ -1180,11 +1180,15 @@
     opacity: .9;
     pointer-events: none;
   }
-  .seq-arrange-preview-row { position: relative; height: 11px; border-bottom: 1px solid rgba(255,182,39,.09); }
-  .seq-arrange-preview-row svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+  .seq-arrange-preview-row { position: relative; height: 13px; border-bottom: 1px solid rgba(255,182,39,.09); }
+  .seq-arrange-preview-row svg { position: absolute; inset: 0 24px; width: calc(100% - 48px); height: 100%; overflow: visible; }
   .seq-arrange-preview-row polyline { fill: none; stroke: var(--amber); stroke-width: 2; vector-effect: non-scaling-stroke; }
   .seq-arrange-preview-row.dc { border-bottom-color: rgba(75,227,193,.09); }
   .seq-arrange-preview-row.dc polyline { stroke: var(--phosphor); }
+  .seq-arrange-preview-value { position: absolute; top: 50%; transform: translateY(-50%); color: var(--amber); background: rgba(7,12,12,.84); font: 700 6px/1 var(--mono); z-index: 2; pointer-events: none; }
+  .seq-arrange-preview-value.start { left: 0; }
+  .seq-arrange-preview-value.end { right: 0; text-align: right; }
+  .seq-arrange-preview-row.dc .seq-arrange-preview-value { color: var(--phosphor); }
   .seq-arrange-preview-empty { color: var(--ink-mute); font: 600 8px/1.2 var(--mono); }
   .seq-arrange-playhead { position: absolute; top: 35px; bottom: 44px; width: 1px; background: var(--amber); pointer-events: none; z-index: 4; box-shadow: 0 0 10px rgba(255,182,39,.75); }
   .seq-arrange-playhead::before { content: ""; position: absolute; left: -4px; top: 0; border-left: 5px solid transparent; border-right: 5px solid transparent; border-top: 7px solid var(--amber); }
@@ -1231,6 +1235,8 @@
   .seq-arrange-motion-card .dur { color: var(--phosphor); white-space: nowrap; }
   .seq-arrange-motion-card .mini { height: 36px; margin: 8px 0; position: relative; display: grid; align-content: center; gap: 2px; overflow: hidden; }
   .seq-arrange-motion-card .mini .seq-arrange-preview-row { height: 7px; }
+  .seq-arrange-motion-card .mini .seq-arrange-preview-row svg { inset: 0; width: 100%; }
+  .seq-arrange-motion-card .mini .seq-arrange-preview-value { display: none; }
   .seq-arrange-motion-card .actions { display: flex; gap: 6px; }
   .seq-arrange-motion-card .actions .cmd { flex: 1; padding: 6px 5px; font-size: 7px; }
   .seq-arrange-library-empty { padding: 14px; color: var(--ink-mute); font: 600 10px/1.3 var(--mono); }
@@ -1758,7 +1764,7 @@
   }
   .seq-mini-row {
     display: grid;
-    grid-template-columns: 54px 1fr;
+    grid-template-columns: 54px minmax(180px, 1fr) 132px;
     align-items: stretch;
     gap: 8px;
   }
@@ -1800,6 +1806,36 @@
     pointer-events: none;
   }
   .seq-mini-row.dc .seq-mini-dot { border-color: var(--phosphor); }
+  .seq-mini-values {
+    align-self: center;
+    min-width: 0;
+    border-left: 1px solid var(--rule);
+    padding-left: 9px;
+    font-family: var(--mono);
+  }
+  .seq-mini-values .journey {
+    display: block;
+    color: var(--amber);
+    font-size: 10px;
+    font-weight: 700;
+    line-height: 1;
+    white-space: nowrap;
+  }
+  .seq-mini-row.dc .seq-mini-values .journey { color: var(--phosphor); }
+  .seq-mini-values .range {
+    display: block;
+    margin-top: 4px;
+    color: var(--ink-mute);
+    font: 600 7px/1 var(--label);
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+  @media (max-width: 720px) {
+    .seq-mini-row { grid-template-columns: 48px 1fr; }
+    .seq-mini-values { grid-column: 2; border-left: 0; padding: 2px 0 5px; display: flex; align-items: baseline; gap: 8px; }
+    .seq-mini-values .range { margin-top: 0; }
+  }
 
   /* ---------- setlist additions ---------- */
   .sl-mode {
@@ -4415,12 +4451,18 @@ function motionPreviewStrips(motion, specs) {
       const yPct = Math.max(0, Math.min(100, oriented * 100));
       return { atMs, value, xPct, yPct };
     });
+    const values = points.map(point => point.value);
     strips.push({
       key: `${spec.boardId}:${spec.kind}:${spec.channel}`,
       boardId: spec.boardId,
       label: spec.label,
       kind: spec.kind,
       unit: spec.unit,
+      startValue: values[0],
+      endValue: values[values.length - 1],
+      minValue: Math.min(...values),
+      maxValue: Math.max(...values),
+      keyframeCount: points.length,
       points,
     });
   }
@@ -6106,11 +6148,23 @@ function renderSequenceArrangementPreview(motion, wrapperClass = "seq-arrange-pr
   if (!strips.length) return `<div class="${wrapperClass}"><span class="seq-arrange-preview-empty">no animated tracks</span></div>`;
   const rows = strips.map(strip => {
     const points = strip.points.map(point => `${point.xPct.toFixed(2)},${point.yPct.toFixed(2)}`).join(" ");
-    return `<div class="seq-arrange-preview-row ${strip.kind}" title="${escapeHtml(strip.label)}">
+    const start = formatSequencePreviewValue(strip.startValue, strip.unit, true);
+    const end = formatSequencePreviewValue(strip.endValue, strip.unit, true);
+    const range = `${formatSequencePreviewValue(strip.minValue, strip.unit)}…${formatSequencePreviewValue(strip.maxValue, strip.unit)}`;
+    return `<div class="seq-arrange-preview-row ${strip.kind}" title="${escapeHtml(`${strip.label} · ${start} → ${end} · range ${range}`)}">
+      <span class="seq-arrange-preview-value start">${escapeHtml(start)}</span>
       <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"><polyline points="${points}"></polyline></svg>
+      <span class="seq-arrange-preview-value end">${escapeHtml(end)}</span>
     </div>`;
   }).join("");
   return `<div class="${wrapperClass}">${rows}</div>`;
+}
+
+function formatSequencePreviewValue(value, unit, compact = false) {
+  const numeric = Number(value);
+  const text = Number.isFinite(numeric) ? (Number.isInteger(numeric) ? String(numeric) : numeric.toFixed(1)) : "—";
+  if (unit === "%") return `${text}%`;
+  return compact ? text : `${text} ${unit || ""}`.trim();
 }
 
 function renderSequenceArrangementMotionLibrary(lib) {
@@ -6256,6 +6310,10 @@ function renderSeqStepPreview(step, lib) {
     const boardTag = strip.boardId !== lastBoard
       ? `<div class="seq-mini-board">board ${strip.boardId}</div>` : "";
     lastBoard = strip.boardId;
+    const start = formatSequencePreviewValue(strip.startValue, strip.unit);
+    const end = formatSequencePreviewValue(strip.endValue, strip.unit);
+    const low = formatSequencePreviewValue(strip.minValue, strip.unit);
+    const high = formatSequencePreviewValue(strip.maxValue, strip.unit);
     return `${boardTag}<div class="seq-mini-row ${strip.kind}">
         <div class="seq-mini-label">${escapeHtml(strip.label)}</div>
         <div class="seq-mini-plot">
@@ -6263,6 +6321,10 @@ function renderSeqStepPreview(step, lib) {
             <polyline points="${line}"></polyline>
           </svg>
           ${dots}
+        </div>
+        <div class="seq-mini-values" title="${escapeHtml(`${strip.label} values`)}">
+          <span class="journey">${escapeHtml(start)} → ${escapeHtml(end)}</span>
+          <span class="range">range ${escapeHtml(low)}…${escapeHtml(high)} · ${strip.keyframeCount} key${strip.keyframeCount === 1 ? "" : "s"}</span>
         </div>
       </div>`;
   }).join("");
