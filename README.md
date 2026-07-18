@@ -89,7 +89,12 @@ HTTP API, and announces itself to the cluster over UDP.
 The page is organized into numbered sections:
 
 - **`// 01 Master Command`** — free-text command terminal and a global `STOP`. Commands
-  go to one board over HTTP and mirror to the rest over UDP.
+  go to one board over HTTP and mirror to the rest over UDP. **Motor Test** opens a
+  slide-in drawer to spot-check hardware on one board without authoring a Motion:
+  sweep/jog each winch servo (`SWEEP`, `UP <n> 0/50/100`), send all servos down/up
+  at once, and drive the DC motor forward/reverse (`ROTATE ±30`). Positions are
+  absolute, so "All Down" just holds any servo already down — nothing reverses.
+  Live commands only — nothing is baked.
 - **`// 02 Board Telemetry`** — live cards per board: online state, servo positions, DC
   motor speed, and what's currently playing.
 - **`// 03 Sequencer Bake`** — import/export the library, slice it per board, and POST
