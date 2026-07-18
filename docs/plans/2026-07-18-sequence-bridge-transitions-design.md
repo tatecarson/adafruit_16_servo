@@ -81,29 +81,47 @@ For each `MOTION <id>` block:
    **insert a bridge** before the block.
 3. Advance each driven channel's virtual position to the block's exit pose.
 
-### Bridge encoding
+### Bridge encoding — synthesized bridge motions
 
-A step is a single command string (≤ `SEQ_CMD_MAX_LEN`, 96 chars) with a
-duration and a target board. `DMOVE <ch> <pct> <ms>` moves one channel on one
-board. A bridge usually moves several servos, possibly across several boards,
-simultaneously. The sequencer already supports this: **zero-duration steps fire
-as a chord** (same instant); a following step with a duration holds the clock.
+**Constraint that drives this:** `SEQ_MAX_STEPS` is **16**
+(`adafruit_16_servo/servo_runtime.h`). A DMOVE-per-servo encoding costs one step
+per moving servo plus a dwell, so a couple of multi-servo bridges exhaust the
+budget. That does not scale to real sequences.
 
-So one bridge is:
+Instead, an **interior bridge is a synthesized 2-keyframe motion**, inserted as a
+**single** `MOTION __bridge_<seqId>_<n>` step. Cost is always one step per
+bridge, regardless of how many servos move. It reuses the firmware's existing
+motion playback and cluster sync verbatim — still zero new firmware logic.
+
+For a transition with previous exit pose `from` and next entry pose `to`, the
+synthesized motion has one servo track per channel that actually moves:
 
 ```
-DMOVE 3 50 900   target 1   durationMs 0    ┐ chord — fire together
-DMOVE 5 0  900   target 1   durationMs 0    │
-DMOVE 2 80 900   target 2   durationMs 0    ┘
-(bridge dwell)   target all durationMs 900   ← holds clock during the glide
+{ id: "__bridge_<seqId>_2", name: "↳ bridge", scope: "cluster",
+  durationMs: 900,
+  tracks: [
+    { kind:"servo", boardId:1, channel:0,
+      keyframes:[ {atMs:0, value: from.b1s0}, {atMs:900, value: to.b1s0} ] },
+    ... one per moving servo ...
+  ] }
 ```
 
-- Every `DMOVE` in a bridge carries the **same** glide duration so all servos
-  arrive together.
-- The trailing dwell step (empty `cmd` — firmware already skips dispatch when
-  `cmd[0] == '\0'`) holds the sequence clock for that duration so the next real
-  block doesn't fire early.
-- Targets come from each track's `boardId`, preserving cluster lock-step.
+Why the first keyframe is the **from** value: firmware `motionApplyServo`
+asserts keyframe-0 instantly at t=0. For an interior transition the servo is
+already sitting at `from` (the previous motion held its exit pose), so that
+assertion is a no-op, and the track then ramps `from → to`. Servos not in the
+bridge are simply omitted, so they hold. After the bridge the servos sit exactly
+at the next motion's entry pose, so the real motion's own keyframe-0 assertion is
+also a no-op. Continuity end to end.
+
+**Cold start is the exception** and uses DMOVE instead (see Edge cases): at the
+very start of a sequence the servos' physical position is unknown, so no baked
+keyframe-0 value is correct — only `DMOVE`, which ramps from the servo's *actual*
+hardware position, is safe there.
+
+Synthesized bridge motions are added to the bake's `motions` array, sliced
+per-board like any motion (only tracks matching a board are kept), and hidden
+from the motion-library UI by their `__bridge_` id prefix.
 
 ### Threshold and duration (fully automatic)
 
@@ -123,27 +141,36 @@ duration, so the mechanism can follow instead of being whipped.
 
 ## Edge cases
 
-- **Cold start (first block).** At bake time the physical servo positions are
-  unknown. Prepend a bridge that `DMOVE`s each channel the first block drives to
-  its entry pose. `DMOVE` ramps from the servo's *actual* current position
-  regardless of where it is, so this glides rather than snaps — **the direct fix
-  for the "already up, told to go up more" incident.** Duration sized
-  conservatively (assume a large delta) since it can't be measured.
-- **Per-channel scope.** Only bridge channels the *incoming* block drives.
-  Untouched servos are left alone.
+- **Cold start (first motion) — DMOVE, not a synth motion.** At bake time the
+  servos' physical position is unknown, so no keyframe-0 value is correct and a
+  synth bridge motion would snap. Prepend a bridge built from `DMOVE <ch> <pct>
+  <ms>` steps (chord of zero-duration DMOVEs targeted per board + a dwell step),
+  one per channel the first motion drives. `DMOVE` ramps from the servo's
+  *actual* current position regardless of where it is — **the direct fix for the
+  "already up, told to go up more" incident.** Duration is sized conservatively
+  (`unknownDeltaPercent`, default 100%) since the delta can't be measured. This
+  is the only place DMOVE is used, and it happens at most once per sequence.
+- **Per-channel scope.** Only bridge channels the *incoming* motion drives.
+  Because every motion carries a track for every servo (untouched ones bake as
+  constant holds), in practice the incoming motion asserts all servos — so a
+  bridge covers every servo whose value actually changes past the threshold.
 - **DC tracks excluded.** DC is a speed, not a position — nothing to glide
   (same call `_planMotionPreRoll` makes).
 - **Non-MOTION steps** (raw `STOP`, `ROTATE`, `S3`, manual commands) change
   servo positions in ways the walker can't statically model. On hitting one,
-  mark the affected channels' virtual position **unknown** so the next motion
-  gets a conservative (cold-start-style) bridge rather than a wrong one.
-- **Loop wrap.** For a looping sequence, the last block's exit → first block's
-  entry is a real transition; bridge it too, sized to the known delta.
-  (Reconcile with the cold-start leading bridge during implementation so a
-  looping sequence doesn't double-glide on wrap.)
-- **Step budget.** Bridges cost steps against `SEQ_MAX_STEPS`. The transform
-  totals them and **fails the bake with a clear message** rather than silently
-  truncating.
+  mark virtual position **unknown** so the next motion gets a conservative
+  (DMOVE cold-start-style) bridge rather than a wrong one.
+- **Loop wrap — v1 limitation.** `LOOP` is a *runtime* flag (`RUN <seq> LOOP`),
+  not stored in the sequence, so at bake time we cannot know a sequence will
+  loop. Adding a trailing last→first bridge unconditionally would wrongly drag
+  servos back toward the start pose at the end of a one-shot run. v1 therefore
+  does **not** bridge the loop seam; a looped sequence still snaps once per wrap.
+  Documented as a follow-up (options: a per-sequence "loops" hint in the schema,
+  or a firmware loop-aware bridge). Interior + cold-start bridging is unaffected.
+- **Step budget.** Interior bridges cost 1 step each; the cold-start bridge costs
+  (moving servos + 1). The walker totals the produced steps and **fails the bake
+  with a clear message** naming the sequence when it would exceed `SEQ_MAX_STEPS`
+  (16), rather than silently truncating.
 
 ## Visibility (not magic)
 
@@ -157,24 +184,40 @@ before ever baking to hardware.
 - **Bake log:** one line per bridge (servos, from→to, duration); plus a summary
   (`3 bridges inserted, +2.4s`). Keeps a headless bake auditable.
 
+## Layer 1 — helpful authoring default
+
+When a new motion is created (`defaultMotion`), seed each servo track's first
+keyframe from the **exit pose of the currently-open motion** instead of a flat 0,
+so authoring literally "starts where the last one ended." Reuses the same
+`motionExitPose` helper the bridge transform uses. Purely a convenience that
+reduces how many bridges get generated; because motions are reused, it is never a
+substitute for Layer 2.
+
 ## Firmware impact
 
-None. The firmware plays the baked steps unchanged. All new logic is the
-JS bake-time transform plus Arrange/bake-log rendering.
+None. The firmware plays the baked steps/motions unchanged. All new logic is the
+JS bake-time transform plus Arrange/bake-log rendering and the `defaultMotion`
+seed.
 
 ## Testing
 
-- Unit-test `insertBridges(steps, motionLibrary)` as a pure function: bridges
-  appear at the right transitions, with correct targets, durations, chord +
-  dwell structure, threshold skipping, cold-start prepend, loop-wrap, non-MOTION
-  reset, and the `SEQ_MAX_STEPS` budget error.
-- Existing C++ sequence/`DMOVE` tests continue to cover playback, since the
-  firmware is unchanged.
+Everything new is a pure function extracted from a marked HTML region and tested
+under Node (matching `test/verify_seq_arrangement.mjs`):
+
+- `bridgeServoPose(motion, edge)` — entry/exit pose extraction.
+- `planColdStartBridge(toPose, opts)` — DMOVE chord + dwell, threshold, duration.
+- `insertSequenceBridges(steps, motions, opts)` → `{ steps, bridgeMotions }` —
+  interior synth-motion bridges at the right transitions, virtual-position
+  tracking, non-MOTION reset, cold-start prepend, and the `SEQ_MAX_STEPS` budget
+  error.
+- `seedFirstKeyframesFromExit(prevMotion, newMotion)` — Layer 1 seeding.
+
+Existing C++ sequence / `MOTION` / `DMOVE` tests continue to cover playback,
+since the firmware is unchanged.
 
 ## Open implementation details
 
-- Exact cold-start bridge duration policy (worst-case constant vs. a chosen
-  home-travel time).
-- Cold-start vs. loop-wrap reconciliation for looping sequences.
-- Whether the dwell step is a separate empty-cmd step (preferred, for timeline
-  visibility) or the duration folded onto the last `DMOVE`.
+- Exact `unknownDeltaPercent` for the cold-start DMOVE duration (default 100%).
+- Loop-seam bridging (deferred — needs a bake-time signal that a sequence loops).
+- Whether synth bridge motions are also surfaced (dimmed) in the sequencer table
+  or only in the Arrange timeline.
