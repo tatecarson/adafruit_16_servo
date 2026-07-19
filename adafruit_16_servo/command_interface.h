@@ -387,6 +387,9 @@ void processCommand(char* cmd) {
     Serial.print(F("hasPrevious=")); Serial.println(storageHasPrevious() ? F("yes") : F("no"));
     Serial.print(F("gallery=")); Serial.println(storageGalleryMode() ? F("on") : F("off"));
     Serial.print(F("slotPayloadMax=")); Serial.println((int)STORAGE_PAYLOAD_MAX);
+    Serial.print(F("rollbackPayloadMax=")); Serial.println((int)STORAGE_DUAL_PAYLOAD_MAX);
+    Serial.print(F("storageMode=")); Serial.println(storageActiveIsLarge() ? F("large") : F("dual"));
+    Serial.print(F("rollbackSafe=")); Serial.println(storageActiveIsLarge() ? F("no") : F("yes"));
     return;
   }
   else if (startsWith(cmd, "STATUS")) {

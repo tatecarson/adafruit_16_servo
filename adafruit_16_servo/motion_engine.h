@@ -294,8 +294,9 @@ inline void updateMotion() {
 // a past time catches up to the correct phase. updateMotion() gates the
 // actual playback on the signed millis()-startMs delta.
 inline bool startMotionFromStorageAt(const char* motionId, unsigned long localStartMs, bool announce) {
-  uint8_t* buf = storageScratchBuffer();
-  int len = storageReadActive(buf, STORAGE_PAYLOAD_MAX);
+  StorageBufferLease lease(storageActiveBytesUsed());
+  uint8_t* buf = lease.data;
+  int len = buf ? storageReadActive(buf, lease.capacity) : -1;
   if (len <= 0) {
     Serial.println(F("No baked library"));
     return false;

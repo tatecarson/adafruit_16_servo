@@ -3627,19 +3627,21 @@ const MOTION_MAX_TRACKS = 17;
 // Mirror of firmware SEQ_MAX_STEPS (adafruit_16_servo/servo_runtime.h). Baked
 // sequences (including auto-inserted transition bridges) must fit this many steps.
 const SEQ_MAX_STEPS = 16;
-// EEPROM slot byte budget for a whole per-board bake blob (storage.h
-// STORAGE_PAYLOAD_MAX). The firmware refuses to write a larger slot; guard it
-// before POST so the operator gets a clear "trim the library" message rather
-// than a mid-write client timeout (servo-4hc).
-const STORAGE_PAYLOAD_MAX = 4080;
+// EEPROM capacity tiers from storage.h. Normal payloads keep the original two
+// rollback-safe slots. A payload above that threshold may use the overlapping
+// single-record region, which provides more room but cannot retain a previous
+// bake or survive a power loss mid-write.
+const STORAGE_DUAL_PAYLOAD_MAX = 4080;
+const STORAGE_PAYLOAD_MAX = 6000;
 // Firmware POST /sequences blocks on EEPROM writes. UNO R4 dataflash byte
 // writes are ~5-10ms each plus per-block erase, so a multi-KB bake can
 // spend 60s+ in storageWriteSlot before the HTTP response goes out. 15s
 // produced false failures even though the write landed (confirmed via
 // GET /sequences/info bytesUsed match after the timeout). Some boards
 // run slower than others — 90s reliably timed out on the slowest of our
-// three for a 2118B payload, so 150s leaves comfortable headroom.
-const BAKE_TIMEOUT_MS = 150000;
+// three for a 2118B payload. Large-mode writes can be roughly twice that size,
+// so five minutes covers the expanded tier without a false client failure.
+const BAKE_TIMEOUT_MS = 300000;
 // /sequences/info is cheap on a quiet board, but the firmware is
 // single-threaded — if the board is mid-write when the recovery probe
 // fires, the GET queues until the write finishes. 30s covers worst-case
@@ -3850,23 +3852,28 @@ function renderBakeInventory() {
   const bakeLib = buildBakeLibrary(lib);
   const boardBytes = [1, 2, 3].map(boardId => {
     const bytes = size(sliceForBoard(bakeLib, boardId));
-    const level = bytes > STORAGE_PAYLOAD_MAX ? "over" : (bytes >= STORAGE_PAYLOAD_MAX * 0.8 ? "warn" : "ok");
-    return { boardId, bytes, level };
+    const tier = bakeStorageTier(bytes);
+    const level = tier.mode === "over" ? "over"
+      : (tier.mode === "large" || bytes >= STORAGE_DUAL_PAYLOAD_MAX * 0.8 ? "warn" : "ok");
+    return { boardId, bytes, tier, level };
   });
   if (bakeBudgetCaretEl) bakeBudgetCaretEl.textContent = bakeBudgetExpanded ? "−" : "+";
 
   // Collapsed: one-line per-board summary (still flags over/near-full so you
   // notice without expanding). Click the header to expand and prune.
   if (!bakeBudgetExpanded) {
-    const parts = boardBytes.map(b =>
-      `<span class="s-${b.level}">B${b.boardId} ${b.bytes}/${STORAGE_PAYLOAD_MAX}B</span>`).join("");
+    const parts = boardBytes.map(b => {
+      const mode = b.tier.rollbackSafe ? "rollback" : (b.tier.mode === "large" ? "large · no rollback" : "over");
+      return `<span class="s-${b.level}">B${b.boardId} ${b.bytes}/${b.tier.capacity}B ${mode}</span>`;
+    }).join("");
     bakeBudgetEl.innerHTML = `<div class="bb-summary">${parts}<span class="s-hint">· click to trim</span></div>`;
     return;
   }
 
-  const bars = boardBytes.map(({ boardId, bytes, level }) => {
-    const pct = Math.min(100, Math.round((bytes / STORAGE_PAYLOAD_MAX) * 100));
-    return `<div class="bb-bar ${level}"><div class="bb-label"><span>board ${boardId}</span><span>${bytes} / ${STORAGE_PAYLOAD_MAX}B</span></div>`
+  const bars = boardBytes.map(({ boardId, bytes, tier, level }) => {
+    const pct = Math.min(100, Math.round((bytes / tier.capacity) * 100));
+    const mode = tier.rollbackSafe ? "rollback safe" : (tier.mode === "large" ? "large · no rollback" : "over capacity");
+    return `<div class="bb-bar ${level}"><div class="bb-label"><span>board ${boardId} · ${mode}</span><span>${bytes} / ${tier.capacity}B</span></div>`
       + `<div class="bb-track"><div class="bb-fill" style="width:${pct}%"></div></div></div>`;
   }).join("");
 
@@ -7138,10 +7145,21 @@ function validateLibraryReferences(lib) {
 // === SEQ-BRIDGE-CORE END ===
 
 // === BAKE-PAYLOAD-CORE START ===
+function bakeStorageTier(byteCount) {
+  const bytes = Math.max(0, Number(byteCount) || 0);
+  if (bytes > STORAGE_PAYLOAD_MAX) {
+    return { mode:"over", capacity:STORAGE_PAYLOAD_MAX, rollbackSafe:false };
+  }
+  if (bytes > STORAGE_DUAL_PAYLOAD_MAX) {
+    return { mode:"large", capacity:STORAGE_PAYLOAD_MAX, rollbackSafe:false };
+  }
+  return { mode:"dual", capacity:STORAGE_DUAL_PAYLOAD_MAX, rollbackSafe:true };
+}
+
 // Emit only fields the schema-v1 firmware actually reads. The editor keeps the
 // full authoring model in library.json; EEPROM is a deploy artifact, so names,
 // tags, labels, hold/bridge flags, reserved v2 controls, and default values do
-// not belong in its 4 KB operational payload.
+// not belong in its operational payload.
 function compactTrackForDevice(track) {
   return {
     kind: track.kind,
@@ -7539,17 +7557,15 @@ async function bakeToAllBoards(onlyIps = null, mode = onlyIps ? "targeted" : "al
     let prev = null;
     try { prev = JSON.parse(localStorage.getItem(LIB_SNAP_PREFIX + ip) || "null"); } catch {}
     const diff = diffBlob(prev, blob);
-    return { ip, boardId, blob, json, bytes, diff };
+    return { ip, boardId, blob, json, bytes, diff, tier:bakeStorageTier(bytes.length) };
   });
 
-  // Guard the EEPROM slot size (servo-4hc): the firmware rejects any blob
-  // over STORAGE_PAYLOAD_MAX, but it does so mid-write, which surfaces as a
-  // confusing client timeout. Catch it here and name the offending board(s)
-  // + overage so the operator trims the library instead of guessing.
-  const tooBig = plans.filter(p => p.bytes.length > STORAGE_PAYLOAD_MAX);
+  // Guard the expanded storage tier. The 4081..6000-byte tier is allowed, but it
+  // is explicitly confirmed below because it cannot retain rollback.
+  const tooBig = plans.filter(p => p.tier.mode === "over");
   if (tooBig.length) {
     for (const p of tooBig) {
-      bakeLog(`bake blocked: ${p.ip} (board ${p.boardId}) blob ${p.bytes.length}B exceeds ${STORAGE_PAYLOAD_MAX}B slot — trim the library`, "alert");
+      bakeLog(`bake blocked: ${p.ip} (board ${p.boardId}) blob ${p.bytes.length}B exceeds ${STORAGE_PAYLOAD_MAX}B storage maximum — trim the library`, "alert");
     }
     bakeAllEl.disabled = false;
     bakeRetryEl.disabled = lastBakeFailedIps.length === 0;
@@ -7563,13 +7579,20 @@ async function bakeToAllBoards(onlyIps = null, mode = onlyIps ? "targeted" : "al
   }), { added: 0, changed: 0, deleted: 0 });
   const sizes = plans.map(p => `${p.ip}=${p.bytes.length}B`).join(", ");
   const summary = `${agg.changed} changed, ${agg.added} new, ${agg.deleted} deleted across ${plans.length} board(s). sizes: ${sizes}`;
-  if (!confirm(`Bake to ${plans.length} board(s)?\n\n${summary}\n\nProceed?`)) {
+  const largePlans = plans.filter(p => p.tier.mode === "large");
+  const largeWarning = largePlans.length
+    ? `\n\nWARNING: ${largePlans.length} board(s) require LARGE storage mode (> ${STORAGE_DUAL_PAYLOAD_MAX}B). This overwrites both rollback slots, cannot restore the previous bake, and is not power-loss safe while writing. Keep power connected until every POST finishes.`
+    : "";
+  if (!confirm(`Bake to ${plans.length} board(s)?\n\n${summary}${largeWarning}\n\nProceed?`)) {
     bakeLog("bake cancelled", "amber");
     bakeAllEl.disabled = false;
     bakeRetryEl.disabled = lastBakeFailedIps.length === 0;
     return;
   }
   bakeLog(summary);
+  if (largePlans.length) {
+    bakeLog(`large storage mode on ${largePlans.length} board(s): no rollback; do not interrupt power during bake`, "alert");
+  }
 
   // Step 3: POST sequentially. A failure on one board doesn't block the rest.
   let ok = 0;

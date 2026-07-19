@@ -284,22 +284,26 @@ Before slicing, the browser also rewrites an unsafe Sequence transition from `MO
 
 ## 6. Persistence and versioning (firmware)
 
-Storage on the Arduino UNO R4 WiFi uses the standard `EEPROM` library, which on the Renesas RA4M1 maps to ~8 KB of dedicated dataflash. The 8 KB is partitioned as:
+Storage on the Arduino UNO R4 WiFi uses the standard `EEPROM` library, which on the Renesas RA4M1 maps to ~8 KB of dedicated dataflash. The first 8 bytes remain the stable header (magic, active-record marker, `boardId`, and `gallery_mode`); bytes 8176–8191 remain reserved for persisted servo calibration. The sequencer region supports two compatible modes:
 
-- An 8-byte header with magic bytes, an active-slot pointer, `boardId`, and the `gallery_mode` boot flag (offset 4; `1` = on, anything else = off).
-- Two slots of 4084 bytes each. Each slot is `[length:2][crc16:2][payload:≤4080]`. CRC is CRC16-CCITT (poly 0x1021, init 0xFFFF) over the length bytes concatenated with the payload.
+- **Dual mode (default, ≤4080-byte payload):** two 4084-byte slots. Each slot is `[length:2][crc16:2][payload:≤4080]`.
+- **Large mode (4081–6000-byte payload):** one overlapping record beginning at byte 8, using the same length/CRC/payload format. The active marker value `2` identifies this mode. Firmware leases its larger JSON read buffer temporarily from the heap so normal runtime RAM usage does not increase.
 
-`POST /sequences` writes the payload to the *inactive* slot, then atomically flips the one-byte active-slot pointer. A power loss anywhere before the pointer flip leaves the previous active slot intact. The "previous" slot is simply the non-active one — the browser's restore-previous-bake button calls `POST /sequences/restore`, which is a one-byte pointer flip back (refused if the previous slot's CRC doesn't validate).
+For dual mode, `POST /sequences` writes the payload to the *inactive* slot, then atomically flips the one-byte active-slot pointer. A power loss anywhere before the pointer flip leaves the previous active slot intact. The browser's restore-previous-bake button calls `POST /sequences/restore`, which flips back only when the other slot's CRC validates.
+
+Large mode necessarily overlaps both dual slots, so it has **no previous-bake rollback and no power-loss atomicity while the write is in progress**. Firmware marks storage inactive before overwriting and writes the CRC last; an interrupted large write is rejected rather than treated as valid. The browser shows an explicit warning and requires confirmation. Returning to a small bake recreates dual mode; the second subsequent small bake restores normal previous-bake rollback.
+
+All records use CRC16-CCITT (poly 0x1021, init 0xFFFF) over the length bytes concatenated with the payload.
 
 Validation checks (firmware, at `POST /sequences` time):
 
-1. `Content-Length` is between 1 and 4080.
+1. `Content-Length` is between 1 and 6000.
 2. Body is well-formed JSON shape — balanced braces, terminated strings.
 3. Top-level object contains `"schemaVersion": 1`.
 
 Semantic validation (Motion `id` references, keyframe ordering, value-range bounds) is deferred to the playback engines (servo-2cw, servo-3a9), which fail the relevant `MOTION`/`RUN` command rather than the bake. This keeps the bake endpoint fast and the storage layer independent of the schema's domain semantics.
 
-The maximum bake-blob payload is therefore 4080 bytes. The browser minifies and compacts JSON before POSTing, validates all Motion/Sequence/Setlist references, and surfaces actual UTF-8 bytes used per board. The two-slot rollback design is unchanged; compaction only reduces the payload stored in each slot.
+The maximum bake-blob payload is 6000 bytes, while 4080 bytes remains the rollback-safe threshold. The browser minifies and compacts JSON before POSTing, validates all Motion/Sequence/Setlist references, surfaces actual UTF-8 bytes used per board, and labels which storage tier each board will use. Current project payloads remain well inside dual mode.
 
 ---
 

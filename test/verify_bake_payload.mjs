@@ -56,10 +56,12 @@ const SCHEMA_VERSION = 1;
 const SERVO_FEASIBILITY_MS_PER_PERCENT = 77;
 const MOTION_SERVO_REST_PERCENT = 100;
 const SEQ_MAX_STEPS = 16;
+const STORAGE_DUAL_PAYLOAD_MAX = 4080;
+const STORAGE_PAYLOAD_MAX = 6000;
 function conformTrackForBake(track) { return track; }
 ${bridgeCore}
 ${payloadCore}
-export { buildBakeLibrary, sliceForBoard, hydrateDeviceLibraryForEditor, validateLibraryReferences };
+export { buildBakeLibrary, sliceForBoard, hydrateDeviceLibraryForEditor, validateLibraryReferences, bakeStorageTier };
 `, "utf8");
 
 const core = await import(pathToFileURL(modulePath).href);
@@ -70,6 +72,17 @@ function check(condition, message) {
   console.log(`PASS: ${message}`);
 }
 const bytes = value => Buffer.byteLength(JSON.stringify(value));
+
+check(core.bakeStorageTier(4080).mode === "dual" && core.bakeStorageTier(4080).rollbackSafe,
+  "4080-byte payload keeps rollback-safe dual-slot mode");
+check(core.bakeStorageTier(4081).mode === "large" && !core.bakeStorageTier(4081).rollbackSafe,
+  "4081-byte payload selects explicit no-rollback large mode");
+check(core.bakeStorageTier(6001).mode === "over",
+  "payload beyond 6000 bytes is rejected by the capacity tier");
+check(html.includes("overwrites both rollback slots") && html.includes("not power-loss safe"),
+  "large-mode confirmation names rollback and power-loss risks");
+check(html.includes("large · no rollback") && html.includes("rollback safe"),
+  "bake budget labels both storage modes visibly");
 
 const baked = core.buildBakeLibrary(library);
 check(baked.motions.length === library.motions.length,

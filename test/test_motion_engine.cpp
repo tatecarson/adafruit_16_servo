@@ -124,6 +124,21 @@ static void test_playback_interpolates_servo_and_dc() {
   ASSERT_EQ(motorState.currentSpeed, -50);
 }
 
+static void test_motion_loads_from_large_storage_lease() {
+  reset_state();
+  static uint8_t largeBlob[5000];
+  size_t baseLen = strlen(kBlob);
+  memcpy(largeBlob, kBlob, baseLen - 1); // keep the outer closing brace for last
+  memset(largeBlob + baseLen - 1, ' ', sizeof(largeBlob) - baseLen);
+  largeBlob[sizeof(largeBlob) - 1] = '}';
+
+  ASSERT_TRUE(storageWriteSlot(largeBlob, sizeof(largeBlob)));
+  ASSERT_TRUE(storageActiveIsLarge());
+  ASSERT_TRUE(startMotionFromStorage("tidal-drift", false));
+  ASSERT_TRUE(motionRuntime.active);
+  ASSERT_EQ(motionRuntime.trackCount, 2);
+}
+
 static void test_completed_motion_can_replay() {
   reset_state();
   ASSERT_TRUE(storageWriteSlot((const uint8_t*)kBlob, strlen(kBlob)));
@@ -311,6 +326,7 @@ int main() {
   RUN(loads_motion_case_insensitive);
   RUN(skips_tracks_for_other_board);
   RUN(playback_interpolates_servo_and_dc);
+  RUN(motion_loads_from_large_storage_lease);
   RUN(completed_motion_can_replay);
   RUN(dc_motion_speed_is_safety_clamped);
   RUN(cancel_stops_dc_track);

@@ -1220,7 +1220,7 @@ leader. `schedulerConfig.graceMs` is the grace window (default 10000).
 
 ### Manual hardware test: compact sequence pre-rolls glide, not snap (servo-y29)
 
-Flash firmware build `servo-y29-1` before this test. The bake now stores a compact
+Flash firmware build `servo-inw-1` (which includes servo-y29) before this test. The bake now stores a compact
 `MOTION <id> PREP <ms>` command instead of generated bridge Motions and extra
 Sequence steps. Author a library whose sequence has a deliberate A→B servo
 discontinuity: Motion A ends with a winch servo high (e.g. 90%), Motion B starts
@@ -1257,6 +1257,36 @@ Bake it to a board that has that servo wired.
 - [x] `make -C test size` — 120408 / 122880 bytes (+2472 bytes OTA headroom), RAM 22872 / 32768 bytes (+9896 headroom).
 - [x] Inline browser script syntax and `git diff --check` — passed.
 - [ ] Hardware playback and pull-back recovery — use the four checks above when an Arduino is available.
+
+### Manual hardware test: large storage mode (servo-inw)
+
+Flash firmware build `servo-inw-1`. Keep the normal compact library for the first
+checks, then use a temporary valid library whose largest per-board slice is between
+4081 and 6000 bytes. Keep power connected throughout every large write.
+
+1. **Normal bake remains rollback safe.** Bake two compact revisions. Confirm
+   `/sequences/info` reports `storageMode:"dual"`, `rollbackSafe:true`, and
+   `rollbackPayloadMax:4080`; Restore Previous swaps between the revisions.
+2. **Large mode is explicit.** Bake the temporary >4080-byte library. Confirm the
+   browser warns that both rollback slots will be overwritten and requires
+   confirmation. After completion, `/sequences/info` must report
+   `storageMode:"large"`, `rollbackSafe:false`, `hasPrevious:false`, and the
+   expected `bytesUsed`.
+3. **Large content plays and pulls.** Run one baked Motion and Sequence from the
+   large library, then Pull from Boards. Confirm playback succeeds and the editor
+   reconstructs the deployed content.
+4. **Restore is unavailable.** Restore Previous must be refused while large mode
+   is active.
+5. **Dual mode recovers.** Bake one compact revision (no previous yet), then a
+   second compact revision. Confirm the second small bake reports
+   `hasPrevious:true` and Restore Previous works again.
+
+**2026-07-19 (servo-inw host verification):**
+- [x] Storage 26/26 — legacy dual-slot behavior, 5000-byte read/write, large CRC rejection, calibration-tail preservation, no rollback in large mode, and dual rollback reconstruction all pass.
+- [x] Motion 13/13 — includes loading and starting a Motion from a valid 5000-byte large-mode JSON record.
+- [x] Browser bake-payload 14/14 — exact 4080/4081/6001-byte tier boundaries, visible risk warnings/tier labels, and all servo-y29 compaction/reference/pre-roll checks pass.
+- [x] Firmware size guard — 121368 / 122880 bytes (+1512 OTA headroom); static RAM remains 22872 / 32768 bytes (+9896) because large buffers are temporary heap leases.
+- [ ] Large-mode hardware bake — not run in this environment; use the five checks above.
 
 **2026-07-18 (servo-x2p baked Motion replay pre-roll):**
 - `node test/verify_baked_motion_preroll.mjs` passed 12/12: first play remains immediate; a full-range replay gets a 7.7s glide; every changed servo uses the same cluster-wide duration; each board targets keyframe 0; a prior nonzero DC endpoint stops; settled and sub-5% poses add no delay; all `MOTION` sources share the path; board telemetry restores replay history after a dashboard reload; and `STOP` invalidates a delayed start.

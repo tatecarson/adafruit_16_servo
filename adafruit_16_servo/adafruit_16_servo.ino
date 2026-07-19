@@ -56,7 +56,7 @@
 // /status.json as "fw" so we can confirm which firmware is actually running on
 // each board over the network — removes the "did the flash take?" ambiguity
 // that has burned OTA diagnostics. Bump this string whenever firmware changes.
-#define FW_BUILD "servo-y29-1"
+#define FW_BUILD "servo-inw-1"
 
 // Wi-Fi / OTA state. otaReady gates syncPoll() so we don't UDP before the
 // stack is up. otaInProgress pauses the animation loop during an upload so

@@ -145,6 +145,48 @@ static void test_write_rejects_too_large() {
     ASSERT_FALSE(storageWriteSlot(big, STORAGE_PAYLOAD_MAX + 1));
     ASSERT_FALSE(storageHasActive());
 }
+static void test_large_write_uses_single_record_without_rollback() {
+    EEPROM_reset(); storageInit();
+    static uint8_t big[5000];
+    for (int i = 0; i < 5000; i++) big[i] = (uint8_t)(i * 17);
+    ASSERT_TRUE(storageWriteSlot((const uint8_t*)"old", 3));
+    ASSERT_TRUE(storageWriteSlot(big, sizeof(big)));
+    ASSERT_EQ(EEPROM.read(STORAGE_OFF_ACTIVE), STORAGE_ACTIVE_LARGE);
+    ASSERT_TRUE(storageActiveIsLarge());
+    ASSERT_EQ(storageActiveBytesUsed(), 5000);
+    ASSERT_FALSE(storageHasPrevious());
+    static uint8_t out[5000];
+    ASSERT_EQ(storageReadActive(out, sizeof(out)), 5000);
+    ASSERT_EQ(out[0], big[0]); ASSERT_EQ(out[4999], big[4999]);
+}
+static void test_large_write_preserves_calibration_tail() {
+    EEPROM_reset(); storageInit();
+    for (int i = 8176; i < 8192; i++) EEPROM.write(i, (uint8_t)(0xA0 + i - 8176));
+    static uint8_t maxPayload[STORAGE_LARGE_PAYLOAD_MAX] = {0};
+    ASSERT_TRUE(storageWriteSlot(maxPayload, sizeof(maxPayload)));
+    for (int i = 8176; i < 8192; i++) ASSERT_EQ(EEPROM.read(i), 0xA0 + i - 8176);
+}
+static void test_large_crc_corruption_is_rejected() {
+    EEPROM_reset(); storageInit();
+    static uint8_t big[5000] = {0};
+    ASSERT_TRUE(storageWriteSlot(big, sizeof(big)));
+    EEPROM.write(STORAGE_LARGE_OFF + 4 + 1234, 1);
+    static uint8_t out[5000];
+    ASSERT_EQ(storageReadActive(out, sizeof(out)), -1);
+}
+static void test_large_to_small_rebuilds_dual_rollback() {
+    EEPROM_reset(); storageInit();
+    static uint8_t big[5000] = {0};
+    ASSERT_TRUE(storageWriteSlot(big, sizeof(big)));
+    ASSERT_TRUE(storageWriteSlot((const uint8_t*)"small-1", 7));
+    ASSERT_FALSE(storageActiveIsLarge());
+    ASSERT_FALSE(storageHasPrevious());
+    ASSERT_TRUE(storageWriteSlot((const uint8_t*)"small-2", 7));
+    ASSERT_TRUE(storageHasPrevious());
+    uint8_t out[16];
+    ASSERT_EQ(storageReadPrevious(out, sizeof(out)), 7);
+    ASSERT_EQ(out[6], '1');
+}
 static void test_write_then_crash_before_pointer_flip_leaves_previous_intact() {
     EEPROM_reset(); storageInit();
     storageWriteSlot((const uint8_t*)"first-good", 10);
@@ -225,6 +267,10 @@ int main() {
     RUN(first_write_goes_to_slot_0);
     RUN(second_write_goes_to_slot_1);
     RUN(write_rejects_too_large);
+    RUN(large_write_uses_single_record_without_rollback);
+    RUN(large_write_preserves_calibration_tail);
+    RUN(large_crc_corruption_is_rejected);
+    RUN(large_to_small_rebuilds_dual_rollback);
     RUN(write_then_crash_before_pointer_flip_leaves_previous_intact);
     RUN(rollback_swaps_to_previous);
     RUN(rollback_fails_when_no_previous);
