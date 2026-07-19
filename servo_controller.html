@@ -6426,6 +6426,8 @@ function bridgeServoPose(motion, edge) {
       const cur = Number(pick && pick.atMs) || 0;
       if (edge === "exit" ? at >= cur : at <= cur) pick = kf;
     }
+    // Documented tiebreak: among keyframes sharing an atMs, the last in array
+    // order wins (>= for exit, <= for entry both keep advancing `pick`).
     const v = Math.max(0, Math.min(100, Number(pick && pick.value) || 0));
     pose[`${t.boardId}:servo:${t.channel}`] = v;
   }
@@ -6438,6 +6440,7 @@ function bridgeServoPose(motion, edge) {
 // ramp. Returns { motion, step, channels } or null when nothing moves enough.
 function planInteriorBridge(fromPose, toPose, id, opts) {
   opts = opts || {};
+  // 77 mirrors firmware SERVO_FEASIBILITY_MS_PER_PERCENT; real value supplied by the bake glue.
   const msPerPercent = opts.msPerPercent != null ? opts.msPerPercent : 77;
   const minDeltaPercent = opts.minDeltaPercent != null ? opts.minDeltaPercent : 5;
   const floorMs = opts.floorMs != null ? opts.floorMs : 800;
@@ -6473,6 +6476,7 @@ function planInteriorBridge(fromPose, toPose, id, opts) {
 // a conservative worst-case delta since it can't be measured.
 function planColdStartBridge(toPose, opts) {
   opts = opts || {};
+  // 77 mirrors firmware SERVO_FEASIBILITY_MS_PER_PERCENT; real value supplied by the bake glue.
   const msPerPercent = opts.msPerPercent != null ? opts.msPerPercent : 77;
   const floorMs = opts.floorMs != null ? opts.floorMs : 800;
   const unknownDeltaPercent = opts.unknownDeltaPercent != null ? opts.unknownDeltaPercent : 100;
@@ -6530,7 +6534,13 @@ function insertSequenceBridges(steps, motions, opts) {
       }
     }
     outSteps.push(step);
-    virt = bridgeServoPose(motion, "exit");
+    // Merge (not replace): a servo positioned by an earlier motion must not be
+    // forgotten when a later motion doesn't drive it — otherwise its next
+    // transition would silently skip (snap) it. Under the full-pose bake
+    // invariant (every motion carries a track per servo) this equals a replace;
+    // the merge only adds safety for partial-pose motions. Design step 3:
+    // "advance each driven channel's virtual position to the block's exit pose."
+    virt = Object.assign(virt || {}, bridgeServoPose(motion, "exit"));
   }
 
   const error = outSteps.length > maxSteps

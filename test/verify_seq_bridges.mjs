@@ -113,5 +113,45 @@ eq("servo with no previous exit stays at 0", fresh.tracks[1].keyframes[0].value,
 eq("dc tracks are never seeded", fresh.tracks[2].keyframes[0].value, 0);
 eq("no previous motion is a safe no-op", seedFirstKeyframesFromExit(null, {tracks:[]}).tracks, []);
 
+// --- code-review follow-ups ---
+
+// Merge regression (Fix 1): s0 set by motion "a", NOT driven by "b", must still
+// be bridged from 90 -> 0 at motion "c" (not forgotten / snapped).
+const libM = [
+  { id:"a", tracks:[{kind:"servo",boardId:1,channel:0,keyframes:[{atMs:0,value:0},{atMs:1000,value:90}]}] },
+  { id:"b", tracks:[{kind:"servo",boardId:1,channel:1,keyframes:[{atMs:0,value:0},{atMs:1000,value:60}]}] },
+  { id:"c", tracks:[{kind:"servo",boardId:1,channel:0,keyframes:[{atMs:0,value:0},{atMs:1000,value:0}]}] },
+];
+const rm = insertSequenceBridges([{cmd:"MOTION a"},{cmd:"MOTION b"},{cmd:"MOTION c"}], libM, wopts);
+const cS0 = rm.bridgeMotions.map(m=>m.tracks.find(t=>t.channel===0&&t.boardId===1)).filter(Boolean)
+  .find(t=>t.keyframes[0].value===90);
+eq("s0 remembered across an intervening motion that doesn't drive it", cS0 && cS0.keyframes.map(k=>k.value), [90,0]);
+
+// Multi-servo interior bridge covers every moving servo.
+eq("interior bridge covers every moving servo",
+   planInteriorBridge({"1:servo:0":80,"1:servo:1":80},{"1:servo:0":0,"1:servo:1":0},"x",{}).channels.length, 2);
+
+// DC track passes through the walker untouched (never bridged).
+const libDc = [{ id:"d", tracks:[
+  {kind:"servo",boardId:1,channel:0,keyframes:[{atMs:0,value:0},{atMs:1000,value:50}]},
+  {kind:"dc",   boardId:1,channel:0,keyframes:[{atMs:0,value:0},{atMs:1000,value:70}]},
+]}];
+eq("walker never emits a DC bridge track",
+   insertSequenceBridges([{cmd:"MOTION d"},{cmd:"MOTION d"}], libDc, wopts)
+     .bridgeMotions.every(m=>m.tracks.every(t=>t.kind==="servo")), true);
+
+// Budget boundary: exactly maxSteps ok, one over errors (opaque steps, no bridges).
+const nops = Array.from({length:5},()=>({cmd:"NOP",durationMs:0}));
+eq("exactly maxSteps is allowed", insertSequenceBridges(nops, [], {maxSteps:5}).error, null);
+eq("one over maxSteps errors", insertSequenceBridges(nops, [], {maxSteps:4}).error.code, "bridge-budget");
+
+// MOTION id lookup is case-insensitive (recognized as a motion -> cold-start DMOVE emitted).
+eq("MOTION id lookup is case-insensitive",
+   insertSequenceBridges([{cmd:"MOTION RISE"}], lib, wopts).steps.some(s=>s.cmd.startsWith("DMOVE")), true);
+
+// A MOTION step with extra tokens does not match -> treated as opaque (no bridge).
+eq("MOTION step with extra args is opaque",
+   insertSequenceBridges([{cmd:"MOTION rise extra"}], lib, wopts).steps.filter(s=>s.cmd.startsWith("DMOVE")).length, 0);
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);
