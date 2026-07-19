@@ -1228,6 +1228,15 @@ leader. `schedulerConfig.graceMs` is the grace window (default 10000).
 - [x] Fullscreen Arrange preview — Motion blocks rendered compact start/end labels at each line edge; servo labels stayed amber/yellow, DC labels stayed phosphor/green, and Motion Library cards retained their compact unlabeled curves.
 - Hardware upload is not applicable: this is a browser-only presentation/data-summary change.
 
+**2026-07-18 (servo-44c Motor Test upper-limit safety):**
+- [x] `node test/verify_motor_test_safety.mjs` — 11/11 passed: both manual Up controls send and display 80%, neither sends 100%, Sweep is absent, and Down/Mid remain at 0%/50%.
+- [x] `make -C test sim-verify` — all browser simulation/editor suites passed, including the Motor Test safety checks.
+- [x] Inline `servo_controller.html` script syntax and `git diff --check` — passed.
+- [x] Live preview source at `http://127.0.0.1:4175/servo_controller.html` served **All Up · 80%** and the shared 80% per-servo Up target.
+- [ ] `make -C test` — storage passed 22/22, then the unchanged native Motion suite entered the repository's previously documented host-level stall and was stopped. Focused browser suites are green; no firmware code changed.
+- [ ] Hardware click test — choose a connected board in **Motor Test**, click one servo's **Up 80%**, then **All Up · 80%**, and confirm each stops visibly short of the binding point. Not run because no physical motor state is available to this session.
+- Firmware upload is not applicable: this changes only the controls and commands available in the browser's Motor Test drawer. Normal Motion playback remains unchanged.
+
 ---
 
 ## Servo Calibration Notes

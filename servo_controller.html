@@ -2579,7 +2579,7 @@
         <span class="rname">All<span class="sub">servos</span></span>
         <div class="mtest-btns">
           <button class="cmd" data-mtest-all="0">All Down</button>
-          <button class="cmd" data-mtest-all="100">All Up</button>
+          <button class="cmd" data-mtest-all="80" title="Stops 20% short of the upper travel limit">All Up · 80%</button>
         </div>
       </div>
 
@@ -2608,6 +2608,7 @@ const LS_KEY = "servoCluster.boards";
 
 const PULSE_MIN = 150, PULSE_MAX = 600;
 const ZERO_PULSE_HEIGHT_PCT = 4; // empty-state floor so meters aren't visually empty
+const MOTOR_TEST_SAFE_UP_PCT = 80; // avoid binding winches at the absolute upper limit
 
 // ============================================================
 // STATE
@@ -3245,16 +3246,15 @@ $("#freeCmd").addEventListener("keydown", e => { if (e.key === "Enter") $("#free
   const servosEl = $("#motorTestServos");
   if (!backdrop || !targetEl || !servosEl) return;
 
-  // One row per wired servo: SWEEP end-to-end, then jog to fixed positions.
-  // UP <n> <pct> reads intuitively — 0 = fully down, 100 = fully up.
+  // One row per wired servo with bounded manual positions. There is deliberately
+  // no full-range sweep here: a test must not drive a winch into its endpoint.
   servosEl.innerHTML = Array.from({ length: VISIBLE_SERVO_CHANNELS }, (_, n) => `
     <div class="mtest-row">
       <span class="rname">Servo<span class="sub">ch ${pad2(n)}</span></span>
       <div class="mtest-btns">
-        <button class="cmd" data-mtest="SWEEP ${n}">Sweep</button>
         <button class="cmd" data-mtest="UP ${n} 0">Down</button>
         <button class="cmd" data-mtest="UP ${n} 50">Mid</button>
-        <button class="cmd" data-mtest="UP ${n} 100">Up</button>
+        <button class="cmd" data-mtest="UP ${n} ${MOTOR_TEST_SAFE_UP_PCT}" title="Stops 20% short of the upper travel limit">Up ${MOTOR_TEST_SAFE_UP_PCT}%</button>
       </div>
     </div>`).join("");
 

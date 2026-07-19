@@ -224,6 +224,8 @@ adafruit_16_servo/
 
 42. `feat: add value context to Sequencer Motion previews (servo-9f9)` — enriches expanded step previews with visible per-track start/end values, low/high range, and key count. Fullscreen Arrange blocks now label both ends of each preview line; Motion Library cards keep the compact unlabeled treatment. Servo remains amber/yellow and DC remains phosphor/green.
 
+43. `fix: keep Motor Test controls away from the upper endpoint (servo-44c)` — changes the per-servo **Up** and combined **All Up** buttons to stop 20% short of the configured upper travel limit, with the 80% target shown directly on both controls. Removes the full-range **Sweep** button from Motor Test so it cannot bypass that safety margin. Normal Motion playback is unchanged. Adds a browser source regression check for the safe commands and labels.
+
 ## Future Features
 
 - [ ] **EEPROM calibration storage** - Save/load servo calibrations (type, min, max, stop pulse) to persist across power cycles. Commands: `SAVE`, `LOAD`, `CLEAR`
