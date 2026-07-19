@@ -1,6 +1,7 @@
 // Tests for the Motion-editor keyframe selection/deletion/move helpers.
 // Pure logic lives in the EDITOR-CORE block of servo_controller.html:
-//   keyframesInMarquee, deleteKeyframeIndices, moveSelectedKeyframes
+//   motionConnectionPoints, motionDragReadout, keyframesInMarquee,
+//   deleteKeyframeIndices, moveSelectedKeyframes
 //
 // Run: node verify_editor_keyframes.mjs   (or via the make test node run)
 
@@ -29,17 +30,45 @@ const core = html.slice(s + START.length, e);
 
 const dir = mkdtempSync(join(tmpdir(), "editor-core-"));
 const modPath = join(dir, "core.mjs");
-writeFileSync(modPath, core + "\nexport { keyframesInMarquee, deleteKeyframeIndices, moveSelectedKeyframes };\n", "utf8");
+writeFileSync(modPath, core + "\nexport { motionConnectionPoints, motionDragReadout, keyframesInMarquee, deleteKeyframeIndices, moveSelectedKeyframes };\n", "utf8");
 const mod = await import(pathToFileURL(modPath).href);
-for (const fn of ["keyframesInMarquee", "deleteKeyframeIndices", "moveSelectedKeyframes"]) {
+for (const fn of ["motionConnectionPoints", "motionDragReadout", "keyframesInMarquee", "deleteKeyframeIndices", "moveSelectedKeyframes"]) {
   if (typeof mod[fn] !== "function") fail(`EDITOR-CORE does not export ${fn}()`);
 }
 if (failed) process.exit(1);
-const { keyframesInMarquee, deleteKeyframeIndices, moveSelectedKeyframes } = mod;
+const { motionConnectionPoints, motionDragReadout, keyframesInMarquee, deleteKeyframeIndices, moveSelectedKeyframes } = mod;
 
 console.log("=== Motion editor keyframe select/delete ===");
 
 const kfs = [{ atMs: 0, value: 0 }, { atMs: 1000, value: 50 }, { atMs: 2000, value: 100 }, { atMs: 3000, value: 20 }];
+
+// ---- editor connection geometry -------------------------------------------
+eq("servo connection is linear and inset", motionConnectionPoints([
+  { atMs: 0, value: 0 }, { atMs: 1000, value: 50 }, { atMs: 2000, value: 100 },
+], 2000, { kind: "servo", minValue: 0, maxValue: 100, axisInsetPct: 15 }), [
+  { xPct: 0, yPct: 15 }, { xPct: 50, yPct: 50 }, { xPct: 100, yPct: 85 },
+]);
+eq("DC connection renders held-speed steps", motionConnectionPoints([
+  { atMs: 0, value: -100 }, { atMs: 1000, value: 0 }, { atMs: 2000, value: 100 },
+], 2000, { kind: "dc", minValue: -100, maxValue: 100, axisInsetPct: 15 }), [
+  { xPct: 0, yPct: 85 },
+  { xPct: 50, yPct: 85 }, { xPct: 50, yPct: 50 },
+  { xPct: 100, yPct: 50 }, { xPct: 100, yPct: 15 },
+]);
+eq("connection clamps out-of-range points", motionConnectionPoints([
+  { atMs: -100, value: -20 }, { atMs: 3000, value: 120 },
+], 2000, { kind: "servo", minValue: 0, maxValue: 100 }), [
+  { xPct: 0, yPct: 15 }, { xPct: 100, yPct: 85 },
+]);
+eq("servo drag readout reports value and vertical position", motionDragReadout(42.5, {
+  kind: "servo", minValue: 0, maxValue: 100, unit: "%", atMs: 1500, durationMs: 6000, axisInsetPct: 15,
+}), { value: 42.5, text: "42.5%", leftPct: 25, topPct: 44.75 });
+eq("DC drag readout reports signed speed", motionDragReadout(-40, {
+  kind: "dc", minValue: -100, maxValue: 100, unit: "spd", atMs: 9000, durationMs: 6000, axisInsetPct: 15,
+}), { value: -40, text: "-40 spd", leftPct: 100, topPct: 64 });
+eq("drag readout clamps before display", motionDragReadout(140, {
+  kind: "servo", minValue: 0, maxValue: 100, unit: "%",
+}), { value: 100, text: "100%", leftPct: null, topPct: 85 });
 
 // ---- marquee selects by time AND value bounds (inclusive) ------------------
 eq("time+value box selects middle two", keyframesInMarquee(kfs, 900, 2100, 40, 100), [1, 2]);

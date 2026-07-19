@@ -91,10 +91,12 @@ The page is organized into numbered sections:
 - **`// 01 Master Command`** — free-text command terminal and a global `STOP`. Commands
   go to one board over HTTP and mirror to the rest over UDP. **Motor Test** opens a
   slide-in drawer to spot-check hardware on one board without authoring a Motion:
-  sweep/jog each winch servo (`SWEEP`, `UP <n> 0/50/100`), send all servos down/up
-  at once, and drive the DC motor forward/reverse (`ROTATE ±30`). Positions are
-  absolute, so "All Down" just holds any servo already down — nothing reverses.
-  Live commands only — nothing is baked.
+  jog each winch servo to bounded positions (`UP <n> 0/50/80`), send all servos
+  down/up at once, and drive the DC motor forward/reverse (`ROTATE ±30`). The
+  manual Up controls stop at 80% to keep winches from binding at the absolute
+  upper limit; the drawer intentionally has no full-range Sweep control.
+  Positions are absolute, so "All Down" just holds any servo already down —
+  nothing reverses. Live commands only — nothing is baked.
 - **`// 02 Board Telemetry`** — live cards per board: online state, servo positions, DC
   motor speed, and what's currently playing.
 - **`// 03 Sequencer Bake`** — import/export the library, slice it per board, and POST
@@ -107,13 +109,17 @@ The page is organized into numbered sections:
   time-proportional blocks can be dragged to reorder the same steps without replacing
   the detailed table editor. MOTION blocks show compact keyframe previews; the Motion
   Library strip previews every available Motion and can add one after the selected
-  step or replace the selected step in place.
+  step or replace the selected step in place. Expanded MOTION previews show each
+  track's start/end values, full range, and key count; Arrange blocks label their
+  line endpoints for quick comparison.
 - **`// 05 Setlist`** — group Sequences into playlists for unattended playback, with an
   ordered or weighted-shuffle scheduler and a **Simulate hour** preview that
   fast-forwards an hour of scheduling in the browser.
 - **`// 06 Motion`** — the keyframe motion editor: per-channel servo and DC tracks,
-  draggable keyframes, marquee + group selection, shape curves, and slew-feasibility
-  warnings. Play live (browser-streamed) or fire the baked motion (on-device).
+  connected keyframe curves, marquee + group selection, shape curves, and
+  slew-feasibility warnings. Dragging a keyframe shows its changing value directly
+  beside the moving diamond. Play live (browser-streamed) or fire the baked motion
+  (on-device).
 - **`// 07 Firmware Upload`** — OTA flash one board or all of them (see below).
 
 ## Content model: Motions, Sequences, Setlists

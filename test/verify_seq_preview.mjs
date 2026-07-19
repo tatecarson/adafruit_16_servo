@@ -69,6 +69,11 @@ const strips = motionPreviewStrips(motion, [
 ]);
 eq("skips empty + single-keyframe tracks (2 strips from 4 specs)", strips.length, 2);
 eq("strip keys", strips.map(s => s.key), ["1:servo:0", "1:dc:0"]);
+eq("servo strip exposes start/end values", [strips[0].startValue, strips[0].endValue], [0, 0]);
+eq("servo strip exposes min/max range", [strips[0].minValue, strips[0].maxValue], [0, 100]);
+eq("servo strip exposes keyframe count", strips[0].keyframeCount, 3);
+eq("DC strip exposes start/end values", [strips[1].startValue, strips[1].endValue], [0, -100]);
+eq("DC strip exposes min/max range", [strips[1].minValue, strips[1].maxValue], [-100, 0]);
 
 // ---- servo x/y mapping ----------------------------------------------------
 const sv = strips[0].points;
