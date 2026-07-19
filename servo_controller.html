@@ -2664,6 +2664,18 @@ async function fetchStatus(ip) {
 }
 
 async function sendCommand(ip, cmd) {
+  const motionMatch = /^\s*MOTION\s+(\S+)\s*$/i.exec(String(cmd || ""));
+  if (motionMatch) return sendBakedMotionWithPreRoll(ip, motionMatch[1]);
+
+  // A STOP during a pre-roll must prevent the delayed MOTION from firing
+  // after the operator has asked everything to halt. Keep the last known
+  // Motion id: STOP holds servo position, so its end pose is still the safest
+  // conservative basis for preparing a later replay.
+  if (/^\s*STOP\s*$/i.test(String(cmd || ""))) bakedMotionPreRollSerial++;
+  return sendCommandNow(ip, cmd);
+}
+
+async function sendCommandNow(ip, cmd) {
   const url = `http://${ip}/cmd?c=${encodeURIComponent(cmd)}&t=${Date.now().toString(36)}`;
   try {
     await fetch(url, { method: "GET", mode: "no-cors", cache: "no-store" });
@@ -4047,6 +4059,93 @@ function motionTrackKey(track) {
 
 function trackSpecKey(spec) {
   return `${spec.boardId}:${spec.kind}:${spec.channel}`;
+}
+
+// === BAKED-PREROLL-CORE START ===
+// Build one cluster-wide start-pose plan for baked Motion playback. Firmware
+// playback begins at keyframe 0 immediately; on a replay, a slow multi-turn
+// servo can still be sitting at the previous final keyframe and cannot make
+// that discontinuous jump before the timeline advances. The live player has
+// long handled this with a measured 77ms/% warm-up. Baked playback uses the
+// same floor here, with one maximum duration shared by every board so the
+// subsequent synchronized MOTION start remains aligned across the cluster.
+function planBakedMotionPreRoll(previousMotion, nextMotion, trackSpecs, msPerPercent = 77) {
+  if (!previousMotion || !nextMotion) return { durationMs: 0, moves: [], dcStopBoardIds: [] };
+
+  const trackFor = (motion, spec) => (motion.tracks || []).find(track =>
+    track.kind === spec.kind && Number(track.boardId) === Number(spec.boardId)
+      && Number(track.channel) === Number(spec.channel));
+  const endpoint = (track, first) => {
+    const frames = (track?.keyframes || []).slice().sort((a, b) => Number(a.atMs) - Number(b.atMs));
+    if (!frames.length) return null;
+    const frame = first ? frames[0] : frames[frames.length - 1];
+    const value = Number(frame?.value);
+    return Number.isFinite(value) ? value : null;
+  };
+
+  let maxDelta = 0;
+  const pending = [];
+  const dcStopBoardIds = new Set();
+  for (const spec of trackSpecs || []) {
+    const previousTrack = trackFor(previousMotion, spec);
+    const nextTrack = trackFor(nextMotion, spec);
+    if (spec.kind === "dc") {
+      const priorSpeed = endpoint(previousTrack, false);
+      if (priorSpeed != null && priorSpeed !== 0) dcStopBoardIds.add(Number(spec.boardId));
+      continue;
+    }
+    if (spec.kind !== "servo") continue;
+    const fromValue = endpoint(previousTrack, false);
+    const toValue = endpoint(nextTrack, true);
+    if (fromValue == null || toValue == null) continue;
+    const delta = Math.abs(toValue - fromValue);
+    if (delta < 5) continue;
+    maxDelta = Math.max(maxDelta, delta);
+    pending.push({ boardId: Number(spec.boardId), channel: Number(spec.channel), toValue: Math.round(toValue) });
+  }
+
+  if (!pending.length) return { durationMs: 0, moves: [], dcStopBoardIds: [] };
+  const durationMs = Math.max(800, Math.ceil(maxDelta * msPerPercent));
+  return {
+    durationMs,
+    moves: pending.map(move => ({ ...move, durationMs })),
+    dcStopBoardIds: Array.from(dcStopBoardIds).sort((a, b) => a - b),
+  };
+}
+// === BAKED-PREROLL-CORE END ===
+
+let lastBakedMotionId = null;
+let bakedMotionPreRollSerial = 0;
+
+async function sendBakedMotionWithPreRoll(originIp, motionId) {
+  const lib = sequenceLibrary();
+  const nextMotion = (lib.motions || []).find(motion =>
+    String(motion.id).toLowerCase() === String(motionId).toLowerCase());
+  const previousMotion = (lib.motions || []).find(motion => motion.id === lastBakedMotionId);
+  const plan = planBakedMotionPreRoll(previousMotion, nextMotion, MOTION_TRACK_SPECS);
+  const serial = ++bakedMotionPreRollSerial;
+
+  if (plan.durationMs > 0) {
+    const seconds = (plan.durationMs / 1000).toFixed(1);
+    setMotionStatus(`preparing baked start pose · ${seconds}s`, "amber");
+
+    const sends = [];
+    for (const boardId of plan.dcStopBoardIds) {
+      const ip = ipForBoardId(boardId);
+      if (ip) sends.push(sendCommandNow(ip, "ROTATE 0"));
+    }
+    for (const move of plan.moves) {
+      const ip = ipForBoardId(move.boardId);
+      if (ip) sends.push(sendCommandNow(ip, `DMOVE ${move.channel} ${move.toValue} ${move.durationMs}`));
+    }
+    await Promise.all(sends);
+    await new Promise(resolve => setTimeout(resolve, plan.durationMs));
+    if (serial !== bakedMotionPreRollSerial) return false;
+  }
+
+  const ok = await sendCommandNow(originIp, `MOTION ${motionId}`);
+  if (ok && nextMotion) lastBakedMotionId = nextMotion.id;
+  return ok;
 }
 
 function defaultMotion(lib, name = "New Motion") {

@@ -1237,6 +1237,13 @@ leader. `schedulerConfig.graceMs` is the grace window (default 10000).
 - [ ] Hardware click test — choose a connected board in **Motor Test**, click one servo's **Up 80%**, then **All Up · 80%**, and confirm each stops visibly short of the binding point. Not run because no physical motor state is available to this session.
 - Firmware upload is not applicable: this changes only the controls and commands available in the browser's Motor Test drawer. Normal Motion playback remains unchanged.
 
+**2026-07-18 (servo-x2p baked Motion replay pre-roll):**
+- `node test/verify_baked_motion_preroll.mjs` passed 11/11: first play remains immediate; a full-range replay gets a 7.7s glide; every changed servo uses the same cluster-wide duration; each board targets keyframe 0; a prior nonzero DC endpoint stops; settled and sub-5% poses add no delay; all `MOTION` sources share the path; and `STOP` invalidates a delayed start.
+- `make -C test sim-verify` passed all browser simulation/editor suites, including the new 11/11 baked replay checks.
+- The first focused `make -C test motion` run passed 9/9, including a new completed-Motion replay test proving the firmware runtime reloads, resets its segment state, applies keyframe 0, and advances normally on a second run. A later repeat invocation and the required aggregate `make -C test` both entered the repository's previously documented native-test host stall after launching `run_motion_tests`; in the aggregate, storage first passed 22/22. The remaining native suites were rerun independently and passed: Sequence 8/8, Setlist 11/11, and Gallery 9/9.
+- Inline `servo_controller.html` script syntax and `git diff --check` passed.
+- Hardware verification was not available in this session and is tracked as `servo-glh`. It covers two consecutive runs from Motion **Play (baked)**, Sequence Play, Setlist Play, and the bake inventory, plus STOP during the pre-roll. No firmware upload is needed because the behavioral fix is browser-only.
+
 ---
 
 ## Servo Calibration Notes

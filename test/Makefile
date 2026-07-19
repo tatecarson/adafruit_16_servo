@@ -35,7 +35,8 @@ sim-verify:
 	  node verify_seq_preview.mjs && \
 	  node verify_ids.mjs && \
 	  node verify_seq_arrangement.mjs && \
-	  node verify_motor_test_safety.mjs; \
+	  node verify_motor_test_safety.mjs && \
+	  node verify_baked_motion_preroll.mjs; \
 	fi
 
 # Aggregate run of every host suite. The legacy time-multiplier suite was

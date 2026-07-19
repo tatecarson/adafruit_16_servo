@@ -226,6 +226,8 @@ adafruit_16_servo/
 
 43. `fix: keep Motor Test controls away from the upper endpoint (servo-44c)` — changes the per-servo **Up** and combined **All Up** buttons to stop 20% short of the configured upper travel limit, with the 80% target shown directly on both controls. Removes the full-range **Sweep** button from Motor Test so it cannot bypass that safety margin. Normal Motion playback is unchanged. Adds a browser source regression check for the safe commands and labels.
 
+44. `fix: prepare start pose before replaying baked Motions (servo-x2p)` — routes every browser-issued `MOTION` through one shared pre-roll. After a prior baked Motion, affected winch servos glide from its final keyframe to the next Motion's keyframe 0 at the measured 77ms/% floor; all boards use the same maximum preparation duration, nonzero DC endpoints stop during the glide, and only then does the existing cluster-synchronized `MOTION` fire. This covers Motion **Play (baked)**, Sequence Play, Setlist Play, the bake inventory, and free-command playback without changing firmware or the bake schema. `STOP` invalidates a pending delayed start. Adds pure browser regression coverage plus a firmware-engine test proving the completed runtime itself already reloads and rewinds correctly.
+
 ## Future Features
 
 - [ ] **EEPROM calibration storage** - Save/load servo calibrations (type, min, max, stop pulse) to persist across power cycles. Commands: `SAVE`, `LOAD`, `CLEAR`

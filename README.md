@@ -103,6 +103,8 @@ The page is organized into numbered sections:
   it to the boards' EEPROM. Use **Bake One** with the adjacent board picker when
   only one board is connected; the other configured boards are not contacted.
   **Pull from Boards** rebuilds the editor library from what's physically baked.
+  Replaying a baked Motion from the inventory first glides slow winch servos back
+  to keyframe 0 when the preceding Motion ended at a different pose.
 - **`// 04 Sequencer`** — author Sequences: ordered steps (each a command + duration +
   target board), drag-reorder, hold points, record mode, preview, scrub, and looped
   playback. **Arrange ↗** opens a full-screen, zoomable DAW-style timeline whose
@@ -119,7 +121,8 @@ The page is organized into numbered sections:
   connected keyframe curves, marquee + group selection, shape curves, and
   slew-feasibility warnings. Dragging a keyframe shows its changing value directly
   beside the moving diamond. Play live (browser-streamed) or fire the baked motion
-  (on-device).
+  (on-device). Baked replay uses the same measured 77ms/% start-pose preparation as
+  live replay, then issues one cluster-synchronized `MOTION` command.
 - **`// 07 Firmware Upload`** — OTA flash one board or all of them (see below).
 
 ## Content model: Motions, Sequences, Setlists
