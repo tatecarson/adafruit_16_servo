@@ -1475,9 +1475,9 @@
     min-height: 48px;
     border-bottom: 1px solid var(--rule);
   }
-  /* DC tracks span -100..100 (200 units) vs servo 0..100 (100 units) but
-     also need a useful zero crossing visible, so give them more vertical
-     room than servo rows. Same horizontal grid — only the height changes. */
+  /* DC tracks use a safety-limited -50..50 range and need a useful zero
+     crossing visible, so give them more vertical room than servo rows.
+     Same horizontal grid — only the height changes. */
   .motion-row.dc {
     min-height: 84px;
   }
@@ -2459,7 +2459,7 @@
     <span class="num">// 06</span>
     <span class="label">Motion</span>
     <span class="rule"></span>
-    <span class="hint">12-track cluster keyframes · servo % down (0=up, 100=down) · dc -100..100 spd · live scrub · ⌥-drag a shape · ⇧-drag to select (Del removes) · Clr clears a row · shared library</span>
+    <span class="hint">12-track cluster keyframes · servo % down (0=up, 100=down) · dc safe limit -50..50 spd · live scrub · ⌥-drag a shape · ⇧-drag to select (Del removes) · Clr clears a row · shared library</span>
   </div>
 
   <div class="panel motion-editor">
@@ -4025,12 +4025,14 @@ const motionLoopEl       = $("#motionLoop");
 // dispatches via the firmware's existing DOWN <ch> <pct> command which
 // uses percentToDegrees() against each channel's calibrated up/downDegrees
 // range, so live playback uses the full mechanical travel regardless of
-// totalDegrees. DC tracks are unchanged: -100..100 speed.
+// totalDegrees. DC Motion tracks are capped at -50..50 speed for hardware
+// safety; this is intentionally narrower than the manual ROTATE command.
+const MOTION_DC_SPEED_LIMIT = 50;
 const MOTION_TRACK_SPECS = [1, 2, 3].flatMap(boardId => ([
   { kind: "servo", boardId, channel: 0, label: `B${boardId}.S0`, min: 0, max: 100, unit: "%" },
   { kind: "servo", boardId, channel: 1, label: `B${boardId}.S1`, min: 0, max: 100, unit: "%" },
   { kind: "servo", boardId, channel: 2, label: `B${boardId}.S2`, min: 0, max: 100, unit: "%" },
-  { kind: "dc",    boardId, channel: 0, label: `B${boardId}.DC`, min: -100, max: 100, unit: "spd" },
+  { kind: "dc",    boardId, channel: 0, label: `B${boardId}.DC`, min: -MOTION_DC_SPEED_LIMIT, max: MOTION_DC_SPEED_LIMIT, unit: "spd" },
 ]));
 const SERVO_FEASIBILITY_MS_PER_PERCENT = 77;
 const SERVO_STACCATO_MS_PER_PERCENT = 120;
@@ -4540,7 +4542,7 @@ function motionTimeToPct(ms, durationMs) {
 // 100 = bottom). Inverted for servo tracks so 0% (fully UP) sits at the
 // top of the row and 100% (fully DOWN) sits at the bottom — matches the
 // physical mental model of a winch. DC tracks keep the original "high
-// value at top" convention so +100 speed reads as positive/forward.
+// value at top" convention so +50 speed reads as positive/forward.
 //
 // Inset of 15% top and bottom: keyframes at the extremes (value=min or
 // value=max) sit visibly INSIDE the row rather than flush with the row
@@ -4744,10 +4746,13 @@ function renderMotionEditor() {
       const liveDragHtml = liveDragReadout === null
         ? ""
         : `<output class="motion-drag-value ${spec.kind}" style="left:${liveDragReadout.leftPct}%; top:${liveDragReadout.topPct}%">${escapeHtml(liveDragReadout.text)}</output>`;
+      const rangeText = spec.kind === "dc"
+        ? `${spec.min}..${spec.max} ${spec.unit} · safe cap`
+        : `${spec.min}..${spec.max} ${spec.unit}`;
       html += `<div class="motion-row ${spec.kind}${collapsed ? " hidden" : ""}${muted ? " muted" : ""}" data-track="${escapeHtml(key)}">
         <div class="motion-label">
           <span class="id">${escapeHtml(spec.label)}</span>
-          <span class="range">${spec.min}..${spec.max} ${spec.unit}</span>
+          <span class="range">${escapeHtml(rangeText)}</span>
         </div>
         <div class="motion-toggles">
           <button class="cmd compact${solo ? " amber" : ""}" data-motion-solo="${escapeHtml(key)}" title="Solo">S</button>
@@ -6745,7 +6750,9 @@ function addSequenceStep() {
 function conformTrackForBake(track, durationMs) {
   const spec = MOTION_TRACK_SPECS.find(s =>
     s.boardId === track.boardId && s.kind === track.kind && s.channel === track.channel)
-    || { kind: track.kind, min: -100, max: 100 };
+    || (track.kind === "dc"
+      ? { kind: "dc", min: -MOTION_DC_SPEED_LIMIT, max: MOTION_DC_SPEED_LIMIT }
+      : { kind: track.kind, min: 0, max: 100 });
   const frames = normalizeKeyframes(track, durationMs, spec); // sorted, clamped, first at 0
   // Guarantee the last keyframe lands exactly at durationMs, holding the last
   // value (servos hold position, DC holds speed — the operator adds an

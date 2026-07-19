@@ -87,6 +87,12 @@ static bool motionParseTrack(
     if (out.keyframeCount >= MOTION_MAX_KEYFRAMES) return false;
     MotionKeyframe frame;
     if (!motionParseKeyframe(data, kfStart, kfEnd, frame)) return false;
+    // Motion-authored DC speeds are safety-limited independently of the
+    // wider manual ROTATE command range. Clamp while loading so legacy baked
+    // libraries cannot bypass the editor's -50..50 authoring limit.
+    if (kind == MOTION_TRACK_DC) {
+      frame.value = (int16_t)constrain(frame.value, MOTION_DC_SPEED_MIN, MOTION_DC_SPEED_MAX);
+    }
     if (count == 0) {
       if (frame.atMs != 0) return false;
     } else if (frame.atMs <= previousAt) {
@@ -224,7 +230,8 @@ static void motionApplyTrackValue(MotionTrack& track, int16_t value) {
   if (track.kind == MOTION_TRACK_SERVO) {
     motionApplyServo(track.channel, value);
   } else if (track.kind == MOTION_TRACK_DC) {
-    setMotorSpeedQuiet((int8_t)constrain(value, -100, 100));
+    // Defense in depth for any runtime populated outside motionParseTrack().
+    setMotorSpeedQuiet((int8_t)constrain(value, MOTION_DC_SPEED_MIN, MOTION_DC_SPEED_MAX));
   }
 }
 

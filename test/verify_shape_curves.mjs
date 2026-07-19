@@ -55,7 +55,7 @@ function feasible(kfs) {
   return true;
 }
 const SERVO = { kind: "servo", min: 0, max: 100 };
-const DC = { kind: "dc", min: -100, max: 100 };
+const DC = { kind: "dc", min: -50, max: 50 };
 
 console.log("=== Motion shape curves ===");
 
@@ -78,10 +78,10 @@ approx("easeOut(0.5)=0.75", shapeValue("easeOut", 0.5), 0.75);
 // the DC stream at send time instead (servo-6g9).
 {
   const { keyframes, reducedTo } = generateShapeKeyframes(
-    { shape: "rampUp", t0: 0, t1: 1000, low: -100, high: 100, spec: DC, msPerPct: MS_PER_PCT });
+    { shape: "rampUp", t0: 0, t1: 1000, low: -50, high: 50, spec: DC, msPerPct: MS_PER_PCT });
   eq("dc ramp: 11 points", keyframes.length, 11);
-  eq("dc ramp: starts low", keyframes[0], { atMs: 0, value: -100 });
-  eq("dc ramp: ends high", keyframes[keyframes.length - 1], { atMs: 1000, value: 100 });
+  eq("dc ramp: starts at safe reverse limit", keyframes[0], { atMs: 0, value: -50 });
+  eq("dc ramp: ends at safe forward limit", keyframes[keyframes.length - 1], { atMs: 1000, value: 50 });
   eq("dc ramp: not reduced", reducedTo, 1);
   assert("dc ramp: atMs on 100ms grid", keyframes.every(k => k.atMs % 100 === 0));
 }
@@ -114,8 +114,8 @@ approx("easeOut(0.5)=0.75", shapeValue("easeOut", 0.5), 0.75);
 
 // ---- square: DC clean step, servo feasible trapezoid ------------------------
 {
-  const dcSq = generateShapeKeyframes({ shape: "square", t0: 0, t1: 1000, low: -100, high: 100, spec: DC, msPerPct: MS_PER_PCT });
-  assert("dc square values are only low/high", dcSq.keyframes.every(k => k.value === -100 || k.value === 100));
+  const dcSq = generateShapeKeyframes({ shape: "square", t0: 0, t1: 1000, low: -50, high: 50, spec: DC, msPerPct: MS_PER_PCT });
+  assert("dc square values stay within the safe limits", dcSq.keyframes.every(k => k.value === -50 || k.value === 50));
 
   // box wide enough for full up+down ramps at 20% amplitude (20*77=1540ms each).
   const servoSq = generateShapeKeyframes({ shape: "square", t0: 0, t1: 6000, low: 0, high: 20, spec: SERVO, msPerPct: MS_PER_PCT });

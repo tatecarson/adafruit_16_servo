@@ -120,9 +120,11 @@ The page is organized into numbered sections:
 - **`// 06 Motion`** — the keyframe motion editor: per-channel servo and DC tracks,
   connected keyframe curves, marquee + group selection, shape curves, and
   slew-feasibility warnings. Dragging a keyframe shows its changing value directly
-  beside the moving diamond. Play live (browser-streamed) or fire the baked motion
-  (on-device). Baked replay uses the same measured 77ms/% start-pose preparation as
-  live replay, then issues one cluster-synchronized `MOTION` command.
+  beside the moving diamond. DC Motion values are safety-limited to −50…+50 in the
+  editor, bake output, and firmware playback. Play live (browser-streamed) or fire
+  the baked motion (on-device). Baked replay uses the same measured 77ms/%
+  start-pose preparation as live replay, then issues one cluster-synchronized
+  `MOTION` command.
 - **`// 07 Firmware Upload`** — OTA flash one board or all of them (see below).
 
 ## Content model: Motions, Sequences, Setlists
