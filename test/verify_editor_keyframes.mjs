@@ -40,6 +40,14 @@ const { motionConnectionPoints, motionDragReadout, keyframesInMarquee, deleteKey
 
 console.log("=== Motion editor keyframe select/delete ===");
 
+// ---- authored DC Motion safety range --------------------------------------
+eq("Motion editor declares the DC safety limit as 50",
+  /const MOTION_DC_SPEED_LIMIT\s*=\s*50\s*;/.test(html), true);
+eq("all DC Motion track specs use the safety limit",
+  /kind:\s*"dc"[^\n]+min:\s*-MOTION_DC_SPEED_LIMIT,\s*max:\s*MOTION_DC_SPEED_LIMIT/.test(html), true);
+eq("Motion UI names the DC safe cap",
+  /dc safe limit -50\.\.50 spd/.test(html) && /safe cap/.test(html), true);
+
 const kfs = [{ atMs: 0, value: 0 }, { atMs: 1000, value: 50 }, { atMs: 2000, value: 100 }, { atMs: 3000, value: 20 }];
 
 // ---- editor connection geometry -------------------------------------------

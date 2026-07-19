@@ -6,7 +6,7 @@ This document is the single source of truth. Any change that breaks compatibilit
 
 - Current `schemaVersion`: **1**
 - Encoding: UTF-8 JSON, no comments, no trailing commas. Field order doesn't matter.
-- Units: durations in **milliseconds** (integer), angles in **degrees** (0–180), DC motor speed signed **−100..+100** with sign indicating direction.
+- Units: durations in **milliseconds** (integer), angles in **degrees** (0–180), DC Motion speed signed **−50..+50** with sign indicating direction.
 - Time origin: every `atMs` and `durationMs` is relative to the start of its containing entity (Motion or Sequence step). No wall-clock dependencies.
 
 ---
@@ -104,7 +104,7 @@ A `(boardId, kind, channel)` triple must be unique within a Motion (no two track
 | Field | Type | Required | Notes |
 |---|---|---|---|
 | `atMs` | integer ≥ 0 | yes | Strictly increasing within a track. First keyframe must be `atMs: 0`. Last keyframe's `atMs` must equal Motion's `durationMs`. |
-| `value` | number | yes | Servo: 0–100 absolute percent down (`0` = fully up/retracted, `100` = fully down/lowered). DC: −100..+100 (signed speed). |
+| `value` | number | yes | Servo: 0–100 absolute percent down (`0` = fully up/retracted, `100` = fully down/lowered). DC Motion: −50..+50 (signed speed, safety-limited). |
 | `easing` | `"linear"` | no | Default `"linear"`. Only `"linear"` is supported in `schemaVersion: 1`. Reserved values for future use: `"easeIn"`, `"easeOut"`, `"easeInOut"`, `"hold"`. The `easing` on a keyframe controls how the value is approached **from the previous keyframe** (i.e., it's the easing of the incoming segment). The first keyframe's `easing` is ignored. |
 | `bypassRamp` | boolean | no | DC tracks only. Historically reserved for opting out of a firmware speed-ramp on the DC motor. That ramp path has since been removed — DC values are always written directly — so this field has no effect and is accepted but ignored. May be repurposed in a future schema version. |
 
@@ -113,7 +113,7 @@ A `(boardId, kind, channel)` triple must be unique within a Motion (no two track
 - Between two adjacent keyframes at `t0`/`v0` and `t1`/`v1`, with `t0 < t < t1`:
   - `linear`: `value(t) = v0 + (v1 - v0) * (t - t0) / (t1 - t0)`
 - Servo values are interpreted as absolute percent-down positions, then mapped through each channel's calibrated up/down travel before being written to the PCA9685 every tick.
-- DC values are written **directly** to the motor outputs. The keyframe curve is the only smoothing applied — author smooth DC ramps as additional keyframes. `STOP` and any cancelling command cut DC to 0 abruptly via the same direct path. (`ROTATE` likewise sets motor speed instantly; there is no firmware speed-ramp.)
+- DC values are written **directly** to the motor outputs and safety-clamped to −50..+50 during Motion loading and playback. The keyframe curve is the only smoothing applied — author smooth DC ramps as additional keyframes. `STOP` and any cancelling command cut DC to 0 abruptly via the same direct path. (`ROTATE` remains a separate manual command with a wider range and likewise sets motor speed instantly; there is no firmware speed-ramp.)
 - Motion playback ends exactly at `durationMs`; the final keyframe's value is the resting state.
 
 ### Servo slew-rate authoring notes

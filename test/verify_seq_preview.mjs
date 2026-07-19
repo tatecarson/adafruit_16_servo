@@ -44,7 +44,7 @@ const { motionPreviewStrips } = mod;
 console.log("=== Sequence step preview strips ===");
 
 const SERVO = { kind: "servo", boardId: 1, channel: 0, label: "B1.S0", min: 0, max: 100, unit: "%" };
-const DC = { kind: "dc", boardId: 1, channel: 0, label: "B1.DC", min: -100, max: 100, unit: "spd" };
+const DC = { kind: "dc", boardId: 1, channel: 0, label: "B1.DC", min: -50, max: 50, unit: "spd" };
 
 // ---- only tracks that actually move (>=2 keyframes) produce strips ---------
 const motion = {
@@ -54,7 +54,7 @@ const motion = {
       { atMs: 0, value: 0 }, { atMs: 4000, value: 100 }, { atMs: 8000, value: 0 },
     ] },
     { kind: "dc", boardId: 1, channel: 0, keyframes: [
-      { atMs: 0, value: 0 }, { atMs: 8000, value: -100 },
+      { atMs: 0, value: 0 }, { atMs: 8000, value: -50 },
     ] },
     // empty track: no keyframes → skipped
     { kind: "servo", boardId: 1, channel: 1, keyframes: [] },
@@ -72,8 +72,8 @@ eq("strip keys", strips.map(s => s.key), ["1:servo:0", "1:dc:0"]);
 eq("servo strip exposes start/end values", [strips[0].startValue, strips[0].endValue], [0, 0]);
 eq("servo strip exposes min/max range", [strips[0].minValue, strips[0].maxValue], [0, 100]);
 eq("servo strip exposes keyframe count", strips[0].keyframeCount, 3);
-eq("DC strip exposes start/end values", [strips[1].startValue, strips[1].endValue], [0, -100]);
-eq("DC strip exposes min/max range", [strips[1].minValue, strips[1].maxValue], [-100, 0]);
+eq("DC strip exposes start/end values", [strips[1].startValue, strips[1].endValue], [0, -50]);
+eq("DC strip exposes min/max range", [strips[1].minValue, strips[1].maxValue], [-50, 0]);
 
 // ---- servo x/y mapping ----------------------------------------------------
 const sv = strips[0].points;
@@ -86,7 +86,7 @@ approx("servo value=100 (down) → y 100% (bottom)", sv[1].yPct, 100);
 // ---- dc mapping: positive at top, negative at bottom, 0 mid ---------------
 const dc = strips[1].points;
 approx("dc value=0 → y 50% (mid)", dc[0].yPct, 50);
-approx("dc value=-100 → y 100% (bottom)", dc[1].yPct, 100);
+approx("dc value=-50 → y 100% (bottom)", dc[1].yPct, 100);
 
 // ---- values clamp into 0..100 even if out of nominal range ----------------
 const overshoot = motionPreviewStrips(

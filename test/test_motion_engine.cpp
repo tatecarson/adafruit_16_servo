@@ -146,6 +146,29 @@ static void test_completed_motion_can_replay() {
   ASSERT_EQ(motorState.currentSpeed, 50);
 }
 
+// A legacy or hand-authored baked library may still contain the historical
+// -100..100 DC range. Loading and playback must clamp it to the Motion-only
+// safe range even when the browser editor was bypassed.
+static void test_dc_motion_speed_is_safety_clamped() {
+  reset_state();
+  const char* unsafeDcBlob =
+    "{\"schemaVersion\":1,\"motions\":["
+      "{\"id\":\"unsafe-dc\",\"name\":\"Unsafe DC\",\"scope\":\"board\",\"durationMs\":1000,"
+       "\"tracks\":[{\"kind\":\"dc\",\"boardId\":1,\"channel\":0,"
+                   "\"keyframes\":[{\"atMs\":0,\"value\":100},{\"atMs\":1000,\"value\":-100}]}]}"
+    "],\"sequences\":[],\"setlists\":[],\"activeSetlistId\":null,\"schedulerConfig\":{}}";
+
+  ASSERT_TRUE(storageWriteSlot((const uint8_t*)unsafeDcBlob, strlen(unsafeDcBlob)));
+  ASSERT_TRUE(startMotionFromStorage("unsafe-dc", false));
+  ASSERT_EQ(motionRuntime.keyframes[0].value, MOTION_DC_SPEED_MAX);
+  ASSERT_EQ(motionRuntime.keyframes[1].value, MOTION_DC_SPEED_MIN);
+  ASSERT_EQ(motorState.currentSpeed, MOTION_DC_SPEED_MAX);
+
+  _mock_millis = 1000;
+  updateMotion();
+  ASSERT_EQ(motorState.currentSpeed, MOTION_DC_SPEED_MIN);
+}
+
 static void test_cancel_stops_dc_track() {
   reset_state();
   ASSERT_TRUE(storageWriteSlot((const uint8_t*)kBlob, strlen(kBlob)));
@@ -239,6 +262,7 @@ int main() {
   RUN(skips_tracks_for_other_board);
   RUN(playback_interpolates_servo_and_dc);
   RUN(completed_motion_can_replay);
+  RUN(dc_motion_speed_is_safety_clamped);
   RUN(cancel_stops_dc_track);
   RUN(switching_to_servo_only_motion_stops_dc);
   RUN(malformed_boardid_excludes_track);

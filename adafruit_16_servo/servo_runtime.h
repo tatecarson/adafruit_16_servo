@@ -50,6 +50,8 @@ struct ServoState {
 #define MOTION_TRACK_NONE 0
 #define MOTION_TRACK_SERVO 1
 #define MOTION_TRACK_DC 2
+#define MOTION_DC_SPEED_MIN -50
+#define MOTION_DC_SPEED_MAX 50
 #define MOTION_VALUE_UNSET 32767
 
 struct MotionKeyframe {

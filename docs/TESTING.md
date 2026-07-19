@@ -1249,6 +1249,14 @@ then `MOTION B`. Bake it to a board that has that servo wired.
 - Inline `servo_controller.html` script syntax and `git diff --check` passed.
 - Hardware verification was not available in this session and is tracked as `servo-glh`. It covers two consecutive runs from Motion **Play (baked)**, Sequence Play, Setlist Play, and the bake inventory, plus STOP during the pre-roll. No firmware upload is needed because the behavioral fix is browser-only.
 
+**2026-07-19 (servo-1gc DC Motion ±50 safety limit):**
+- [x] `make -C test` — storage 22/22, motion 9/9, sequence 8/8, setlist 11/11, gallery 9/9, and every browser simulation/editor check passed.
+- [x] Motion regression — a legacy baked DC track containing +100 and −100 loads and plays at +50 and −50; both parser-time and output-time clamps are covered.
+- [x] `make -C test size` — 119760 / 122880 bytes (+3120 headroom).
+- [x] Inline `servo_controller.html` script syntax and `git diff --check` — passed.
+- [x] In-app browser preview — all three DC Motion rows rendered `-50..50 spd · safe cap`; the section hint names the safe limit; current `library.json` keyframes above the limit rendered clamped to ±50; no browser console errors.
+- [ ] Hardware playback — not run because `arduino-cli board list` found no attached Arduino. When hardware is available: upload this firmware, bake a Motion whose DC track reaches +50 and −50, play it live and baked, and confirm telemetry never exceeds ±50. Also load a legacy bake containing ±100 and confirm firmware playback reports/outputs only ±50.
+
 ---
 
 ## Servo Calibration Notes

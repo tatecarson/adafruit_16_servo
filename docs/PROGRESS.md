@@ -228,6 +228,8 @@ adafruit_16_servo/
 
 44. `fix: prepare start pose before replaying baked Motions (servo-x2p)` — routes every browser-issued `MOTION` through one shared pre-roll. After a prior baked Motion, affected winch servos glide from its final keyframe to the next Motion's keyframe 0 at the measured 77ms/% floor; all boards use the same maximum preparation duration, nonzero DC endpoints stop during the glide, and only then does the existing cluster-synchronized `MOTION` fire. This covers Motion **Play (baked)**, Sequence Play, Setlist Play, the bake inventory, and free-command playback without changing firmware or the bake schema. Page-local replay history falls back to the last Motion id in board telemetry after a dashboard reload, and `STOP` invalidates a pending delayed start. Adds pure browser regression coverage plus a firmware-engine test proving the completed runtime itself already reloads and rewinds correctly.
 
+45. `fix: cap authored DC Motion speed at ±50 (servo-1gc)` — limits DC keyframe creation, dragging, shape generation, normalization, previews, and bake conformance to −50…+50, with the safe range labeled on every DC row. Firmware clamps legacy baked DC values during Motion loading and again at motor output, while the separate manual `ROTATE` command keeps its existing range. Verification: full host suite; OTA size guard; inline-script syntax; rendered in-app browser preview. Hardware playback remains recorded in `docs/TESTING.md` because no Arduino was attached.
+
 ## Future Features
 
 - [ ] **EEPROM calibration storage** - Save/load servo calibrations (type, min, max, stop pulse) to persist across power cycles. Commands: `SAVE`, `LOAD`, `CLEAR`
