@@ -1214,28 +1214,33 @@ leader. `schedulerConfig.graceMs` is the grace window (default 10000).
 - [ ] Follow-up aggregate rerun — the first attempt was killed by the host at storage startup; storage then passed independently. A second aggregate passed storage and stalled starting `run_motion_tests`; the direct motion invocation then entered the same host-level uninterruptible state previously documented for other native suites. No firmware/runtime files changed in this browser-only follow-up; the initial full aggregate above remains green.
 - Hardware upload is not applicable: this feature changes only the browser editor (`servo_controller.html`) and does not alter firmware, commands, storage schema, or board endpoints.
 
-**2026-07-18 (servo-bzh Motion keyframe readability):**
-- [x] `node test/verify_editor_keyframes.mjs` — 30/30 passed, including linear servo connection geometry, held-speed DC step geometry, axis inset, out-of-range clamping, and servo/DC live-value readout text + horizontal/vertical placement beside the dragged keyframe.
-- [x] Inline `servo_controller.html` script syntax and `git diff --check` — passed.
-- [x] Live browser preview at `http://127.0.0.1:4175/servo_controller.html` — amber servo connections and phosphor DC step connections rendered behind the existing keyframe diamonds and feasibility bands. Nine moving tracks rendered connection lines; static one-keyframe tracks remained uncluttered.
-- [x] Isolated pointer-drag smoke at `http://127.0.0.1:4176/servo_controller.html` — copied the page and library into `/tmp`, dragged a servo keyframe, and observed the normal `keyframe moved` completion without touching the operator's project `library.json`. The badge's transient text/placement is covered by the pure readout tests above.
-- Hardware upload is not applicable: this feature changes only the browser Motion editor and does not alter firmware, commands, storage schema, or board endpoints.
+**2026-07-19 (servo-bri bake-log bridge summary + verification):**
+- [x] `make -C test` — storage 22/22, motion 8/8, sequence 8/8, setlist 11/11, gallery 9/9, and all `sim-verify` browser simulation/editor checks passed (including the 44-case sequence-bridge suite). No firmware files changed on this branch (browser + docs only).
+- [x] Browser preview of `servo_controller.html` — seeded a two-motion library (Motion A holds servo B1.S0 at 90%, Motion B holds it at 10%) plus a sequence `A then B`, then triggered a bake. The bake log emitted the summary lines `↳ cold-start in "A then B": 1 servo(s), 7700ms`, `↳ bridge in "A then B": 1 servo(s), 6160ms`, and `2 bridge(s) inserted, +13.9s`. The authored Motion Library listed only A and B — no `__bridge_` motion appears as a deletable/editable item (synth bridges live only in the bake output). Console clean (no errors).
 
-**2026-07-18 (servo-9f9 Sequencer preview value context):**
-- [x] `node test/verify_seq_preview.mjs` — 20/20 passed, including per-track start/end values, low/high range, key count, servo/DC orientation, clamping, and defensive inputs.
-- [x] Inline `servo_controller.html` script syntax and `git diff --check` — passed.
-- [x] Expanded live preview at `http://127.0.0.1:4175/servo_controller.html` — nine animated tracks rendered with visible `start → end`, `range low…high`, and key-count summaries without horizontal scrolling.
-- [x] Fullscreen Arrange preview — Motion blocks rendered compact start/end labels at each line edge; servo labels stayed amber/yellow, DC labels stayed phosphor/green, and Motion Library cards retained their compact unlabeled curves.
-- Hardware upload is not applicable: this is a browser-only presentation/data-summary change.
+### Manual hardware test: sequence transition bridges glide, not snap (servo-bri)
 
-**2026-07-18 (servo-44c Motor Test upper-limit safety):**
-- [x] `node test/verify_motor_test_safety.mjs` — 11/11 passed: both manual Up controls send and display 80%, neither sends 100%, Sweep is absent, and Down/Mid remain at 0%/50%.
-- [x] `make -C test sim-verify` — all browser simulation/editor suites passed, including the Motor Test safety checks.
-- [x] Inline `servo_controller.html` script syntax and `git diff --check` — passed.
-- [x] Live preview source at `http://127.0.0.1:4175/servo_controller.html` served **All Up · 80%** and the shared 80% per-servo Up target.
-- [ ] `make -C test` — storage passed 22/22, then the unchanged native Motion suite entered the repository's previously documented host-level stall and was stopped. Focused browser suites are green; no firmware code changed.
-- [ ] Hardware click test — choose a connected board in **Motor Test**, click one servo's **Up 80%**, then **All Up · 80%**, and confirm each stops visibly short of the binding point. Not run because no physical motor state is available to this session.
-- Firmware upload is not applicable: this changes only the controls and commands available in the browser's Motor Test drawer. Normal Motion playback remains unchanged.
+No firmware flash is needed (firmware is unchanged); the synthesized bridges ride
+in the baked sequence blob. Author a library whose sequence has a deliberate
+A→B servo discontinuity: Motion A ends with a winch servo high (e.g. 90%),
+Motion B starts that same servo low (e.g. 10%), and a sequence runs `MOTION A`
+then `MOTION B`. Bake it to a board that has that servo wired.
+
+1. **Interior transition glides (no snap).** Leave the servo parked at Motion A's
+   exit (90%), then `RUN` the sequence. Expect: at the A→B boundary the servo
+   *glides* smoothly from 90% down to 10% over the inserted bridge (~6.2 s ramp)
+   instead of snapping instantly. Watch the physical servo, not just the serial log.
+   - Expected: `[ ] Pass  [ ] Fail —`
+2. **Cold start glides, not yanks (the original incident).** Power-cycle or
+   otherwise leave the servo raised at an unknown high position, then `RUN` the
+   sequence from cold. Expect: the cold-start bridge ramps the servo to Motion A's
+   entry pose smoothly (~7.7 s conservative ramp) rather than yanking it there at
+   full speed the instant playback starts.
+   - Expected: `[ ] Pass  [ ] Fail —`
+3. **Later motion-to-motion boundaries also glide.** If the sequence has more than
+   two motions, confirm every transition with a >5% servo delta glides the same way
+   (no residual snap between any pair of motions).
+   - Expected: `[ ] Pass  [ ] Fail —`
 
 **2026-07-18 (servo-x2p baked Motion replay pre-roll):**
 - `node test/verify_baked_motion_preroll.mjs` passed 12/12: first play remains immediate; a full-range replay gets a 7.7s glide; every changed servo uses the same cluster-wide duration; each board targets keyframe 0; a prior nonzero DC endpoint stops; settled and sub-5% poses add no delay; all `MOTION` sources share the path; board telemetry restores replay history after a dashboard reload; and `STOP` invalidates a delayed start.
