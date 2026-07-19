@@ -93,10 +93,19 @@ static void handleSequencesPost(WiFiClient& client, int contentLength) {
         client.print((int)STORAGE_PAYLOAD_MAX); client.println("}");
         return;
     }
-    // Use the shared 4 KB BSS scratch. The only other consumer is
-    // storageHasPrevious(), and we don't call it until after storageWriteSlot
-    // has completed and we no longer reference `buf`.
-    uint8_t* buf = storageScratchBuffer();
+    // Normal bakes reuse the static dual-slot scratch; large mode temporarily
+    // leases heap so the expanded capacity does not permanently overflow RAM.
+    StorageBufferLease lease(contentLength);
+    if (!lease.data) {
+        client.println("HTTP/1.1 503 Service Unavailable");
+        client.println("Connection: close");
+        client.println("Access-Control-Allow-Origin: *");
+        client.println("Content-Type: application/json");
+        client.println();
+        client.println("{\"ok\":false,\"error\":\"large-buffer-unavailable\"}");
+        return;
+    }
+    uint8_t* buf = lease.data;
     int received = 0;
     unsigned long deadline = millis() + 5000;
     while (received < contentLength && millis() < deadline && client.connected()) {
@@ -144,6 +153,8 @@ static void handleSequencesPost(WiFiClient& client, int contentLength) {
     client.print("{\"ok\":true,\"bytesUsed\":"); client.print(received);
     client.print(",\"slotsFree\":"); client.print((int)STORAGE_PAYLOAD_MAX - received);
     client.print(",\"boardId\":"); client.print(storageBoardId());
+    client.print(",\"storageMode\":\""); client.print(storageActiveIsLarge() ? "large" : "dual"); client.print("\"");
+    client.print(",\"rollbackSafe\":"); client.print(storageActiveIsLarge() ? "false" : "true");
     client.print(",\"hasPrevious\":"); client.print(storageHasPrevious() ? "true" : "false");
     client.println("}");
 }
@@ -159,6 +170,9 @@ static void handleSequencesInfo(WiFiClient& client) {
     client.print(",\"hasPrevious\":"); client.print(storageHasPrevious() ? "true" : "false");
     client.print(",\"bytesUsed\":"); client.print(storageActiveBytesUsed());
     client.print(",\"slotPayloadMax\":"); client.print((int)STORAGE_PAYLOAD_MAX);
+    client.print(",\"rollbackPayloadMax\":"); client.print((int)STORAGE_DUAL_PAYLOAD_MAX);
+    client.print(",\"storageMode\":\""); client.print(storageActiveIsLarge() ? "large" : "dual"); client.print("\"");
+    client.print(",\"rollbackSafe\":"); client.print(storageActiveIsLarge() ? "false" : "true");
     client.println("}");
 }
 
@@ -168,8 +182,9 @@ static void handleSequencesInfo(WiFiClient& client) {
 // empty/invalid active slot answers 204 No Content so the browser can tell
 // "this board has nothing baked" from "this board returned a library".
 static void handleSequencesGet(WiFiClient& client) {
-    uint8_t* buf = storageScratchBuffer();
-    int n = storageReadActive(buf, STORAGE_PAYLOAD_MAX);
+    int expected = storageActiveBytesUsed();
+    StorageBufferLease lease(expected);
+    int n = lease.data ? storageReadActive(lease.data, lease.capacity) : -1;
     if (n <= 0) {
         client.println("HTTP/1.1 204 No Content");
         client.println("Connection: close");
@@ -183,7 +198,7 @@ static void handleSequencesGet(WiFiClient& client) {
     client.println("Content-Type: application/json");
     client.print("Content-Length: "); client.println(n);
     client.println();
-    client.write(buf, n);
+    client.write(lease.data, n);
 }
 
 static void handleBoardIdGet(WiFiClient& client) {

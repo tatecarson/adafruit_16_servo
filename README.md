@@ -103,8 +103,12 @@ The page is organized into numbered sections:
   it to the boards' EEPROM. Use **Bake One** with the adjacent board picker when
   only one board is connected; the other configured boards are not contacted.
   **Pull from Boards** rebuilds the editor library from what's physically baked.
-  Replaying a baked Motion from the inventory first glides slow winch servos back
-  to keyframe 0 when the preceding Motion ended at a different pose.
+  Deployment strips editor-only metadata and default fields, validates every
+  library reference, and stores compact firmware pre-roll timing instead of
+  generated bridge Motions. Payloads through 4,080 bytes retain atomic rollback;
+  the browser can use an explicitly warned 6,000-byte large mode when needed,
+  but that tier cannot restore a previous bake. Replaying a baked Motion first
+  glides slow winch servos back to keyframe 0 when the preceding Motion ended elsewhere.
 - **`// 04 Sequencer`** — author Sequences: ordered steps (each a command + duration +
   target board), drag-reorder, hold points, record mode, preview, scrub, and looped
   playback. **Arrange ↗** opens a full-screen, zoomable DAW-style timeline whose
@@ -132,7 +136,8 @@ The page is organized into numbered sections:
 - A **Motion** is a keyframed timeline of servo (percent-of-travel) and DC (signed
   speed) tracks. Authored in `// 06`, baked to EEPROM, played by `MOTION <id>`.
 - A **Sequence** is an ordered list of command steps with durations. Played by
-  `RUN <id> [LOOP]`.
+  `RUN <id> [LOOP]`. At bake time, unsafe Motion boundaries receive compact
+  firmware-assisted pre-rolls without adding authored or stored steps.
 - A **Setlist** is a playlist of Sequences with a scheduler (ordered or weighted
   shuffle, `minGapEntries`, per-entry `repeat`/`gapMs`). Played by `RUN AUTO`.
 - **Gallery mode** (`GALLERY ON`) makes a board auto-run the active Setlist after a
@@ -238,9 +243,9 @@ The build is held under the UNO R4 WiFi's 122,880-byte OTA partition cap.
 | GET | `/cmd?c=<command>` | Run a command locally and mirror it to peers |
 | GET/POST | `/boardId` | Read or set the board's cluster id |
 | GET | `/sequences` | Stream the board's baked library |
-| GET | `/sequences/info` | Baked-library metadata |
+| GET | `/sequences/info` | Baked-library size, storage mode, and rollback metadata |
 | POST | `/sequences` | Bake a (sliced) library to EEPROM |
-| POST | `/sequences/restore` | Restore the previous baked library |
+| POST | `/sequences/restore` | Restore the previous baked library (dual-slot mode only) |
 | GET | `/peers.json` | Cluster peers and their uptimes |
 | POST | `/ota` | Firmware upload |
 

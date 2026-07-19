@@ -37,6 +37,7 @@ sim-verify:
 	  node verify_seq_arrangement.mjs && \
 	  node verify_motor_test_safety.mjs && \
 	  node verify_seq_bridges.mjs && \
+	  node verify_bake_payload.mjs && \
 	  node verify_baked_motion_preroll.mjs; \
 	fi
 

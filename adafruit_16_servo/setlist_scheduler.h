@@ -305,23 +305,26 @@ inline void updateSetlistScheduler() {
 }
 
 inline bool startSetlistFromStorage(const char* setlistId) {
-  uint8_t* buf = storageScratchBuffer();
-  int len = storageReadActive(buf, STORAGE_PAYLOAD_MAX);
-  if (len <= 0) {
-    Serial.println(F("No baked library"));
-    return false;
-  }
-  // Leader gate: only the configured leader runs the scheduler. Followers are
-  // driven by the leader's mirrored RUN/STOP, so RUN AUTO is a no-op for them.
-  if (storageBoardId() != schedulerLeaderBoardId(buf, len)) return false;
+  {
+    StorageBufferLease lease(storageActiveBytesUsed());
+    uint8_t* buf = lease.data;
+    int len = buf ? storageReadActive(buf, lease.capacity) : -1;
+    if (len <= 0) {
+      Serial.println(F("No baked library"));
+      return false;
+    }
+    // Leader gate: only the configured leader runs the scheduler. Followers are
+    // driven by the leader's mirrored RUN/STOP, so RUN AUTO is a no-op for them.
+    if (storageBoardId() != schedulerLeaderBoardId(buf, len)) return false;
 
-  cancelSetlistPlayback();
+    cancelSetlistPlayback();
 
-  const char* error = nullptr;
-  if (!setlistLoadFromBuffer(buf, len, setlistId, setlistScheduler, &error)) {
-    Serial.print(F("RUN AUTO failed: "));
-    Serial.println(error ? error : "unknown");
-    return false;
+    const char* error = nullptr;
+    if (!setlistLoadFromBuffer(buf, len, setlistId, setlistScheduler, &error)) {
+      Serial.print(F("RUN AUTO failed: "));
+      Serial.println(error ? error : "unknown");
+      return false;
+    }
   }
 
   // Seed the shuffle RNG: shuffleRules.seed if non-zero (reproducible),
@@ -342,16 +345,19 @@ inline bool startSetlistFromStorage(const char* setlistId) {
 }
 
 inline bool startActiveSetlist() {
-  uint8_t* buf = storageScratchBuffer();
-  int len = storageReadActive(buf, STORAGE_PAYLOAD_MAX);
-  if (len <= 0) {
-    Serial.println(F("No baked library"));
-    return false;
-  }
   char id[SETLIST_ID_MAX_LEN + 1];
-  if (!activeSetlistId(buf, len, id, sizeof(id))) {
-    Serial.println(F("No active setlist"));
-    return false;
+  {
+    StorageBufferLease lease(storageActiveBytesUsed());
+    uint8_t* buf = lease.data;
+    int len = buf ? storageReadActive(buf, lease.capacity) : -1;
+    if (len <= 0) {
+      Serial.println(F("No baked library"));
+      return false;
+    }
+    if (!activeSetlistId(buf, len, id, sizeof(id))) {
+      Serial.println(F("No active setlist"));
+      return false;
+    }
   }
   return startSetlistFromStorage(id);
 }

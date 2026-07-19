@@ -221,24 +221,29 @@ inline void updateSequenceRunner() {
 }
 
 inline bool startSequenceFromStorage(const char* sequenceId, bool loop, bool announce) {
-  uint8_t* buf = storageScratchBuffer();
-  int len = storageReadActive(buf, STORAGE_PAYLOAD_MAX);
-  if (len <= 0) {
-    Serial.println(F("No baked library"));
-    return false;
+  {
+    StorageBufferLease lease(storageActiveBytesUsed());
+    uint8_t* buf = lease.data;
+    int len = buf ? storageReadActive(buf, lease.capacity) : -1;
+    if (len <= 0) {
+      Serial.println(F("No baked library"));
+      return false;
+    }
+
+    // Cancel any in-flight sequence + motion BEFORE the loader memsets
+    // sequenceRunner. Same defensive pattern as startMotionFromStorage.
+    cancelSequencePlayback();
+
+    const char* error = nullptr;
+    if (!sequenceLoadFromBuffer(buf, len, sequenceId, sequenceRunner, &error)) {
+      Serial.print(F("RUN failed: "));
+      Serial.println(error ? error : "unknown");
+      return false;
+    }
   }
 
-  // Cancel any in-flight sequence + motion BEFORE the loader memsets
-  // sequenceRunner. Same defensive pattern as startMotionFromStorage.
-  cancelSequencePlayback();
-
-  const char* error = nullptr;
-  if (!sequenceLoadFromBuffer(buf, len, sequenceId, sequenceRunner, &error)) {
-    Serial.print(F("RUN failed: "));
-    Serial.println(error ? error : "unknown");
-    return false;
-  }
-
+  // Step zero can synchronously dispatch MOTION, so release any large-mode
+  // heap lease before the nested playback loader acquires its own buffer.
   sequenceRunner.loop = loop;
   sequenceRunner.currentStep = 0;
   sequenceRunner.stepStartMs = millis();

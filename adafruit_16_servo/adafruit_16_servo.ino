@@ -56,7 +56,7 @@
 // /status.json as "fw" so we can confirm which firmware is actually running on
 // each board over the network — removes the "did the flash take?" ambiguity
 // that has burned OTA diagnostics. Bump this string whenever firmware changes.
-#define FW_BUILD "servo-vna-6"
+#define FW_BUILD "servo-inw-1"
 
 // Wi-Fi / OTA state. otaReady gates syncPoll() so we don't UDP before the
 // stack is up. otaInProgress pauses the animation loop during an upload so
@@ -456,6 +456,22 @@ void setup() {
   pwm.begin();
   pwm.setOscillatorFrequency(27000000);
   pwm.setPWMFreq(SERVO_FREQ);
+
+  // Recover the PCA9685's last commanded position when the Arduino rebooted
+  // without the servo board losing power. After a full power loss its output
+  // registers are zero, so fall back to the installation's known mechanical
+  // rest pose (100% down). PREP glides can then begin from an honest modeled
+  // position instead of the generic midpoint initialized before calibration.
+  for (uint8_t ch = 0; ch < CALIB_NUM_CHANNELS; ch++) {
+    uint16_t observed = pwm.getPWM(ch, true);
+    uint16_t restPulse = degreesToPulse(ch, percentToDegrees(ch, 100));
+    uint16_t startPulse = (observed >= servoConfig[ch].minPulse &&
+                           observed <= servoConfig[ch].maxPulse)
+      ? observed : restPulse;
+    servoState[ch].posPulse = startPulse;
+    servoState[ch].startPulse = startPulse;
+    servoState[ch].targetPulse = startPulse;
+  }
 
   delay(10);
 

@@ -36,8 +36,9 @@ inline void galleryGraceArm() {
   galleryGrace.armed = true;
   if (!storageGalleryMode()) return;
 
-  uint8_t* buf = storageScratchBuffer();
-  int len = storageReadActive(buf, STORAGE_PAYLOAD_MAX);
+  StorageBufferLease lease(storageActiveBytesUsed());
+  uint8_t* buf = lease.data;
+  int len = buf ? storageReadActive(buf, lease.capacity) : -1;
   galleryGrace.graceMs = (len > 0) ? schedulerGraceMs(buf, len) : GALLERY_GRACE_DEFAULT_MS;
   galleryGrace.startMs = millis();
   galleryGrace.pending = true;

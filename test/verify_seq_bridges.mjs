@@ -32,8 +32,8 @@ if (start < 0 || end <= start) {
 const core = html.slice(start + START.length, end);
 const dir = mkdtempSync(join(tmpdir(), "seq-bridge-core-"));
 const modPath = join(dir, "core.mjs");
-writeFileSync(modPath, `${core}\nexport { bridgeServoPose, planColdStartBridge, planInteriorBridge, insertSequenceBridges, seedFirstKeyframesFromExit, stripBridges };\n`, "utf8");
-const { bridgeServoPose, planColdStartBridge, planInteriorBridge, insertSequenceBridges, seedFirstKeyframesFromExit, stripBridges } = await import(pathToFileURL(modPath).href);
+writeFileSync(modPath, `${core}\nexport { bridgeServoPose, planColdStartBridge, planInteriorBridge, insertSequenceBridges, rewriteSequencePreRolls, expandPreRollStepsForDisplay, seedFirstKeyframesFromExit, stripBridges, validateLibraryReferences };\n`, "utf8");
+const { bridgeServoPose, planColdStartBridge, planInteriorBridge, insertSequenceBridges, rewriteSequencePreRolls, expandPreRollStepsForDisplay, seedFirstKeyframesFromExit, stripBridges, validateLibraryReferences } = await import(pathToFileURL(modPath).href);
 
 console.log("=== Sequence transition bridges ===");
 
@@ -64,20 +64,42 @@ eq("no-op transition (all within slop) returns null",
 eq("duration honors the 800ms floor",
    planInteriorBridge({"1:servo:0":50}, {"1:servo:0":56}, "x", {floorMs:800,msPerPercent:77,minDeltaPercent:5}).motion.durationMs, 800);
 
+// Cold start is measured from the rig's rest pose (100%, fully down), not
+// worst-cased. Entries at 30 and 90 are 70 and 10 away from rest, so the
+// cluster-wide glide is sized by the 70 and lands at 5390ms, not 7700ms.
 const cs = planColdStartBridge({"1:servo:0":30,"2:servo:2":90},
-  { msPerPercent:77, floorMs:800, unknownDeltaPercent:100 });
-eq("cold-start duration uses the conservative unknown delta", cs.durationMs, Math.ceil(100*77)); // 7700
+  { msPerPercent:77, floorMs:800, restPercent:100 });
+eq("cold-start duration is measured from the rest pose", cs.durationMs, Math.ceil(70*77)); // 5390
 eq("one DMOVE per driven servo, targeted at its board", cs.steps.slice(0,2).map(s=>[s.cmd,s.target]),
-   [["DMOVE 0 30 7700","1"],["DMOVE 2 90 7700","2"]]);
+   [["DMOVE 0 30 5390","1"],["DMOVE 2 90 5390","2"]]);
 eq("DMOVE steps are zero-duration (chord)", cs.steps.slice(0,2).every(s=>s.durationMs===0), true);
-eq("trailing dwell step holds the clock", [cs.steps.at(-1).cmd, cs.steps.at(-1).durationMs], ["",7700]);
+eq("trailing dwell step holds the clock", [cs.steps.at(-1).cmd, cs.steps.at(-1).durationMs], ["",5390]);
 eq("empty pose yields no cold-start bridge", planColdStartBridge({}, {}), null);
+
+// The point of the whole change: a motion that opens on the rest pose is
+// already in position at power-on, so it needs no cold-start bridge at all.
+eq("motion entering at the rest pose needs no cold-start bridge",
+   planColdStartBridge({"1:servo:0":100,"2:servo:2":100}, { msPerPercent:77, floorMs:800, restPercent:100 }), null);
+eq("sub-slop distance from rest does not bridge",
+   planColdStartBridge({"1:servo:0":97}, { msPerPercent:77, floorMs:800, restPercent:100, minDeltaPercent:5 }), null);
+
+// A re-run does not start from rest — it starts wherever the previous run
+// parked. Size for whichever start is further away so neither is under-timed.
+eq("re-run pose lengthens the glide when it is further than rest",
+   planColdStartBridge({"1:servo:0":100}, { msPerPercent:77, floorMs:800, restPercent:100,
+     rerunFromPose:{"1:servo:0":20} }).durationMs, Math.ceil(80*77)); // 6160
+eq("rest still wins when it is the further start",
+   planColdStartBridge({"1:servo:0":0}, { msPerPercent:77, floorMs:800, restPercent:100,
+     rerunFromPose:{"1:servo:0":10} }).durationMs, Math.ceil(100*77)); // 7700
+eq("a channel absent from the re-run pose falls back to rest",
+   planColdStartBridge({"1:servo:0":0}, { msPerPercent:77, floorMs:800, restPercent:100,
+     rerunFromPose:{"9:servo:9":50} }).durationMs, Math.ceil(100*77));
 
 const lib = [
   { id:"rise", durationMs:1000, tracks:[{kind:"servo",boardId:1,channel:0,keyframes:[{atMs:0,value:0},{atMs:1000,value:80}]}] },
   { id:"fall", durationMs:1000, tracks:[{kind:"servo",boardId:1,channel:0,keyframes:[{atMs:0,value:0},{atMs:1000,value:0}]}] },
 ];
-const wopts = { seqId:"s", msPerPercent:77, minDeltaPercent:5, floorMs:800, unknownDeltaPercent:100, maxSteps:16 };
+const wopts = { seqId:"s", msPerPercent:77, minDeltaPercent:5, floorMs:800, restPercent:100, maxSteps:16 };
 
 const r = insertSequenceBridges([{cmd:"MOTION rise",durationMs:1000},{cmd:"MOTION fall",durationMs:1000}], lib, wopts);
 eq("cold-start bridge precedes first motion",
@@ -88,10 +110,46 @@ eq("interior bridge inserted before fall",
 eq("one synth bridge motion produced", r.bridgeMotions.map(m=>m.id), ["__bridge_s_0"]);
 eq("no error under budget", r.error, null);
 
+// Real bakes use compact PREP annotations, not the legacy materialized bridge
+// objects above. The old planner remains covered for backwards hydration and
+// display math, while these assertions guard the deploy representation.
+const compact = rewriteSequencePreRolls(
+  [{cmd:"MOTION rise",durationMs:1000},{cmd:"MOTION fall",durationMs:1000}], lib, wopts);
+eq("compact planner preserves authored step count", compact.steps.length, 2);
+eq("cold transition becomes an in-step PREP command", compact.steps[0].cmd, "MOTION rise PREP 7700");
+eq("PREP duration extends the authored play window", compact.steps[0].durationMs, 8700);
+eq("interior transition is also in-step", compact.steps[1].cmd, "MOTION fall PREP 6160");
+eq("compact planner produces summaries but no hidden Motions", compact.summary.map(s=>s.kind), ["cold","interior"]);
+const displayed = expandPreRollStepsForDisplay(compact.steps);
+eq("Arrange expansion shows two display-only PREP blocks", displayed.filter(s=>s.bridge).length, 2);
+eq("Arrange expansion restores original Motion durations", displayed.filter(s=>!s.bridge).map(s=>s.durationMs), [1000,1000]);
+
 // A no-movement transition (fall holds 0 -> next fall entry 0) needs no bridge:
 // planInteriorBridge returns null when nothing moves past the slop threshold.
 const r2 = insertSequenceBridges([{cmd:"MOTION fall",durationMs:1000},{cmd:"MOTION fall",durationMs:1000}], lib, wopts);
 eq("no-movement transition inserts no interior bridge", r2.bridgeMotions.length, 0);
+
+// End to end: a sequence whose motions open and close on the rest pose is
+// already in position at power-on and after a re-run, so it bakes with no
+// cold-start bridge at all — the timeline opens directly on the motion.
+const restLib = [
+  { id:"parked", durationMs:1000, tracks:[{kind:"servo",boardId:1,channel:0,
+    keyframes:[{atMs:0,value:100},{atMs:1000,value:100}]}] },
+];
+const rRest = insertSequenceBridges([{cmd:"MOTION parked",durationMs:1000}], restLib, wopts);
+eq("sequence starting at rest bakes with no cold-start bridge",
+   rRest.steps.map(s=>s.cmd), ["MOTION parked"]);
+eq("and reports no cold-start in the summary", rRest.summary.length, 0);
+
+// But if that same sequence ends somewhere else, replaying it no longer starts
+// from rest, so the cold-start bridge has to come back sized for the re-run.
+const driftLib = [
+  { id:"drift", durationMs:1000, tracks:[{kind:"servo",boardId:1,channel:0,
+    keyframes:[{atMs:0,value:100},{atMs:1000,value:20}]}] },
+];
+const rDrift = insertSequenceBridges([{cmd:"MOTION drift",durationMs:1000}], driftLib, wopts);
+eq("a sequence that drifts away from its entry keeps a cold-start bridge",
+   [rDrift.steps[0].cmd, rDrift.summary[0].kind], ["DMOVE 0 100 6160", "cold"]);
 
 const r3 = insertSequenceBridges([{cmd:"MOTION rise",durationMs:1000},{cmd:"STOP",durationMs:500},{cmd:"MOTION fall",durationMs:1000}], lib, wopts);
 eq("opaque step passes through untouched", r3.steps.find(s=>s.cmd==="STOP")!=null, true);
@@ -180,6 +238,24 @@ eq("interior bridge caught even without the flag",
 eq("other library fields preserved", stripped.setlists.map(s=>s.id), ["s"]);
 eq("null library is a safe no-op", stripBridges(null), null);
 eq("source library object is not mutated", baked.motions.length, 2);
+
+const preparedBake = { motions:[{id:"rise"}], sequences:[{id:"s",steps:[
+  {cmd:"MOTION rise PREP 6160",durationMs:7160},
+]}], setlists:[] };
+const unprepared = stripBridges(preparedBake);
+eq("pulled PREP command returns to an authored Motion step", unprepared.sequences[0].steps[0].cmd, "MOTION rise");
+eq("pulled PREP duration is removed from authored duration", unprepared.sequences[0].steps[0].durationMs, 1000);
+
+eq("valid references pass the bake gate", validateLibraryReferences({
+  motions:[{id:"m"}], sequences:[{id:"q",steps:[{cmd:"MOTION m"}]}],
+  setlists:[{id:"sl",entries:[{seqId:"q"}]}], activeSetlistId:"sl",
+}).ok, true);
+eq("missing Motion reference is named", validateLibraryReferences({
+  motions:[], sequences:[{id:"q",steps:[{cmd:"MOTION ghost"}]}], setlists:[],
+}).errors[0], {code:"missing-motion",owner:"q",index:0,missing:"ghost"});
+eq("missing Sequence reference is named", validateLibraryReferences({
+  motions:[], sequences:[], setlists:[{id:"sl",entries:[{seqId:"ghost"}]}],
+}).errors[0], {code:"missing-sequence",owner:"sl",index:0,missing:"ghost"});
 
 // --- Task 8: bridges are visible in the Arrange timeline (display-only) ---
 // The Arrange render tags auto-inserted bridge blocks with a distinct style so

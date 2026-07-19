@@ -171,6 +171,7 @@ void setAllProtectedWinchesPercent(bool percentUp, uint8_t percent);
 void moveAllProtectedWinchesPercent(bool percentUp, uint8_t percent, uint32_t duration);
 void setTestPulse(uint16_t pulse);
 bool startMotionFromStorage(const char* motionId, bool announce);
+bool startMotionPreparedFromStorage(const char* motionId, uint32_t prepareMs, bool announce);
 void cancelMotionPlayback();
 void updateMotion();
 bool startSequenceFromStorage(const char* sequenceId, bool loop, bool announce);

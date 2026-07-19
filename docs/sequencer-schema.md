@@ -84,7 +84,7 @@ A keyframed pattern across servos and DC motors. Cluster-scope by default; board
 | `name` | string | yes | Display name. |
 | `tags` | string[] | no | Default `[]`. |
 | `scope` | `"board"` \| `"cluster"` | yes | `"board"` is informational; firmware behavior is identical. |
-| `durationMs` | integer ≥ 1 | yes | Total length. Must equal the max `atMs` across all keyframes. |
+| `durationMs` | integer ≥ 1 | yes | Total length. May extend past a track's final explicit keyframe; that value is held through the end. Must be at least the largest `atMs` in the Motion. |
 | `tracks` | Track[] | yes | ≥ 1 track. |
 
 ### Track
@@ -95,7 +95,7 @@ A keyframed pattern across servos and DC motors. Cluster-scope by default; board
 | `boardId` | 1 \| 2 \| 3 | yes | Stable per-device ID. |
 | `channel` | integer | yes | Servo: 0–2 (current hardware uses 3 of 16 PCA9685 channels). DC: 0. |
 | `label` | string | no | ≤32 chars. Composer's note. Not used by firmware. |
-| `keyframes` | Keyframe[] | yes | ≥ 2 keyframes; first must have `atMs: 0`. |
+| `keyframes` | Keyframe[] | yes | ≥ 1 keyframe; first must have `atMs: 0`. A one-keyframe track is a constant hold. |
 
 A `(boardId, kind, channel)` triple must be unique within a Motion (no two tracks targeting the same physical actuator).
 
@@ -103,7 +103,7 @@ A `(boardId, kind, channel)` triple must be unique within a Motion (no two track
 
 | Field | Type | Required | Notes |
 |---|---|---|---|
-| `atMs` | integer ≥ 0 | yes | Strictly increasing within a track. First keyframe must be `atMs: 0`. Last keyframe's `atMs` must equal Motion's `durationMs`. |
+| `atMs` | integer ≥ 0 | yes | Strictly increasing within a track. First keyframe must be `atMs: 0`; the last must not exceed the Motion's `durationMs`. Its value is held implicitly for any remaining time. |
 | `value` | number | yes | Servo: 0–100 absolute percent down (`0` = fully up/retracted, `100` = fully down/lowered). DC Motion: −50..+50 (signed speed, safety-limited). |
 | `easing` | `"linear"` | no | Default `"linear"`. Only `"linear"` is supported in `schemaVersion: 1`. Reserved values for future use: `"easeIn"`, `"easeOut"`, `"easeInOut"`, `"hold"`. The `easing` on a keyframe controls how the value is approached **from the previous keyframe** (i.e., it's the easing of the incoming segment). The first keyframe's `easing` is ignored. |
 | `bypassRamp` | boolean | no | DC tracks only. Historically reserved for opting out of a firmware speed-ramp on the DC motor. That ramp path has since been removed — DC values are always written directly — so this field has no effect and is accepted but ignored. May be repurposed in a future schema version. |
@@ -114,7 +114,7 @@ A `(boardId, kind, channel)` triple must be unique within a Motion (no two track
   - `linear`: `value(t) = v0 + (v1 - v0) * (t - t0) / (t1 - t0)`
 - Servo values are interpreted as absolute percent-down positions, then mapped through each channel's calibrated up/down travel before being written to the PCA9685 every tick.
 - DC values are written **directly** to the motor outputs and safety-clamped to −50..+50 during Motion loading and playback. The keyframe curve is the only smoothing applied — author smooth DC ramps as additional keyframes. `STOP` and any cancelling command cut DC to 0 abruptly via the same direct path. (`ROTATE` remains a separate manual command with a wider range and likewise sets motor speed instantly; there is no firmware speed-ramp.)
-- Motion playback ends exactly at `durationMs`; the final keyframe's value is the resting state.
+- Motion playback ends exactly at `durationMs`; each track implicitly holds its final keyframe value until then.
 
 ### Servo slew-rate authoring notes
 
@@ -241,7 +241,7 @@ A collection of Sequence references with optional shuffle rules. Runs forever on
 
 ## 5. Bake blob (the thing the browser POSTs)
 
-A single envelope sent to each board's `POST /sequences` endpoint. Each board persists it to the UNO R4's on-chip EEPROM (8 KB dataflash, two 4 KB slots; see Section 6). Sliced per board: a board receives only the Motion tracks where `track.boardId` matches its own, but receives the full Sequence + Setlist library so any board can become leader.
+A single compact deployment envelope sent to each board's `POST /sequences` endpoint. Each board persists it to the UNO R4's on-chip EEPROM (8 KB dataflash, two 4 KB slots; see Section 6). It is deliberately not a byte-for-byte copy of the editable `library.json`: display-only names, tags, labels, reserved fields, and default-valued options are omitted. Each board receives only the Motion tracks where `track.boardId` matches its own, but receives the full compact Sequence + Setlist library so any board can become leader. Pulling a bake back into the editor restores safe defaults and uses stable ids when omitted human-readable labels cannot be reconstructed.
 
 ```json
 {
@@ -253,8 +253,7 @@ A single envelope sent to each board's `POST /sequences` endpoint. Each board pe
   "activeSetlistId": "gallery-evening",
   "schedulerConfig": {
     "leaderBoardId": 1,
-    "graceMs": 10000,
-    "tagEnergy": ["calm", "slow", "mechanical", "agitated"]
+    "graceMs": 10000
   }
 }
 ```
@@ -277,28 +276,34 @@ A single envelope sent to each board's `POST /sequences` endpoint. Each board pe
 |---|---|---|---|
 | `leaderBoardId` | 1 \| 2 \| 3 | yes | Which board runs the scheduler in gallery mode. |
 | `graceMs` | integer ≥ 0 | yes | Boot grace period before auto-`RUN AUTO` when `gallery_mode` is on. Default `10000`. |
-| `tagEnergy` | string[] | no | Ordered list of tags from calmest to most agitated. Used by `moodArc` rising/falling/breathing. Reserved; effective in `schemaVersion: 2`. |
+| `tagEnergy` | string[] | no | Authoring-only reserved field in schema v1. It is omitted from compact deployment payloads because firmware does not use it. |
+
+Before slicing, the browser also rewrites an unsafe Sequence transition from `MOTION <id>` to the internal compact form `MOTION <id> PREP <ms>` and extends that step's `durationMs` by the same preparation time. Firmware glides its local servo tracks to the Motion's first keyframe during that interval, then begins normal playback. This preserves the authored step count and avoids storing generated bridge Motions or `DMOVE` chord steps. Pull/import reverses the deploy-only annotation before the Sequence becomes editable again.
 
 ---
 
 ## 6. Persistence and versioning (firmware)
 
-Storage on the Arduino UNO R4 WiFi uses the standard `EEPROM` library, which on the Renesas RA4M1 maps to ~8 KB of dedicated dataflash. The 8 KB is partitioned as:
+Storage on the Arduino UNO R4 WiFi uses the standard `EEPROM` library, which on the Renesas RA4M1 maps to ~8 KB of dedicated dataflash. The first 8 bytes remain the stable header (magic, active-record marker, `boardId`, and `gallery_mode`); bytes 8176–8191 remain reserved for persisted servo calibration. The sequencer region supports two compatible modes:
 
-- An 8-byte header with magic bytes, an active-slot pointer, `boardId`, and the `gallery_mode` boot flag (offset 4; `1` = on, anything else = off).
-- Two slots of 4084 bytes each. Each slot is `[length:2][crc16:2][payload:≤4080]`. CRC is CRC16-CCITT (poly 0x1021, init 0xFFFF) over the length bytes concatenated with the payload.
+- **Dual mode (default, ≤4080-byte payload):** two 4084-byte slots. Each slot is `[length:2][crc16:2][payload:≤4080]`.
+- **Large mode (4081–6000-byte payload):** one overlapping record beginning at byte 8, using the same length/CRC/payload format. The active marker value `2` identifies this mode. Firmware leases its larger JSON read buffer temporarily from the heap so normal runtime RAM usage does not increase.
 
-`POST /sequences` writes the payload to the *inactive* slot, then atomically flips the one-byte active-slot pointer. A power loss anywhere before the pointer flip leaves the previous active slot intact. The "previous" slot is simply the non-active one — the browser's restore-previous-bake button calls `POST /sequences/restore`, which is a one-byte pointer flip back (refused if the previous slot's CRC doesn't validate).
+For dual mode, `POST /sequences` writes the payload to the *inactive* slot, then atomically flips the one-byte active-slot pointer. A power loss anywhere before the pointer flip leaves the previous active slot intact. The browser's restore-previous-bake button calls `POST /sequences/restore`, which flips back only when the other slot's CRC validates.
+
+Large mode necessarily overlaps both dual slots, so it has **no previous-bake rollback and no power-loss atomicity while the write is in progress**. Firmware marks storage inactive before overwriting and writes the CRC last; an interrupted large write is rejected rather than treated as valid. The browser shows an explicit warning and requires confirmation. Returning to a small bake recreates dual mode; the second subsequent small bake restores normal previous-bake rollback.
+
+All records use CRC16-CCITT (poly 0x1021, init 0xFFFF) over the length bytes concatenated with the payload.
 
 Validation checks (firmware, at `POST /sequences` time):
 
-1. `Content-Length` is between 1 and 4080.
+1. `Content-Length` is between 1 and 6000.
 2. Body is well-formed JSON shape — balanced braces, terminated strings.
 3. Top-level object contains `"schemaVersion": 1`.
 
 Semantic validation (Motion `id` references, keyframe ordering, value-range bounds) is deferred to the playback engines (servo-2cw, servo-3a9), which fail the relevant `MOTION`/`RUN` command rather than the bake. This keeps the bake endpoint fast and the storage layer independent of the schema's domain semantics.
 
-The maximum bake-blob payload is therefore 4080 bytes. The browser must minify JSON (strip whitespace) before POSTing. A modest library (5 Motions × ~400 bytes, 5 Sequences × ~200 bytes, 3 Setlists × ~150 bytes) is roughly 3.5 KB minified — comfortable headroom, but the bake pipeline should surface bytes-used prominently so the user notices approaching the limit.
+The maximum bake-blob payload is 6000 bytes, while 4080 bytes remains the rollback-safe threshold. The browser minifies and compacts JSON before POSTing, validates all Motion/Sequence/Setlist references, surfaces actual UTF-8 bytes used per board, and labels which storage tier each board will use. Current project payloads remain well inside dual mode.
 
 ---
 
