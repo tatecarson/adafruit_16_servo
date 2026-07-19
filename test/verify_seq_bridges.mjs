@@ -69,5 +69,33 @@ eq("DMOVE steps are zero-duration (chord)", cs.steps.slice(0,2).every(s=>s.durat
 eq("trailing dwell step holds the clock", [cs.steps.at(-1).cmd, cs.steps.at(-1).durationMs], ["",7700]);
 eq("empty pose yields no cold-start bridge", planColdStartBridge({}, {}), null);
 
+const lib = [
+  { id:"rise", durationMs:1000, tracks:[{kind:"servo",boardId:1,channel:0,keyframes:[{atMs:0,value:0},{atMs:1000,value:80}]}] },
+  { id:"fall", durationMs:1000, tracks:[{kind:"servo",boardId:1,channel:0,keyframes:[{atMs:0,value:0},{atMs:1000,value:0}]}] },
+];
+const wopts = { seqId:"s", msPerPercent:77, minDeltaPercent:5, floorMs:800, unknownDeltaPercent:100, maxSteps:16 };
+
+const r = insertSequenceBridges([{cmd:"MOTION rise",durationMs:1000},{cmd:"MOTION fall",durationMs:1000}], lib, wopts);
+eq("cold-start bridge precedes first motion",
+   [r.steps[0].cmd.startsWith("DMOVE"), r.steps[1].cmd, r.steps[2].cmd],
+   [true, "", "MOTION rise"]);
+eq("interior bridge inserted before fall",
+   r.steps.slice(3).map(s=>s.cmd), ["MOTION __bridge_s_0","MOTION fall"]);
+eq("one synth bridge motion produced", r.bridgeMotions.map(m=>m.id), ["__bridge_s_0"]);
+eq("no error under budget", r.error, null);
+
+// A no-movement transition (fall holds 0 -> next fall entry 0) needs no bridge:
+// planInteriorBridge returns null when nothing moves past the slop threshold.
+const r2 = insertSequenceBridges([{cmd:"MOTION fall",durationMs:1000},{cmd:"MOTION fall",durationMs:1000}], lib, wopts);
+eq("no-movement transition inserts no interior bridge", r2.bridgeMotions.length, 0);
+
+const r3 = insertSequenceBridges([{cmd:"MOTION rise",durationMs:1000},{cmd:"STOP",durationMs:500},{cmd:"MOTION fall",durationMs:1000}], lib, wopts);
+eq("opaque step passes through untouched", r3.steps.find(s=>s.cmd==="STOP")!=null, true);
+eq("motion after opaque step gets a DMOVE cold-start bridge",
+   r3.steps.filter(s=>s.cmd.startsWith("DMOVE")).length>0, true);
+
+const many = Array.from({length:20},()=>({cmd:"MOTION rise",durationMs:1000}));
+eq("over-budget sequence reports an error", insertSequenceBridges(many, lib, wopts).error.code, "bridge-budget");
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

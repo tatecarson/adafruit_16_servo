@@ -6490,6 +6490,54 @@ function planColdStartBridge(toPose, opts) {
   steps.push({ cmd:"", durationMs, target:"all", label:"↳ bridge dwell", hold:false, bridge:true });
   return { steps, durationMs, channels };
 }
+function bridgeMotionIdFromCmd(cmd) {
+  const m = /^\s*MOTION\s+(\S+)\s*$/i.exec(String(cmd || ""));
+  return m ? m[1] : null;
+}
+// Walk a sequence's steps, tracking a virtual servo position, and insert bridges:
+//  - cold start / after an opaque (non-MOTION) step: position unknown -> DMOVE bridge
+//  - interior transition (position known): synthesized bridge motion (1 step)
+// Returns { steps, bridgeMotions, summary, error }. Never throws; a step-budget
+// overflow is reported in `error` so the bake orchestrator can block + name it.
+function insertSequenceBridges(steps, motions, opts) {
+  opts = opts || {};
+  const seqId = opts.seqId || "seq";
+  const maxSteps = opts.maxSteps != null ? opts.maxSteps : 16;
+  const byId = new Map((motions || []).map(m => [String(m.id).toLowerCase(), m]));
+
+  const outSteps = [];
+  const bridgeMotions = [];
+  const summary = [];
+  let virt = null;              // null = unknown position (cold start / post-opaque)
+  let bridgeSeq = 0;
+
+  for (const step of (steps || [])) {
+    const motionId = bridgeMotionIdFromCmd(step.cmd);
+    const motion = motionId ? byId.get(motionId.toLowerCase()) : null;
+    if (!motion) { outSteps.push(step); virt = null; continue; }
+
+    const entry = bridgeServoPose(motion, "entry");
+    if (virt === null) {
+      const cold = planColdStartBridge(entry, opts);
+      if (cold) { outSteps.push(...cold.steps); summary.push({ kind:"cold", durationMs:cold.durationMs, channels:cold.channels }); }
+    } else {
+      const bridge = planInteriorBridge(virt, entry, `__bridge_${seqId}_${bridgeSeq}`, opts);
+      if (bridge) {
+        bridgeMotions.push(bridge.motion);
+        outSteps.push(bridge.step);
+        summary.push({ kind:"interior", id:bridge.motion.id, durationMs:bridge.motion.durationMs, channels:bridge.channels });
+        bridgeSeq++;
+      }
+    }
+    outSteps.push(step);
+    virt = bridgeServoPose(motion, "exit");
+  }
+
+  const error = outSteps.length > maxSteps
+    ? { code:"bridge-budget", produced:outSteps.length, max:maxSteps }
+    : null;
+  return { steps:outSteps, bridgeMotions, summary, error };
+}
 // === SEQ-BRIDGE-CORE END ===
 function sliceForBoard(lib, boardId) {
   const motions = [];
