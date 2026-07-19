@@ -4034,6 +4034,16 @@ const MOTION_TRACK_SPECS = [1, 2, 3].flatMap(boardId => ([
   { kind: "servo", boardId, channel: 2, label: `B${boardId}.S2`, min: 0, max: 100, unit: "%" },
   { kind: "dc",    boardId, channel: 0, label: `B${boardId}.DC`, min: -MOTION_DC_SPEED_LIMIT, max: MOTION_DC_SPEED_LIMIT, unit: "spd" },
 ]));
+// Where a track sits when nothing else defines it (servo-xfq). A winch only
+// holds position while it is driven; unpowered, the ring's own weight pulls it
+// to the bottom of its travel. So a servo's honest resting pose is 100% (fully
+// down), not 0% — authoring from 0 modeled a state the rig is never actually in
+// at rest, and every new motion then opened with a phantom descent.
+// DC is a speed, not a position: 0 is stopped, which is its true rest state.
+function defaultTrackValue(spec) {
+  return spec?.kind === "servo" ? 100 : 0;
+}
+
 const SERVO_FEASIBILITY_MS_PER_PERCENT = 77;
 const SERVO_STACCATO_MS_PER_PERCENT = 120;
 const SERVO_TINY_DELTA_PERCENT = 2;
@@ -4218,8 +4228,9 @@ function defaultMotion(lib, name = "New Motion") {
       label: spec.label,
       // Default start state only. The motion now holds its final explicit
       // keyframe instead of forcing every track to return to 0 at the end.
+      // Servos open fully down, matching where the unpowered rig actually rests.
       keyframes: [
-        { atMs: 0, value: 0 },
+        { atMs: 0, value: defaultTrackValue(spec) },
       ],
     })),
   };
@@ -5892,7 +5903,7 @@ function clearMotionTrack(key) {
   mutateCurrentMotion(motion => {
     const track = findTrack(motion, spec);
     if (!track) return;
-    track.keyframes = normalizeKeyframes({ ...track, keyframes: [{ atMs: 0, value: 0 }] }, motion.durationMs, spec);
+    track.keyframes = normalizeKeyframes({ ...track, keyframes: [{ atMs: 0, value: defaultTrackValue(spec) }] }, motion.durationMs, spec);
   });
   motionSelectedKeys.delete(key);
   setMotionStatus(`cleared · ${spec.label}`, "amber");
@@ -5927,7 +5938,7 @@ function deleteSelectedKeyframes() {
       if (!spec || !track) continue;
       const idx = track.keyframes.map((k, i) => (atSet.has(k.atMs) ? i : -1)).filter(i => i >= 0);
       let next = deleteKeyframeIndices(track.keyframes, idx);
-      if (!next.length) next = [{ atMs: 0, value: 0 }];
+      if (!next.length) next = [{ atMs: 0, value: defaultTrackValue(spec) }];
       track.keyframes = normalizeKeyframes({ ...track, keyframes: next }, motion.durationMs, spec);
     }
   });
