@@ -4124,10 +4124,23 @@ async function sendBakedMotionWithPreRoll(originIp, motionId) {
   // Preserve replay safety across a dashboard reload. /status.json retains the
   // most recently loaded Motion id even after it completes, so telemetry can
   // recover the prior final pose when this page-local history is still empty.
+  //
+  // Telemetry wins over lastBakedMotionId: the boards also move on their own
+  // (RUN of a sequence or setlist, gallery mode), and those plays never touch
+  // this page-local history. Trusting the stale local id there computes the
+  // delta from a pose the servo left long ago — and when that stale pose
+  // happens to match the next motion's first keyframe, the pre-roll is skipped
+  // entirely and the servo slams, which is the exact bug this path fixes.
+  //
+  // Both sources can lag, but not equally: motionRuntime.id only trails by a
+  // poll interval, while the local id stays wrong for as long as the boards
+  // keep playing something this page did not send — an entire setlist. Prefer
+  // the bounded error. Keep the local id as the fallback for the window before
+  // the first poll lands, and for boards that report no motion at all.
   const telemetryMotionId = boards
     .map(ip => lastStatus.get(ip)?.motion?.id)
     .find(id => id && (lib.motions || []).some(motion => motion.id === id));
-  const previousMotionId = lastBakedMotionId || telemetryMotionId || null;
+  const previousMotionId = telemetryMotionId || lastBakedMotionId || null;
   const previousMotion = (lib.motions || []).find(motion => motion.id === previousMotionId);
   const plan = planBakedMotionPreRoll(previousMotion, nextMotion, MOTION_TRACK_SPECS);
   const serial = ++bakedMotionPreRollSerial;

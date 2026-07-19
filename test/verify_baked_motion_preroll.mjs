@@ -40,6 +40,13 @@ check(/STOP[\s\S]*bakedMotionPreRollSerial\+\+/.test(html),
   "STOP invalidates a delayed baked Motion start");
 check(/telemetryMotionId[\s\S]*lastStatus\.get\(ip\)\?\.motion\?\.id/.test(html),
   "board telemetry restores replay history after a dashboard reload");
+// Precedence matters, not just presence. The boards move without this page's
+// knowledge (RUN of a sequence, setlist, gallery mode), so the firmware's own
+// motion id has to outrank lastBakedMotionId. With the operands reversed, a
+// stale local id that happens to equal the next motion's first keyframe skips
+// the pre-roll entirely and the servo slams.
+check(/previousMotionId\s*=\s*telemetryMotionId\s*\|\|\s*lastBakedMotionId/.test(html),
+  "board telemetry outranks page-local history when choosing the prior pose");
 
 const previous = motion("arc", [
   track("servo", 1, 0, [[0, 0], [8000, 100]]),
@@ -73,4 +80,4 @@ const tinyNext = motion("tiny", [track("servo", 1, 0, [[0, 10], [1000, 13]])]);
 check(context.plan(tinyPrevious, tinyNext, specs).durationMs === 0,
   "sub-five-percent drift does not add a perceptible warm-up");
 
-console.log(`\n${passed}/12 baked Motion pre-roll checks passed.`);
+console.log(`\n${passed}/13 baked Motion pre-roll checks passed.`);
