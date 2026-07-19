@@ -4040,8 +4040,13 @@ const MOTION_TRACK_SPECS = [1, 2, 3].flatMap(boardId => ([
 // down), not 0% — authoring from 0 modeled a state the rig is never actually in
 // at rest, and every new motion then opened with a phantom descent.
 // DC is a speed, not a position: 0 is stopped, which is its true rest state.
+//
+// The bake reads the same constant to size the cold-start bridge (servo-c1e):
+// the pose a new motion opens on and the pose a powered-off rig settles into
+// are the same physical fact, so they must not be able to drift apart.
+const MOTION_SERVO_REST_PERCENT = 100;
 function defaultTrackValue(spec) {
-  return spec?.kind === "servo" ? 100 : 0;
+  return spec?.kind === "servo" ? MOTION_SERVO_REST_PERCENT : 0;
 }
 
 const SERVO_FEASIBILITY_MS_PER_PERCENT = 77;
@@ -6363,7 +6368,7 @@ function renderSequenceArrangement() {
   const libMotions = (lib.motions) || [];
   const bridged = insertSequenceBridges(steps, libMotions, {
     seqId: seq.id, msPerPercent: SERVO_FEASIBILITY_MS_PER_PERCENT,
-    minDeltaPercent: 5, floorMs: 800, unknownDeltaPercent: 100, maxSteps: SEQ_MAX_STEPS,
+    minDeltaPercent: 5, floorMs: 800, restPercent: MOTION_SERVO_REST_PERCENT, maxSteps: SEQ_MAX_STEPS,
   });
   const displaySteps = bridged.steps;
   const layout = sequenceArrangementLayout(displaySteps, zoom);
@@ -6883,11 +6888,36 @@ function planColdStartBridge(toPose, opts) {
   // 77 mirrors firmware SERVO_FEASIBILITY_MS_PER_PERCENT; real value supplied by the bake glue.
   const msPerPercent = opts.msPerPercent != null ? opts.msPerPercent : 77;
   const floorMs = opts.floorMs != null ? opts.floorMs : 800;
-  const unknownDeltaPercent = opts.unknownDeltaPercent != null ? opts.unknownDeltaPercent : 100;
+  const minDeltaPercent = opts.minDeltaPercent != null ? opts.minDeltaPercent : 5;
+  // Unpowered, the ring's own weight pulls every winch to the bottom of its
+  // travel, so a cold boot starts fully down (servo-c1e). That is a physical
+  // fact about the rig, not a guess, which is why this no longer worst-cases a
+  // blind 100% traverse on every single sequence start.
+  const restPercent = opts.restPercent != null ? opts.restPercent : 100;
+  // Where a completed run of this sequence parks each servo. A re-run — or a
+  // looping setlist — starts from there rather than from the rest pose.
+  const rerunFromPose = opts.rerunFromPose || null;
 
   const keys = Object.keys(toPose);
   if (!keys.length) return null;
-  const durationMs = Math.max(floorMs, Math.ceil(unknownDeltaPercent * msPerPercent));
+
+  // Size for whichever plausible start is furthest away: a fresh power-on (at
+  // rest) or an immediate re-run (this sequence's own final pose). Taking the
+  // max of the two can only lengthen the glide, so neither case is under-timed.
+  let maxDelta = 0;
+  for (const key of keys) {
+    const target = Number(toPose[key]);
+    if (!Number.isFinite(target)) continue;
+    let delta = Math.abs(restPercent - target);
+    const prior = rerunFromPose ? Number(rerunFromPose[key]) : NaN;
+    if (Number.isFinite(prior)) delta = Math.max(delta, Math.abs(prior - target));
+    maxDelta = Math.max(maxDelta, delta);
+  }
+  // Already parked on the entry pose from every start we can foresee: the
+  // motion can open at keyframe 0 with nothing to bridge.
+  if (maxDelta < minDeltaPercent) return null;
+
+  const durationMs = Math.max(floorMs, Math.ceil(maxDelta * msPerPercent));
   const channels = [];
   const steps = keys.map(key => {
     const parts = key.split(":");
@@ -6919,6 +6949,19 @@ function insertSequenceBridges(steps, motions, opts) {
   let virt = null;              // null = unknown position (cold start / post-opaque)
   let bridgeSeq = 0;
 
+  // Where a full run of this sequence leaves each servo (servo-c1e). Replaying
+  // the sequence starts from here, not from the unpowered rest pose, so the
+  // cold-start bridge is sized against both. Merged across every motion rather
+  // than read off the last one, for the same reason `virt` merges below: a
+  // servo positioned early and left alone by later motions still ends there.
+  const rerunFromPose = {};
+  for (const step of (steps || [])) {
+    const id = bridgeMotionIdFromCmd(step.cmd);
+    const m = id ? byId.get(id.toLowerCase()) : null;
+    if (m) Object.assign(rerunFromPose, bridgeServoPose(m, "exit"));
+  }
+  const coldOpts = Object.assign({}, opts, { rerunFromPose });
+
   for (const step of (steps || [])) {
     const motionId = bridgeMotionIdFromCmd(step.cmd);
     const motion = motionId ? byId.get(motionId.toLowerCase()) : null;
@@ -6926,7 +6969,7 @@ function insertSequenceBridges(steps, motions, opts) {
 
     const entry = bridgeServoPose(motion, "entry");
     if (virt === null) {
-      const cold = planColdStartBridge(entry, opts);
+      const cold = planColdStartBridge(entry, coldOpts);
       if (cold) { outSteps.push(...cold.steps); summary.push({ kind:"cold", durationMs:cold.durationMs, channels:cold.channels }); }
     } else {
       const bridge = planInteriorBridge(virt, entry, `__bridge_${seqId}_${bridgeSeq}`, opts);
@@ -7019,7 +7062,7 @@ function buildBakeLibrary(lib) {
     const r = insertSequenceBridges(seq.steps || [], lib.motions || [], {
       seqId: seq.id,
       msPerPercent: SERVO_FEASIBILITY_MS_PER_PERCENT,
-      minDeltaPercent: 5, floorMs: 800, unknownDeltaPercent: 100,
+      minDeltaPercent: 5, floorMs: 800, restPercent: MOTION_SERVO_REST_PERCENT,
       maxSteps: SEQ_MAX_STEPS,
     });
     sequences.push({ ...seq, steps: r.steps });
