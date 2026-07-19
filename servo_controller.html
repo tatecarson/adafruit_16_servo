@@ -6411,7 +6411,26 @@ function formatBakeConformanceError(e) {
 // setlists, schedulerConfig, activeSetlistId are full-library on every
 // board so any board can become leader (per schema §5).
 // === SEQ-BRIDGE-CORE START ===
-// (functions added in later tasks)
+// Servo-only pose map { "boardId:servo:channel": value(0..100) } at a motion's
+// first ("entry") or last ("exit") keyframe. DC tracks have no position and are
+// skipped. A single-keyframe track is a constant hold (entry === exit).
+function bridgeServoPose(motion, edge) {
+  const pose = {};
+  for (const t of (motion && motion.tracks) || []) {
+    if (t.kind !== "servo") continue;
+    const kfs = Array.isArray(t.keyframes) ? t.keyframes : [];
+    if (!kfs.length) continue;
+    let pick = kfs[0];
+    for (const kf of kfs) {
+      const at = Number(kf && kf.atMs) || 0;
+      const cur = Number(pick && pick.atMs) || 0;
+      if (edge === "exit" ? at >= cur : at <= cur) pick = kf;
+    }
+    const v = Math.max(0, Math.min(100, Number(pick && pick.value) || 0));
+    pose[`${t.boardId}:servo:${t.channel}`] = v;
+  }
+  return pose;
+}
 // === SEQ-BRIDGE-CORE END ===
 function sliceForBoard(lib, boardId) {
   const motions = [];

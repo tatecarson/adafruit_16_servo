@@ -33,5 +33,17 @@ const { bridgeServoPose, planColdStartBridge, planInteriorBridge, insertSequence
 
 console.log("=== Sequence transition bridges ===");
 
+const rise = { id:"rise", durationMs:1000, tracks:[
+  { kind:"servo", boardId:1, channel:0, keyframes:[{atMs:0,value:0},{atMs:1000,value:80}] },
+  { kind:"servo", boardId:2, channel:1, keyframes:[{atMs:0,value:50},{atMs:1000,value:50}] },
+  { kind:"dc",    boardId:1, channel:0, keyframes:[{atMs:0,value:0},{atMs:1000,value:60}] },
+]};
+eq("entry pose reads first-keyframe servo values", bridgeServoPose(rise,"entry"), {"1:servo:0":0,"2:servo:1":50});
+eq("exit pose reads last-keyframe servo values", bridgeServoPose(rise,"exit"), {"1:servo:0":80,"2:servo:1":50});
+eq("dc tracks are excluded", "1:dc:0" in bridgeServoPose(rise,"exit"), false);
+eq("single-keyframe track holds its constant", bridgeServoPose(
+  { tracks:[{kind:"servo",boardId:3,channel:2,keyframes:[{atMs:0,value:33}]}] }, "exit"), {"3:servo:2":33});
+eq("missing tracks yield empty pose", bridgeServoPose({}, "entry"), {});
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);
