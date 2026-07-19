@@ -6466,6 +6466,30 @@ function planInteriorBridge(fromPose, toPose, id, opts) {
   const step = { cmd:`MOTION ${id}`, durationMs, target:"all", label:"↳ bridge", hold:false, bridge:true };
   return { motion, step, channels };
 }
+// Cold start: the servos' real position is unknown, so no baked keyframe-0 value
+// is correct. DMOVE ramps from the servo's ACTUAL hardware position, so we emit a
+// chord of zero-duration DMOVEs (one per driven servo, targeted per board) plus a
+// dwell step that holds the sequence clock while they glide. Duration is sized to
+// a conservative worst-case delta since it can't be measured.
+function planColdStartBridge(toPose, opts) {
+  opts = opts || {};
+  const msPerPercent = opts.msPerPercent != null ? opts.msPerPercent : 77;
+  const floorMs = opts.floorMs != null ? opts.floorMs : 800;
+  const unknownDeltaPercent = opts.unknownDeltaPercent != null ? opts.unknownDeltaPercent : 100;
+
+  const keys = Object.keys(toPose);
+  if (!keys.length) return null;
+  const durationMs = Math.max(floorMs, Math.ceil(unknownDeltaPercent * msPerPercent));
+  const channels = [];
+  const steps = keys.map(key => {
+    const parts = key.split(":");
+    channels.push(key);
+    return { cmd:`DMOVE ${Number(parts[2])} ${toPose[key]} ${durationMs}`,
+      durationMs:0, target:String(Number(parts[0])), label:"↳ bridge", hold:false, bridge:true };
+  });
+  steps.push({ cmd:"", durationMs, target:"all", label:"↳ bridge dwell", hold:false, bridge:true });
+  return { steps, durationMs, channels };
+}
 // === SEQ-BRIDGE-CORE END ===
 function sliceForBoard(lib, boardId) {
   const motions = [];

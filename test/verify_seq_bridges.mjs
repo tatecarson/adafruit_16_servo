@@ -60,5 +60,14 @@ eq("no-op transition (all within slop) returns null",
 eq("duration honors the 800ms floor",
    planInteriorBridge({"1:servo:0":50}, {"1:servo:0":56}, "x", {floorMs:800,msPerPercent:77,minDeltaPercent:5}).motion.durationMs, 800);
 
+const cs = planColdStartBridge({"1:servo:0":30,"2:servo:2":90},
+  { msPerPercent:77, floorMs:800, unknownDeltaPercent:100 });
+eq("cold-start duration uses the conservative unknown delta", cs.durationMs, Math.ceil(100*77)); // 7700
+eq("one DMOVE per driven servo, targeted at its board", cs.steps.slice(0,2).map(s=>[s.cmd,s.target]),
+   [["DMOVE 0 30 7700","1"],["DMOVE 2 90 7700","2"]]);
+eq("DMOVE steps are zero-duration (chord)", cs.steps.slice(0,2).every(s=>s.durationMs===0), true);
+eq("trailing dwell step holds the clock", [cs.steps.at(-1).cmd, cs.steps.at(-1).durationMs], ["",7700]);
+eq("empty pose yields no cold-start bridge", planColdStartBridge({}, {}), null);
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);
