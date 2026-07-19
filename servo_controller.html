@@ -6830,6 +6830,7 @@ async function bakeToAllBoards(onlyIps = null, mode = onlyIps ? "targeted" : "al
     }
     return;
   }
+  // feasibility runs on the raw library; synthesized bridges are feasible by construction (duration = max(floor, delta*msPerPercent)), so they're intentionally excluded here.
   const feasibility = analyzeLibraryServoFeasibility(lib);
   if (feasibility.invalid.length) {
     bakeLog(`bake blocked: ${formatServoFeasibilityFinding(feasibility.invalid[0])}`, "alert");
@@ -6845,6 +6846,17 @@ async function bakeToAllBoards(onlyIps = null, mode = onlyIps ? "targeted" : "al
   if (conformance.errors.length) {
     bakeLog(`bake blocked: ${formatBakeConformanceError(conformance.errors[0])}`, "alert");
     return;
+  }
+  // All block-gates passed — we're committing to a bake. Surface the bridges
+  // the baker synthesized (one line each + a total) so the operator sees what
+  // was inserted between/at the head of sequences. Emitted once, pre-upload.
+  for (const s of bakeLib._bridgeSummaries) {
+    const kind = s.kind === "cold" ? "cold-start" : "bridge";
+    bakeLog(`↳ ${kind} in "${s.seqName}": ${s.channels.length} servo(s), ${s.durationMs}ms`, "amber");
+  }
+  if (bakeLib._bridgeSummaries.length) {
+    const added = bakeLib._bridgeSummaries.reduce((n, s) => n + s.durationMs, 0);
+    bakeLog(`${bakeLib._bridgeSummaries.length} bridge(s) inserted, +${(added / 1000).toFixed(1)}s`, "amber");
   }
   const targetBoards = (onlyIps && onlyIps.length) ? onlyIps : boards;
   if (targetBoards.length === 0) { bakeLog("no boards configured", "alert"); return; }

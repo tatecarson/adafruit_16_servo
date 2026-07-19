@@ -1214,6 +1214,34 @@ leader. `schedulerConfig.graceMs` is the grace window (default 10000).
 - [ ] Follow-up aggregate rerun — the first attempt was killed by the host at storage startup; storage then passed independently. A second aggregate passed storage and stalled starting `run_motion_tests`; the direct motion invocation then entered the same host-level uninterruptible state previously documented for other native suites. No firmware/runtime files changed in this browser-only follow-up; the initial full aggregate above remains green.
 - Hardware upload is not applicable: this feature changes only the browser editor (`servo_controller.html`) and does not alter firmware, commands, storage schema, or board endpoints.
 
+**2026-07-19 (servo-bri bake-log bridge summary + verification):**
+- [x] `make -C test` — storage 22/22, motion 8/8, sequence 8/8, setlist 11/11, gallery 9/9, and all `sim-verify` browser simulation/editor checks passed (including the 44-case sequence-bridge suite). No firmware files changed on this branch (browser + docs only).
+- [x] Browser preview of `servo_controller.html` — seeded a two-motion library (Motion A holds servo B1.S0 at 90%, Motion B holds it at 10%) plus a sequence `A then B`, then triggered a bake. The bake log emitted the summary lines `↳ cold-start in "A then B": 1 servo(s), 7700ms`, `↳ bridge in "A then B": 1 servo(s), 6160ms`, and `2 bridge(s) inserted, +13.9s`. The authored Motion Library listed only A and B — no `__bridge_` motion appears as a deletable/editable item (synth bridges live only in the bake output). Console clean (no errors).
+
+### Manual hardware test: sequence transition bridges glide, not snap (servo-bri)
+
+No firmware flash is needed (firmware is unchanged); the synthesized bridges ride
+in the baked sequence blob. Author a library whose sequence has a deliberate
+A→B servo discontinuity: Motion A ends with a winch servo high (e.g. 90%),
+Motion B starts that same servo low (e.g. 10%), and a sequence runs `MOTION A`
+then `MOTION B`. Bake it to a board that has that servo wired.
+
+1. **Interior transition glides (no snap).** Leave the servo parked at Motion A's
+   exit (90%), then `RUN` the sequence. Expect: at the A→B boundary the servo
+   *glides* smoothly from 90% down to 10% over the inserted bridge (~6.2 s ramp)
+   instead of snapping instantly. Watch the physical servo, not just the serial log.
+   - Expected: `[ ] Pass  [ ] Fail —`
+2. **Cold start glides, not yanks (the original incident).** Power-cycle or
+   otherwise leave the servo raised at an unknown high position, then `RUN` the
+   sequence from cold. Expect: the cold-start bridge ramps the servo to Motion A's
+   entry pose smoothly (~7.7 s conservative ramp) rather than yanking it there at
+   full speed the instant playback starts.
+   - Expected: `[ ] Pass  [ ] Fail —`
+3. **Later motion-to-motion boundaries also glide.** If the sequence has more than
+   two motions, confirm every transition with a >5% servo delta glides the same way
+   (no residual snap between any pair of motions).
+   - Expected: `[ ] Pass  [ ] Fail —`
+
 ---
 
 ## Servo Calibration Notes
