@@ -131,9 +131,16 @@ harmful once DC moved out.
 
 **1. `startMotionPreparedFromStorage` zeroed the motor unconditionally.** The
 pre-roll called `setMotorSpeedQuiet(0)` to stop a completed DC track running on
-through a servo glide. With DC on lanes, that call lands *after* the chord and
-wipes it — the motor stays dead for the whole Motion. Removed. This is the same
-shape as the original unexplained bug, and is very likely what it actually was.
+through a servo glide. DC chords now land immediately before that command, so
+the zero wipes them and the motor stays dead for the whole Motion. Removed.
+
+This is a hazard *created by* this design, not the original bug. Verified by
+running the pre-change firmware against a post-change bake: the chord fires,
+the pre-roll zeroes it, and the motor never moves again for the full 15.7s.
+Under the old arrangement the same zero was harmless — it silenced the motor
+only for the pre-roll, after which the Motion's own DC track took over
+normally (`t=7711 motor 0 -> -1`, ramping to -50). **This is why boards must be
+reflashed before DC lanes work.**
 
 **2. `ROTATE` cancelled Motion playback.** Sensible when both drove the motor
 and had to arbitrate. Now they touch disjoint hardware, so a lane chord landing
@@ -205,11 +212,14 @@ through phase 1 and are removed with phase 2.
 
 ## Open
 
-The original DC-in-Motion bug was never root-caused. The unconditional
-`setMotorSpeedQuiet(0)` in the pre-roll is a strong candidate — every affected
-Sequence step went through `MOTION <id> PREP <ms>` — but that was never
-confirmed against hardware, and it does not explain a bare `MOTION <id>` with a
-dense DC track failing. If DC ever returns to Motions, it returns unexplained.
+The original DC-in-Motion bug was never root-caused, and nothing found during
+implementation explains it. The pre-roll zeroing was briefly assumed to be the
+cause; host simulation of the pre-change firmware against a pre-change bake
+disproves that — the motor was commanded correctly through the whole Motion.
+Both the bake path and the browser live path issue correct DC values, and the
+firmware applies them. The fault lies somewhere past `setMotorSpeedQuiet()`:
+`analogWrite` on pins 10/11, the driver board, or wiring. If DC ever returns to
+Motions, it returns unexplained.
 
 ## Verified
 
