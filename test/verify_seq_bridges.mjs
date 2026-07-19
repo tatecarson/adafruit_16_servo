@@ -18,6 +18,10 @@ function eq(name, got, want) {
   if (JSON.stringify(got) === JSON.stringify(want)) ok(name);
   else fail(`${name}\n    expected: ${JSON.stringify(want)}\n    got:      ${JSON.stringify(got)}`);
 }
+function matches(name, pattern) {
+  if (pattern.test(html)) ok(name);
+  else fail(`${name}\n    pattern not found: ${pattern}`);
+}
 
 const start = html.indexOf(START);
 const end = html.indexOf(END, start + START.length);
@@ -176,6 +180,12 @@ eq("interior bridge caught even without the flag",
 eq("other library fields preserved", stripped.setlists.map(s=>s.id), ["s"]);
 eq("null library is a safe no-op", stripBridges(null), null);
 eq("source library object is not mutated", baked.motions.length, 2);
+
+// --- Task 8: bridges are visible in the Arrange timeline (display-only) ---
+// The Arrange render tags auto-inserted bridge blocks with a distinct style so
+// operators see them before baking.
+matches("Arrange timeline has a .seq-arrange-block.bridge style rule",
+  /\.seq-arrange-block\.bridge\s*\{/s);
 
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

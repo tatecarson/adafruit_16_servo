@@ -1099,6 +1099,8 @@
   }
   .seq-arrange-title { font: 600 19px/1.2 var(--mono); color: var(--ink); }
   .seq-arrange-meta { margin-top: 6px; color: var(--ink-dim); font: 600 10px/1 var(--mono); }
+  .seq-arrange-warn { margin-top: 7px; padding: 5px 9px; border: 1px solid var(--amber); border-radius: 2px; background: rgba(255,182,39,.1); color: var(--amber); font: 700 10px/1.3 var(--mono); }
+  .seq-arrange-warn[hidden] { display: none; }
   .seq-arrange-zoom {
     display: grid;
     grid-template-columns: auto minmax(120px, 220px) auto;
@@ -1163,6 +1165,20 @@
   .seq-arrange-block.dragging { opacity: .35; transform: translateY(6px); }
   .seq-arrange-block.drop-target { box-shadow: inset 4px 0 0 var(--amber); }
   .seq-arrange-block.zero { border-style: dashed; }
+  .seq-arrange-block.bridge {
+    border-style: dashed;
+    border-color: var(--amber);
+    border-left-color: var(--amber);
+    background: linear-gradient(145deg, rgba(255,182,39,.11), rgba(255,182,39,.03));
+    opacity: .72;
+    cursor: default;
+    /* Auto-inserted at bake — not an authored step, so no drag/select, but keep
+       pointer-events on so the title tooltip still works. */
+  }
+  .seq-arrange-block.bridge:hover { border-color: var(--amber); filter: brightness(1.08); }
+  .seq-arrange-block.bridge .n { color: var(--amber); }
+  .seq-arrange-block.bridge .cmdline { color: var(--amber); margin-top: 17px; }
+  .seq-arrange-block.bridge .timing { color: var(--amber); }
   .seq-arrange-block .n { color: var(--amber); font: 800 9px/1 var(--label); letter-spacing: .22em; }
   .seq-arrange-block .cmdline { margin-top: 17px; font: 700 12px/1.25 var(--mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .seq-arrange-block .label { margin-top: 8px; color: var(--ink-dim); font: 500 10px/1.2 var(--mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -2175,6 +2191,7 @@
           <span class="seq-arrange-kicker">// Sequence Arrangement</span>
           <div id="seqArrangeTitle" class="seq-arrange-title">Sequence</div>
           <div id="seqArrangeMeta" class="seq-arrange-meta">0 steps · total 0ms</div>
+          <div id="seqArrangeWarn" class="seq-arrange-warn" hidden></div>
         </div>
         <label class="seq-arrange-zoom">
           <span>Zoom</span>
@@ -3560,6 +3577,7 @@ const seqDryRunEl     = $("#seqDryRun");
 const seqArrangeDialogEl = $("#seqArrangeDialog");
 const seqArrangeTitleEl = $("#seqArrangeTitle");
 const seqArrangeMetaEl = $("#seqArrangeMeta");
+const seqArrangeWarnEl = $("#seqArrangeWarn");
 const seqArrangeZoomEl = $("#seqArrangeZoom");
 const seqArrangeZoomLabelEl = $("#seqArrangeZoomLabel");
 const seqArrangeScrollEl = $("#seqArrangeScroll");
@@ -6007,7 +6025,17 @@ function renderSequenceArrangement() {
   if (!seq) return;
   const steps = (seq.steps || []).map(normalizeStep);
   const zoom = parseInt(seqArrangeZoomEl.value, 10) || 90;
-  const layout = sequenceArrangementLayout(steps, zoom);
+  // Display-only: run the same bake-time bridge transform so operators SEE the
+  // transitions that will be auto-inserted between motions before they bake.
+  // `bridged.steps` interleaves the authored steps with bridge steps
+  // (bridge:true); the raw `seq.steps` are never mutated.
+  const libMotions = (lib.motions) || [];
+  const bridged = insertSequenceBridges(steps, libMotions, {
+    seqId: seq.id, msPerPercent: SERVO_FEASIBILITY_MS_PER_PERCENT,
+    minDeltaPercent: 5, floorMs: 800, unknownDeltaPercent: 100, maxSteps: SEQ_MAX_STEPS,
+  });
+  const displaySteps = bridged.steps;
+  const layout = sequenceArrangementLayout(displaySteps, zoom);
   const available = Math.max(0, (seqArrangeScrollEl.clientWidth || 0) - 36);
   const trackWidth = Math.max(layout.widthPx, available);
   const selected = seqPlayer.active
@@ -6015,17 +6043,42 @@ function renderSequenceArrangement() {
     : Math.max(0, Math.min(seqArrangeSelectedIndex, steps.length - 1));
   seqArrangeSelectedIndex = selected;
   seqArrangeTitleEl.textContent = seq.name || seq.id;
-  seqArrangeMetaEl.textContent = `${steps.length} step${steps.length === 1 ? "" : "s"} · total ${formatMs(layout.totalMs)} · id ${seq.id}`;
+  const bridgeCount = displaySteps.length - steps.length;
+  seqArrangeMetaEl.textContent = `${steps.length} step${steps.length === 1 ? "" : "s"}${bridgeCount > 0 ? ` · +${bridgeCount} bridge${bridgeCount === 1 ? "" : "s"}` : ""} · total ${formatMs(layout.totalMs)} · id ${seq.id}`;
+  if (bridged.error) {
+    seqArrangeWarnEl.textContent = `⚠ transitions exceed the ${SEQ_MAX_STEPS}-step budget — shorten this sequence`;
+    seqArrangeWarnEl.hidden = false;
+  } else {
+    seqArrangeWarnEl.hidden = true;
+    seqArrangeWarnEl.textContent = "";
+  }
   seqArrangeZoomLabelEl.textContent = `${zoom} px/s`;
 
   const ticks = layout.blocks.map(block =>
     `<span class="seq-arrange-tick" style="left:${block.leftPx.toFixed(2)}px">${formatMs(block.startMs)}</span>`
   ).join("") + `<span class="seq-arrange-tick" style="left:${layout.widthPx.toFixed(2)}px">${formatMs(layout.totalMs)}</span>`;
-  const blocks = steps.map((step, index) => {
-    const geometry = layout.blocks[index];
+  // Bridge steps are NOT authored steps and have no index in seq.steps, so they
+  // carry no data-arrange-index (drag/click handlers key off that attribute and
+  // will skip them). A separate `authored` counter keeps authored blocks mapped
+  // to their ORIGINAL seq.steps index regardless of how many bridges precede them.
+  let authored = 0;
+  const authoredLeftPx = [];
+  const blocks = displaySteps.map((step, di) => {
+    const geometry = layout.blocks[di];
+    if (step.bridge === true) {
+      const durLabel = geometry.durationMs > 0 ? formatMs(geometry.durationMs) : "instant";
+      return `<article class="seq-arrange-block bridge zero" style="width:${geometry.widthPx.toFixed(2)}px"
+          title="Auto transition bridge · ${durLabel} · inserted at bake — not an editable step">
+        <span class="n">BRIDGE</span>
+        <div class="cmdline">↳ bridge${geometry.durationMs > 0 ? ` ${geometry.durationMs}ms` : ""}</div>
+        <div class="timing">${durLabel}</div>
+      </article>`;
+    }
+    const index = authored++;
+    authoredLeftPx[index] = geometry.leftPx;
     const target = String(step.target) === "all" ? "cluster" : `board ${escapeHtml(String(step.target))}`;
     const motionId = seqStepMotionId(step.cmd);
-    const motion = motionId ? (lib.motions || []).find(item => item.id === motionId) : null;
+    const motion = motionId ? libMotions.find(item => item.id === motionId) : null;
     const preview = motion ? renderSequenceArrangementPreview(motion) : "";
     return `<article class="seq-arrange-block${index === selected ? " selected" : ""}${geometry.durationMs === 0 ? " zero" : ""}${motion ? " has-preview" : ""}"
         data-arrange-index="${index}" style="width:${geometry.widthPx.toFixed(2)}px"
@@ -6038,7 +6091,7 @@ function renderSequenceArrangement() {
       <div class="timing">${formatMs(geometry.durationMs)}${step.hold ? " · HOLD" : ""}</div>
     </article>`;
   }).join("");
-  const playheadLeft = layout.blocks[selected]?.leftPx ?? 0;
+  const playheadLeft = authoredLeftPx[selected] ?? 0;
   seqArrangeCanvasEl.innerHTML = `<div class="seq-arrange-ruler" style="width:${trackWidth.toFixed(2)}px">${ticks}</div>
     <div class="seq-arrange-playhead" style="left:${(18 + playheadLeft).toFixed(2)}px"></div>
     <div class="seq-arrange-track" style="width:${trackWidth.toFixed(2)}px">${blocks}</div>`;
