@@ -124,6 +124,28 @@ static void test_playback_interpolates_servo_and_dc() {
   ASSERT_EQ(motorState.currentSpeed, -50);
 }
 
+static void test_completed_motion_can_replay() {
+  reset_state();
+  ASSERT_TRUE(storageWriteSlot((const uint8_t*)kBlob, strlen(kBlob)));
+
+  ASSERT_TRUE(startMotionFromStorage("tidal-drift", false));
+  _mock_millis = 1000;
+  updateMotion();
+  ASSERT_FALSE(motionRuntime.active);
+  ASSERT_EQ(servoState[0].posPulse, 600);
+
+  ASSERT_TRUE(startMotionFromStorage("tidal-drift", false));
+  ASSERT_TRUE(motionRuntime.active);
+  ASSERT_EQ(servoState[0].posPulse, 150);
+  ASSERT_EQ(motorState.currentSpeed, 0);
+
+  _mock_millis = 1500;
+  updateMotion();
+  ASSERT_TRUE(motionRuntime.active);
+  ASSERT_EQ(servoState[0].posPulse, 375);
+  ASSERT_EQ(motorState.currentSpeed, 50);
+}
+
 static void test_cancel_stops_dc_track() {
   reset_state();
   ASSERT_TRUE(storageWriteSlot((const uint8_t*)kBlob, strlen(kBlob)));
@@ -216,6 +238,7 @@ int main() {
   RUN(loads_motion_case_insensitive);
   RUN(skips_tracks_for_other_board);
   RUN(playback_interpolates_servo_and_dc);
+  RUN(completed_motion_can_replay);
   RUN(cancel_stops_dc_track);
   RUN(switching_to_servo_only_motion_stops_dc);
   RUN(malformed_boardid_excludes_track);

@@ -1242,6 +1242,13 @@ then `MOTION B`. Bake it to a board that has that servo wired.
    (no residual snap between any pair of motions).
    - Expected: `[ ] Pass  [ ] Fail —`
 
+**2026-07-18 (servo-x2p baked Motion replay pre-roll):**
+- `node test/verify_baked_motion_preroll.mjs` passed 12/12: first play remains immediate; a full-range replay gets a 7.7s glide; every changed servo uses the same cluster-wide duration; each board targets keyframe 0; a prior nonzero DC endpoint stops; settled and sub-5% poses add no delay; all `MOTION` sources share the path; board telemetry restores replay history after a dashboard reload; and `STOP` invalidates a delayed start.
+- `make -C test sim-verify` passed all browser simulation/editor suites, including the baked replay checks (11/11 before the telemetry fallback assertion was added; the final focused suite passes 12/12).
+- The first focused `make -C test motion` run passed 9/9, including a new completed-Motion replay test proving the firmware runtime reloads, resets its segment state, applies keyframe 0, and advances normally on a second run. A later repeat invocation and the required aggregate `make -C test` both entered the repository's previously documented native-test host stall after launching `run_motion_tests`; in the aggregate, storage first passed 22/22. The remaining native suites were rerun independently and passed: Sequence 8/8, Setlist 11/11, and Gallery 9/9.
+- Inline `servo_controller.html` script syntax and `git diff --check` passed.
+- Hardware verification was not available in this session and is tracked as `servo-glh`. It covers two consecutive runs from Motion **Play (baked)**, Sequence Play, Setlist Play, and the bake inventory, plus STOP during the pre-roll. No firmware upload is needed because the behavioral fix is browser-only.
+
 ---
 
 ## Servo Calibration Notes
