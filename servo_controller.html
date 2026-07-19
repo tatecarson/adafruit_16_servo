@@ -1099,6 +1099,8 @@
   }
   .seq-arrange-title { font: 600 19px/1.2 var(--mono); color: var(--ink); }
   .seq-arrange-meta { margin-top: 6px; color: var(--ink-dim); font: 600 10px/1 var(--mono); }
+  .seq-arrange-warn { margin-top: 7px; padding: 5px 9px; border: 1px solid var(--amber); border-radius: 2px; background: rgba(255,182,39,.1); color: var(--amber); font: 700 10px/1.3 var(--mono); }
+  .seq-arrange-warn[hidden] { display: none; }
   .seq-arrange-zoom {
     display: grid;
     grid-template-columns: auto minmax(120px, 220px) auto;
@@ -1163,6 +1165,20 @@
   .seq-arrange-block.dragging { opacity: .35; transform: translateY(6px); }
   .seq-arrange-block.drop-target { box-shadow: inset 4px 0 0 var(--amber); }
   .seq-arrange-block.zero { border-style: dashed; }
+  .seq-arrange-block.bridge {
+    border-style: dashed;
+    border-color: var(--amber);
+    border-left-color: var(--amber);
+    background: linear-gradient(145deg, rgba(255,182,39,.11), rgba(255,182,39,.03));
+    opacity: .72;
+    cursor: default;
+    /* Auto-inserted at bake — not an authored step, so no drag/select, but keep
+       pointer-events on so the title tooltip still works. */
+  }
+  .seq-arrange-block.bridge:hover { border-color: var(--amber); filter: brightness(1.08); }
+  .seq-arrange-block.bridge .n { color: var(--amber); }
+  .seq-arrange-block.bridge .cmdline { color: var(--amber); margin-top: 17px; }
+  .seq-arrange-block.bridge .timing { color: var(--amber); }
   .seq-arrange-block .n { color: var(--amber); font: 800 9px/1 var(--label); letter-spacing: .22em; }
   .seq-arrange-block .cmdline { margin-top: 17px; font: 700 12px/1.25 var(--mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .seq-arrange-block .label { margin-top: 8px; color: var(--ink-dim); font: 500 10px/1.2 var(--mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -2271,6 +2287,7 @@
           <span class="seq-arrange-kicker">// Sequence Arrangement</span>
           <div id="seqArrangeTitle" class="seq-arrange-title">Sequence</div>
           <div id="seqArrangeMeta" class="seq-arrange-meta">0 steps · total 0ms</div>
+          <div id="seqArrangeWarn" class="seq-arrange-warn" hidden></div>
         </div>
         <label class="seq-arrange-zoom">
           <span>Zoom</span>
@@ -3595,6 +3612,9 @@ const SCHEMA_VERSION = 1;
 // playback (servo-4hc).
 const MOTION_MAX_KEYFRAMES = 64;
 const MOTION_MAX_TRACKS = 17;
+// Mirror of firmware SEQ_MAX_STEPS (adafruit_16_servo/servo_runtime.h). Baked
+// sequences (including auto-inserted transition bridges) must fit this many steps.
+const SEQ_MAX_STEPS = 16;
 // EEPROM slot byte budget for a whole per-board bake blob (storage.h
 // STORAGE_PAYLOAD_MAX). The firmware refuses to write a larger slot; guard it
 // before POST so the operator gets a clear "trim the library" message rather
@@ -3653,6 +3673,7 @@ const seqDryRunEl     = $("#seqDryRun");
 const seqArrangeDialogEl = $("#seqArrangeDialog");
 const seqArrangeTitleEl = $("#seqArrangeTitle");
 const seqArrangeMetaEl = $("#seqArrangeMeta");
+const seqArrangeWarnEl = $("#seqArrangeWarn");
 const seqArrangeZoomEl = $("#seqArrangeZoom");
 const seqArrangeZoomLabelEl = $("#seqArrangeZoomLabel");
 const seqArrangeScrollEl = $("#seqArrangeScroll");
@@ -3811,8 +3832,14 @@ function renderBakeInventory() {
   const enc = new TextEncoder();
   const size = obj => enc.encode(JSON.stringify(obj)).length;
 
+  // Size the bars off the bridged library so per-board bytes reflect what will
+  // actually be baked (bridge motions included). Passive preview: ignore
+  // _bridgeErrors — the real bake gate in bakeToAllBoards blocks on overflow.
+  // The item list below stays on the raw `lib` so synth __bridge_ motions are
+  // not surfaced as deletable rows.
+  const bakeLib = buildBakeLibrary(lib);
   const boardBytes = [1, 2, 3].map(boardId => {
-    const bytes = size(sliceForBoard(lib, boardId));
+    const bytes = size(sliceForBoard(bakeLib, boardId));
     const level = bytes > STORAGE_PAYLOAD_MAX ? "over" : (bytes >= STORAGE_PAYLOAD_MAX * 0.8 ? "warn" : "ok");
     return { boardId, bytes, level };
   });
@@ -3877,6 +3904,10 @@ function renderBakedPanel() {
     return;
   }
   const lib = loadLibrary();
+  // Compare the snapshot against the bridged library so "edited since bake"
+  // doesn't fire spuriously from bridge motions that the last bake wrote but
+  // the raw lib lacks. Passive preview: ignore _bridgeErrors (real bake gates).
+  const bakeLib = lib ? buildBakeLibrary(lib) : null;
   const blocks = boards.map(ip => {
     let snap = null;
     try { snap = JSON.parse(localStorage.getItem(LIB_SNAP_PREFIX + ip) || "null"); } catch {}
@@ -3888,8 +3919,8 @@ function renderBakedPanel() {
     const boardId = motions[0]?.tracks?.[0]?.boardId ?? null;
     // Staleness: does the current editor library still match what was baked?
     let staleNote = "";
-    if (lib && boardId != null) {
-      const d = diffBlob(snap, sliceForBoard(lib, boardId));
+    if (bakeLib && boardId != null) {
+      const d = diffBlob(snap, sliceForBoard(bakeLib, boardId));
       const n = d.added + d.changed + d.deleted;
       if (n) staleNote = `<span class="bb-stale">· edited since bake (${n}) — re-bake to update</span>`;
     }
@@ -6190,7 +6221,17 @@ function renderSequenceArrangement() {
   if (!seq) return;
   const steps = (seq.steps || []).map(normalizeStep);
   const zoom = parseInt(seqArrangeZoomEl.value, 10) || 90;
-  const layout = sequenceArrangementLayout(steps, zoom);
+  // Display-only: run the same bake-time bridge transform so operators SEE the
+  // transitions that will be auto-inserted between motions before they bake.
+  // `bridged.steps` interleaves the authored steps with bridge steps
+  // (bridge:true); the raw `seq.steps` are never mutated.
+  const libMotions = (lib.motions) || [];
+  const bridged = insertSequenceBridges(steps, libMotions, {
+    seqId: seq.id, msPerPercent: SERVO_FEASIBILITY_MS_PER_PERCENT,
+    minDeltaPercent: 5, floorMs: 800, unknownDeltaPercent: 100, maxSteps: SEQ_MAX_STEPS,
+  });
+  const displaySteps = bridged.steps;
+  const layout = sequenceArrangementLayout(displaySteps, zoom);
   const available = Math.max(0, (seqArrangeScrollEl.clientWidth || 0) - 36);
   const trackWidth = Math.max(layout.widthPx, available);
   const selected = seqPlayer.active
@@ -6198,17 +6239,42 @@ function renderSequenceArrangement() {
     : Math.max(0, Math.min(seqArrangeSelectedIndex, steps.length - 1));
   seqArrangeSelectedIndex = selected;
   seqArrangeTitleEl.textContent = seq.name || seq.id;
-  seqArrangeMetaEl.textContent = `${steps.length} step${steps.length === 1 ? "" : "s"} · total ${formatMs(layout.totalMs)} · id ${seq.id}`;
+  const bridgeCount = displaySteps.length - steps.length;
+  seqArrangeMetaEl.textContent = `${steps.length} step${steps.length === 1 ? "" : "s"}${bridgeCount > 0 ? ` · +${bridgeCount} bridge${bridgeCount === 1 ? "" : "s"}` : ""} · total ${formatMs(layout.totalMs)} · id ${seq.id}`;
+  if (bridged.error) {
+    seqArrangeWarnEl.textContent = `⚠ transitions exceed the ${SEQ_MAX_STEPS}-step budget — shorten this sequence`;
+    seqArrangeWarnEl.hidden = false;
+  } else {
+    seqArrangeWarnEl.hidden = true;
+    seqArrangeWarnEl.textContent = "";
+  }
   seqArrangeZoomLabelEl.textContent = `${zoom} px/s`;
 
   const ticks = layout.blocks.map(block =>
     `<span class="seq-arrange-tick" style="left:${block.leftPx.toFixed(2)}px">${formatMs(block.startMs)}</span>`
   ).join("") + `<span class="seq-arrange-tick" style="left:${layout.widthPx.toFixed(2)}px">${formatMs(layout.totalMs)}</span>`;
-  const blocks = steps.map((step, index) => {
-    const geometry = layout.blocks[index];
+  // Bridge steps are NOT authored steps and have no index in seq.steps, so they
+  // carry no data-arrange-index (drag/click handlers key off that attribute and
+  // will skip them). A separate `authored` counter keeps authored blocks mapped
+  // to their ORIGINAL seq.steps index regardless of how many bridges precede them.
+  let authored = 0;
+  const authoredLeftPx = [];
+  const blocks = displaySteps.map((step, di) => {
+    const geometry = layout.blocks[di];
+    if (step.bridge === true) {
+      const durLabel = geometry.durationMs > 0 ? formatMs(geometry.durationMs) : "instant";
+      return `<article class="seq-arrange-block bridge zero" style="width:${geometry.widthPx.toFixed(2)}px"
+          title="Auto transition bridge · ${durLabel} · inserted at bake — not an editable step">
+        <span class="n">BRIDGE</span>
+        <div class="cmdline">↳ bridge${geometry.durationMs > 0 ? ` ${geometry.durationMs}ms` : ""}</div>
+        <div class="timing">${durLabel}</div>
+      </article>`;
+    }
+    const index = authored++;
+    authoredLeftPx[index] = geometry.leftPx;
     const target = String(step.target) === "all" ? "cluster" : `board ${escapeHtml(String(step.target))}`;
     const motionId = seqStepMotionId(step.cmd);
-    const motion = motionId ? (lib.motions || []).find(item => item.id === motionId) : null;
+    const motion = motionId ? libMotions.find(item => item.id === motionId) : null;
     const preview = motion ? renderSequenceArrangementPreview(motion) : "";
     return `<article class="seq-arrange-block${index === selected ? " selected" : ""}${geometry.durationMs === 0 ? " zero" : ""}${motion ? " has-preview" : ""}"
         data-arrange-index="${index}" style="width:${geometry.widthPx.toFixed(2)}px"
@@ -6221,7 +6287,7 @@ function renderSequenceArrangement() {
       <div class="timing">${formatMs(geometry.durationMs)}${step.hold ? " · HOLD" : ""}</div>
     </article>`;
   }).join("");
-  const playheadLeft = layout.blocks[selected]?.leftPx ?? 0;
+  const playheadLeft = authoredLeftPx[selected] ?? 0;
   seqArrangeCanvasEl.innerHTML = `<div class="seq-arrange-ruler" style="width:${trackWidth.toFixed(2)}px">${ticks}</div>
     <div class="seq-arrange-playhead" style="left:${(18 + playheadLeft).toFixed(2)}px"></div>
     <div class="seq-arrange-track" style="width:${trackWidth.toFixed(2)}px">${blocks}</div>`;
@@ -6611,6 +6677,177 @@ function formatBakeConformanceError(e) {
 // is conformed to the firmware's keyframe contract (servo-4hc). Sequences,
 // setlists, schedulerConfig, activeSetlistId are full-library on every
 // board so any board can become leader (per schema §5).
+// === SEQ-BRIDGE-CORE START ===
+// Servo-only pose map { "boardId:servo:channel": value(0..100) } at a motion's
+// first ("entry") or last ("exit") keyframe. DC tracks have no position and are
+// skipped. A single-keyframe track is a constant hold (entry === exit).
+function bridgeServoPose(motion, edge) {
+  const pose = {};
+  for (const t of (motion && motion.tracks) || []) {
+    if (t.kind !== "servo") continue;
+    const kfs = Array.isArray(t.keyframes) ? t.keyframes : [];
+    if (!kfs.length) continue;
+    let pick = kfs[0];
+    for (const kf of kfs) {
+      const at = Number(kf && kf.atMs) || 0;
+      const cur = Number(pick && pick.atMs) || 0;
+      if (edge === "exit" ? at >= cur : at <= cur) pick = kf;
+    }
+    // Documented tiebreak: among keyframes sharing an atMs, the last in array
+    // order wins (>= for exit, <= for entry both keep advancing `pick`).
+    const v = Math.max(0, Math.min(100, Number(pick && pick.value) || 0));
+    pose[`${t.boardId}:servo:${t.channel}`] = v;
+  }
+  return pose;
+}
+// Interior transition (previous pose fully known): a 2-keyframe "bridge motion"
+// that ramps each moved servo from its previous value to the next entry value.
+// Firmware asserts keyframe-0 instantly, but the servo is already sitting there
+// (previous motion held its exit pose), so it's a no-op followed by a smooth
+// ramp. Returns { motion, step, channels } or null when nothing moves enough.
+function planInteriorBridge(fromPose, toPose, id, opts) {
+  opts = opts || {};
+  // 77 mirrors firmware SERVO_FEASIBILITY_MS_PER_PERCENT; real value supplied by the bake glue.
+  const msPerPercent = opts.msPerPercent != null ? opts.msPerPercent : 77;
+  const minDeltaPercent = opts.minDeltaPercent != null ? opts.minDeltaPercent : 5;
+  const floorMs = opts.floorMs != null ? opts.floorMs : 800;
+
+  const tracks = [];
+  const channels = [];
+  let maxDelta = 0;
+  for (const key of Object.keys(toPose)) {
+    const to = toPose[key];
+    const from = fromPose[key];
+    if (from == null) continue;                 // unknown handled by cold-start path
+    const delta = Math.abs(to - from);
+    if (delta < minDeltaPercent) continue;
+    const parts = key.split(":");
+    const boardId = Number(parts[0]);
+    const channel = Number(parts[2]);
+    tracks.push({ kind:"servo", boardId, channel, label:`B${boardId}.S${channel}`,
+      keyframes:[{atMs:0, value:from}, {atMs:0, value:to}] });
+    channels.push(key);
+    maxDelta = Math.max(maxDelta, delta);
+  }
+  if (!tracks.length) return null;
+  const durationMs = Math.max(floorMs, Math.ceil(maxDelta * msPerPercent));
+  for (const t of tracks) t.keyframes[1].atMs = durationMs;
+  const motion = { id, name:"↳ bridge", scope:"cluster", tags:[], durationMs, tracks };
+  const step = { cmd:`MOTION ${id}`, durationMs, target:"all", label:"↳ bridge", hold:false, bridge:true };
+  return { motion, step, channels };
+}
+// Cold start: the servos' real position is unknown, so no baked keyframe-0 value
+// is correct. DMOVE ramps from the servo's ACTUAL hardware position, so we emit a
+// chord of zero-duration DMOVEs (one per driven servo, targeted per board) plus a
+// dwell step that holds the sequence clock while they glide. Duration is sized to
+// a conservative worst-case delta since it can't be measured.
+function planColdStartBridge(toPose, opts) {
+  opts = opts || {};
+  // 77 mirrors firmware SERVO_FEASIBILITY_MS_PER_PERCENT; real value supplied by the bake glue.
+  const msPerPercent = opts.msPerPercent != null ? opts.msPerPercent : 77;
+  const floorMs = opts.floorMs != null ? opts.floorMs : 800;
+  const unknownDeltaPercent = opts.unknownDeltaPercent != null ? opts.unknownDeltaPercent : 100;
+
+  const keys = Object.keys(toPose);
+  if (!keys.length) return null;
+  const durationMs = Math.max(floorMs, Math.ceil(unknownDeltaPercent * msPerPercent));
+  const channels = [];
+  const steps = keys.map(key => {
+    const parts = key.split(":");
+    channels.push(key);
+    return { cmd:`DMOVE ${Number(parts[2])} ${toPose[key]} ${durationMs}`,
+      durationMs:0, target:String(Number(parts[0])), label:"↳ bridge", hold:false, bridge:true };
+  });
+  steps.push({ cmd:"", durationMs, target:"all", label:"↳ bridge dwell", hold:false, bridge:true });
+  return { steps, durationMs, channels };
+}
+function bridgeMotionIdFromCmd(cmd) {
+  const m = /^\s*MOTION\s+(\S+)\s*$/i.exec(String(cmd || ""));
+  return m ? m[1] : null;
+}
+// Walk a sequence's steps, tracking a virtual servo position, and insert bridges:
+//  - cold start / after an opaque (non-MOTION) step: position unknown -> DMOVE bridge
+//  - interior transition (position known): synthesized bridge motion (1 step)
+// Returns { steps, bridgeMotions, summary, error }. Never throws; a step-budget
+// overflow is reported in `error` so the bake orchestrator can block + name it.
+function insertSequenceBridges(steps, motions, opts) {
+  opts = opts || {};
+  const seqId = opts.seqId || "seq";
+  const maxSteps = opts.maxSteps != null ? opts.maxSteps : 16;
+  const byId = new Map((motions || []).map(m => [String(m.id).toLowerCase(), m]));
+
+  const outSteps = [];
+  const bridgeMotions = [];
+  const summary = [];
+  let virt = null;              // null = unknown position (cold start / post-opaque)
+  let bridgeSeq = 0;
+
+  for (const step of (steps || [])) {
+    const motionId = bridgeMotionIdFromCmd(step.cmd);
+    const motion = motionId ? byId.get(motionId.toLowerCase()) : null;
+    if (!motion) { outSteps.push(step); virt = null; continue; }
+
+    const entry = bridgeServoPose(motion, "entry");
+    if (virt === null) {
+      const cold = planColdStartBridge(entry, opts);
+      if (cold) { outSteps.push(...cold.steps); summary.push({ kind:"cold", durationMs:cold.durationMs, channels:cold.channels }); }
+    } else {
+      const bridge = planInteriorBridge(virt, entry, `__bridge_${seqId}_${bridgeSeq}`, opts);
+      if (bridge) {
+        bridgeMotions.push(bridge.motion);
+        outSteps.push(bridge.step);
+        summary.push({ kind:"interior", id:bridge.motion.id, durationMs:bridge.motion.durationMs, channels:bridge.channels });
+        bridgeSeq++;
+      }
+    }
+    outSteps.push(step);
+    // Merge (not replace): a servo positioned by an earlier motion must not be
+    // forgotten when a later motion doesn't drive it — otherwise its next
+    // transition would silently skip (snap) it. Under the full-pose bake
+    // invariant (every motion carries a track per servo) this equals a replace;
+    // the merge only adds safety for partial-pose motions. Design step 3:
+    // "advance each driven channel's virtual position to the block's exit pose."
+    virt = Object.assign(virt || {}, bridgeServoPose(motion, "exit"));
+  }
+
+  const error = outSteps.length > maxSteps
+    ? { code:"bridge-budget", produced:outSteps.length, max:maxSteps }
+    : null;
+  return { steps:outSteps, bridgeMotions, summary, error };
+}
+// Layer 1: when creating a new motion, seed each servo track's first keyframe
+// from the previous motion's exit pose so authoring "starts where the last one
+// ended". Convenience only (reduces generated bridges); mutates + returns newMotion.
+function seedFirstKeyframesFromExit(prevMotion, newMotion) {
+  if (!prevMotion || !newMotion) return newMotion;
+  const exit = bridgeServoPose(prevMotion, "exit");
+  for (const t of (newMotion.tracks || [])) {
+    if (t.kind !== "servo") continue;
+    const key = `${t.boardId}:servo:${t.channel}`;
+    if (!(key in exit)) continue;
+    if (!Array.isArray(t.keyframes)) t.keyframes = [];
+    if (t.keyframes.length && Number(t.keyframes[0].atMs) === 0) t.keyframes[0].value = exit[key];
+    else t.keyframes.unshift({ atMs:0, value:exit[key] });
+  }
+  return newMotion;
+}
+// Remove auto-generated transition bridges from a library reconstructed from a
+// baked blob (pull-from-boards / file import), so bridges never become editable
+// motions or persist into an authored sequence (which would double-bridge or
+// leave orphan __bridge_ steps on the next bake). Bridge motions use a
+// "__bridge_" id prefix; bridge steps carry `bridge:true` (and interior ones a
+// "MOTION __bridge_" cmd as a belt-and-braces guard). Returns a new library.
+function stripBridges(lib) {
+  if (!lib) return lib;
+  const motions = (lib.motions || []).filter(m => !String(m && m.id).startsWith("__bridge_"));
+  const sequences = (lib.sequences || []).map(seq => ({
+    ...seq,
+    steps: (seq.steps || []).filter(s =>
+      s && s.bridge !== true && !/^\s*MOTION\s+__bridge_/i.test(String(s.cmd || ""))),
+  }));
+  return { ...lib, motions, sequences };
+}
+// === SEQ-BRIDGE-CORE END ===
 function sliceForBoard(lib, boardId) {
   const motions = [];
   for (const m of lib.motions || []) {
@@ -6628,6 +6865,37 @@ function sliceForBoard(lib, boardId) {
     setlists: lib.setlists || [],
     activeSetlistId: lib.activeSetlistId ?? null,
     schedulerConfig: lib.schedulerConfig || { leaderBoardId: 1, graceMs: 10000, tagEnergy: [] },
+  };
+}
+
+// Bridge every sequence against the full motion library, producing an augmented
+// library: bridge motions appended to `motions`, sequences rewritten with bridge
+// steps. Pure fns live in SEQ-BRIDGE-CORE; this passes the real firmware limits.
+// Receives the RAW library and must never be fed its own output (would re-bridge
+// already-bridged MOTION steps) — call it exactly once per bake on the raw lib.
+function buildBakeLibrary(lib) {
+  const sequences = [];
+  const bridgeMotions = [];
+  const summaries = [];
+  const errors = [];
+  for (const seq of (lib.sequences || [])) {
+    const r = insertSequenceBridges(seq.steps || [], lib.motions || [], {
+      seqId: seq.id,
+      msPerPercent: SERVO_FEASIBILITY_MS_PER_PERCENT,
+      minDeltaPercent: 5, floorMs: 800, unknownDeltaPercent: 100,
+      maxSteps: SEQ_MAX_STEPS,
+    });
+    sequences.push({ ...seq, steps: r.steps });
+    bridgeMotions.push(...r.bridgeMotions);
+    for (const s of r.summary) summaries.push({ seqId: seq.id, seqName: seq.name || seq.id, ...s });
+    if (r.error) errors.push({ seqId: seq.id, seqName: seq.name || seq.id, ...r.error });
+  }
+  return {
+    ...lib,
+    motions: [...(lib.motions || []), ...bridgeMotions],
+    sequences,
+    _bridgeSummaries: summaries,
+    _bridgeErrors: errors,
   };
 }
 
@@ -6754,6 +7022,19 @@ async function bakeToAllBoards(onlyIps = null, mode = onlyIps ? "targeted" : "al
     bakeLog(`unsupported schemaVersion ${lib.schemaVersion}, expected ${SCHEMA_VERSION}`, "alert");
     return;
   }
+  // Bridge sequences once, on the RAW lib, at the single real-bake call site.
+  // bakeLib already carries bridge motions + rewritten sequence steps; it is
+  // never fed back into buildBakeLibrary/insertSequenceBridges (that would
+  // re-bridge already-bridged steps). Everything downstream — conformance,
+  // sliceForBoard, diff, size — uses bakeLib so estimates match the hardware.
+  const bakeLib = buildBakeLibrary(lib);
+  if (bakeLib._bridgeErrors.length) {
+    for (const e of bakeLib._bridgeErrors) {
+      bakeLog(`Bridge overflow — sequence "${e.seqName}" needs ${e.produced} steps > ${e.max}. Shorten it or split it.`, "alert");
+    }
+    return;
+  }
+  // feasibility runs on the raw library; synthesized bridges are feasible by construction (duration = max(floor, delta*msPerPercent)), so they're intentionally excluded here.
   const feasibility = analyzeLibraryServoFeasibility(lib);
   if (feasibility.invalid.length) {
     bakeLog(`bake blocked: ${formatServoFeasibilityFinding(feasibility.invalid[0])}`, "alert");
@@ -6765,10 +7046,21 @@ async function bakeToAllBoards(onlyIps = null, mode = onlyIps ? "targeted" : "al
   // Conformance: tracks are auto-fixed to the firmware keyframe contract in
   // sliceForBoard, but a motion that still exceeds the firmware's total
   // keyframe/track budget can't be baked — block + name it (servo-4hc).
-  const conformance = analyzeBakeConformance(lib);
+  const conformance = analyzeBakeConformance(bakeLib);
   if (conformance.errors.length) {
     bakeLog(`bake blocked: ${formatBakeConformanceError(conformance.errors[0])}`, "alert");
     return;
+  }
+  // All block-gates passed — we're committing to a bake. Surface the bridges
+  // the baker synthesized (one line each + a total) so the operator sees what
+  // was inserted between/at the head of sequences. Emitted once, pre-upload.
+  for (const s of bakeLib._bridgeSummaries) {
+    const kind = s.kind === "cold" ? "cold-start" : "bridge";
+    bakeLog(`↳ ${kind} in "${s.seqName}": ${s.channels.length} servo(s), ${s.durationMs}ms`, "amber");
+  }
+  if (bakeLib._bridgeSummaries.length) {
+    const added = bakeLib._bridgeSummaries.reduce((n, s) => n + s.durationMs, 0);
+    bakeLog(`${bakeLib._bridgeSummaries.length} bridge(s) inserted, +${(added / 1000).toFixed(1)}s`, "amber");
   }
   const targetBoards = (onlyIps && onlyIps.length) ? onlyIps : boards;
   if (targetBoards.length === 0) { bakeLog("no boards configured", "alert"); return; }
@@ -6820,7 +7112,7 @@ async function bakeToAllBoards(onlyIps = null, mode = onlyIps ? "targeted" : "al
   // real UTF-8 byte counts; JSON.stringify().length would lie on non-ASCII.
   const encoder = new TextEncoder();
   const plans = targets.map(({ ip, boardId }) => {
-    const blob = sliceForBoard(lib, boardId);
+    const blob = sliceForBoard(bakeLib, boardId);
     const json = JSON.stringify(blob);
     const bytes = encoder.encode(json);
     let prev = null;
@@ -7061,13 +7353,18 @@ async function pullFromBoards() {
       activeSetlistId: source.blob.activeSetlistId ?? null,
       schedulerConfig: source.blob.schedulerConfig || { leaderBoardId: 1, graceMs: 10000, tagEnergy: [] },
     };
-    saveLibrary(lib);
+    // Bridges are bake-only synth artifacts; strip them so they never become
+    // editable motions or persist into an authored sequence (which would
+    // double-bridge / orphan __bridge_ steps on the next bake).
+    const cleanLib = stripBridges(lib);
+    saveLibrary(cleanLib);
     // Refresh per-ip snapshots so the baked panel + pre-bake diff reflect
-    // what we just read off the boards, not a stale/missing snapshot.
+    // what we just read off the boards, not a stale/missing snapshot. These
+    // SHOULD keep bridges (raw e.blob) — they mirror what's actually on-board.
     for (const e of entries) {
       try { localStorage.setItem(LIB_SNAP_PREFIX + e.ip, JSON.stringify(e.blob)); } catch {}
     }
-    bakeLog(`hydrated: ${motions.length} motion(s), ${lib.sequences.length} sequence(s), ${lib.setlists.length} setlist(s) from ${entries.length} board(s)`, "phosphor");
+    bakeLog(`hydrated: ${cleanLib.motions.length} motion(s), ${cleanLib.sequences.length} sequence(s), ${cleanLib.setlists.length} setlist(s) from ${entries.length} board(s)`, "phosphor");
     currentSeqId = null;
     currentMotionId = null;
     renderMotionEditor();
@@ -7095,7 +7392,8 @@ bakeFileEl.addEventListener("change", async () => {
     }
     // Strip bakedAtMs if present — we add it fresh at bake time.
     delete parsed.bakedAtMs;
-    saveLibrary(parsed);
+    // Strip bake-only bridge artifacts in case a baked blob was imported.
+    saveLibrary(stripBridges(parsed));
     bakeLog(`imported library from ${f.name} (${text.length} bytes)`, "phosphor");
     bakeFileInfoEl.textContent = `${f.name} · ${text.length}B`;
     renderLibSummary();
