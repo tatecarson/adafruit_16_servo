@@ -38,6 +38,8 @@ check(/motionMatch[\s\S]*sendBakedMotionWithPreRoll\(ip, motionMatch\[1\]\)/.tes
   "the shared command sender routes every MOTION source through pre-roll");
 check(/STOP[\s\S]*bakedMotionPreRollSerial\+\+/.test(html),
   "STOP invalidates a delayed baked Motion start");
+check(/telemetryMotionId[\s\S]*lastStatus\.get\(ip\)\?\.motion\?\.id/.test(html),
+  "board telemetry restores replay history after a dashboard reload");
 
 const previous = motion("arc", [
   track("servo", 1, 0, [[0, 0], [8000, 100]]),
@@ -71,4 +73,4 @@ const tinyNext = motion("tiny", [track("servo", 1, 0, [[0, 10], [1000, 13]])]);
 check(context.plan(tinyPrevious, tinyNext, specs).durationMs === 0,
   "sub-five-percent drift does not add a perceptible warm-up");
 
-console.log(`\n${passed}/11 baked Motion pre-roll checks passed.`);
+console.log(`\n${passed}/12 baked Motion pre-roll checks passed.`);

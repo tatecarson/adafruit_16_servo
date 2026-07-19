@@ -4121,7 +4121,14 @@ async function sendBakedMotionWithPreRoll(originIp, motionId) {
   const lib = sequenceLibrary();
   const nextMotion = (lib.motions || []).find(motion =>
     String(motion.id).toLowerCase() === String(motionId).toLowerCase());
-  const previousMotion = (lib.motions || []).find(motion => motion.id === lastBakedMotionId);
+  // Preserve replay safety across a dashboard reload. /status.json retains the
+  // most recently loaded Motion id even after it completes, so telemetry can
+  // recover the prior final pose when this page-local history is still empty.
+  const telemetryMotionId = boards
+    .map(ip => lastStatus.get(ip)?.motion?.id)
+    .find(id => id && (lib.motions || []).some(motion => motion.id === id));
+  const previousMotionId = lastBakedMotionId || telemetryMotionId || null;
+  const previousMotion = (lib.motions || []).find(motion => motion.id === previousMotionId);
   const plan = planBakedMotionPreRoll(previousMotion, nextMotion, MOTION_TRACK_SPECS);
   const serial = ++bakedMotionPreRollSerial;
 
