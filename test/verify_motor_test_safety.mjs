@@ -21,7 +21,9 @@ check(/UP \$\{n\} \$\{MOTOR_TEST_SAFE_UP_PCT\}/.test(setup), "per-servo Up uses 
 check(/Up \$\{MOTOR_TEST_SAFE_UP_PCT\}%/.test(setup), "per-servo Up visibly labels the safe target");
 check(!/data-mtest-all="100"/.test(drawer), "All Up no longer commands 100%");
 check(!/UP \$\{n\} 100/.test(setup), "per-servo Up no longer commands 100%");
+check(!/data-mtest="SWEEP/.test(setup), "Motor Test no longer offers a full-range Sweep command");
+check(!/>Sweep<\/button>/.test(setup), "Motor Test no longer renders a Sweep button");
 check(/data-mtest-all="0"/.test(drawer), "All Down remains at 0%");
 check(/UP \$\{n\} 50/.test(setup), "Mid remains at 50%");
 
-console.log(`\n${passed}/9 Motor Test safety checks passed.`);
+console.log(`\n${passed}/11 Motor Test safety checks passed.`);
