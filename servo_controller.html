@@ -6431,6 +6431,41 @@ function bridgeServoPose(motion, edge) {
   }
   return pose;
 }
+// Interior transition (previous pose fully known): a 2-keyframe "bridge motion"
+// that ramps each moved servo from its previous value to the next entry value.
+// Firmware asserts keyframe-0 instantly, but the servo is already sitting there
+// (previous motion held its exit pose), so it's a no-op followed by a smooth
+// ramp. Returns { motion, step, channels } or null when nothing moves enough.
+function planInteriorBridge(fromPose, toPose, id, opts) {
+  opts = opts || {};
+  const msPerPercent = opts.msPerPercent != null ? opts.msPerPercent : 77;
+  const minDeltaPercent = opts.minDeltaPercent != null ? opts.minDeltaPercent : 5;
+  const floorMs = opts.floorMs != null ? opts.floorMs : 800;
+
+  const tracks = [];
+  const channels = [];
+  let maxDelta = 0;
+  for (const key of Object.keys(toPose)) {
+    const to = toPose[key];
+    const from = fromPose[key];
+    if (from == null) continue;                 // unknown handled by cold-start path
+    const delta = Math.abs(to - from);
+    if (delta < minDeltaPercent) continue;
+    const parts = key.split(":");
+    const boardId = Number(parts[0]);
+    const channel = Number(parts[2]);
+    tracks.push({ kind:"servo", boardId, channel, label:`B${boardId}.S${channel}`,
+      keyframes:[{atMs:0, value:from}, {atMs:0, value:to}] });
+    channels.push(key);
+    maxDelta = Math.max(maxDelta, delta);
+  }
+  if (!tracks.length) return null;
+  const durationMs = Math.max(floorMs, Math.ceil(maxDelta * msPerPercent));
+  for (const t of tracks) t.keyframes[1].atMs = durationMs;
+  const motion = { id, name:"↳ bridge", scope:"cluster", tags:[], durationMs, tracks };
+  const step = { cmd:`MOTION ${id}`, durationMs, target:"all", label:"↳ bridge", hold:false, bridge:true };
+  return { motion, step, channels };
+}
 // === SEQ-BRIDGE-CORE END ===
 function sliceForBoard(lib, boardId) {
   const motions = [];

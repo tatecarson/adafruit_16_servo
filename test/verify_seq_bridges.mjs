@@ -45,5 +45,20 @@ eq("single-keyframe track holds its constant", bridgeServoPose(
   { tracks:[{kind:"servo",boardId:3,channel:2,keyframes:[{atMs:0,value:33}]}] }, "exit"), {"3:servo:2":33});
 eq("missing tracks yield empty pose", bridgeServoPose({}, "entry"), {});
 
+const from = {"1:servo:0":80,"2:servo:1":50};
+const to   = {"1:servo:0":0, "2:servo:1":52};   // ch0 moves 80, ch1 moves 2 (below 5% slop)
+const b = planInteriorBridge(from, to, "__bridge_seq_0", { msPerPercent:77, minDeltaPercent:5, floorMs:800 });
+eq("bridge has a single MOTION step", b.step.cmd, "MOTION __bridge_seq_0");
+eq("duration scales with the farthest-moving servo", b.motion.durationMs, Math.ceil(80*77)); // 6160
+eq("step duration matches motion duration", b.step.durationMs, b.motion.durationMs);
+eq("only servos past the slop threshold get a track", b.motion.tracks.map(t=>t.channel), [0]);
+eq("track ramps from previous value to next value", b.motion.tracks[0].keyframes,
+   [{atMs:0,value:80},{atMs:6160,value:0}]);
+eq("synthesized motion id is prefixed for UI hiding", b.motion.id.startsWith("__bridge_"), true);
+eq("no-op transition (all within slop) returns null",
+   planInteriorBridge({"1:servo:0":50}, {"1:servo:0":52}, "x", {}), null);
+eq("duration honors the 800ms floor",
+   planInteriorBridge({"1:servo:0":50}, {"1:servo:0":56}, "x", {floorMs:800,msPerPercent:77,minDeltaPercent:5}).motion.durationMs, 800);
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);
