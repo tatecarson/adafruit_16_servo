@@ -32,8 +32,8 @@ if (start < 0 || end <= start) {
 const core = html.slice(start + START.length, end);
 const dir = mkdtempSync(join(tmpdir(), "seq-bridge-core-"));
 const modPath = join(dir, "core.mjs");
-writeFileSync(modPath, `${core}\nexport { bridgeServoPose, planColdStartBridge, planInteriorBridge, insertSequenceBridges, seedFirstKeyframesFromExit, stripBridges };\n`, "utf8");
-const { bridgeServoPose, planColdStartBridge, planInteriorBridge, insertSequenceBridges, seedFirstKeyframesFromExit, stripBridges } = await import(pathToFileURL(modPath).href);
+writeFileSync(modPath, `${core}\nexport { bridgeServoPose, planColdStartBridge, planInteriorBridge, insertSequenceBridges, rewriteSequencePreRolls, expandPreRollStepsForDisplay, seedFirstKeyframesFromExit, stripBridges, validateLibraryReferences };\n`, "utf8");
+const { bridgeServoPose, planColdStartBridge, planInteriorBridge, insertSequenceBridges, rewriteSequencePreRolls, expandPreRollStepsForDisplay, seedFirstKeyframesFromExit, stripBridges, validateLibraryReferences } = await import(pathToFileURL(modPath).href);
 
 console.log("=== Sequence transition bridges ===");
 
@@ -109,6 +109,20 @@ eq("interior bridge inserted before fall",
    r.steps.slice(3).map(s=>s.cmd), ["MOTION __bridge_s_0","MOTION fall"]);
 eq("one synth bridge motion produced", r.bridgeMotions.map(m=>m.id), ["__bridge_s_0"]);
 eq("no error under budget", r.error, null);
+
+// Real bakes use compact PREP annotations, not the legacy materialized bridge
+// objects above. The old planner remains covered for backwards hydration and
+// display math, while these assertions guard the deploy representation.
+const compact = rewriteSequencePreRolls(
+  [{cmd:"MOTION rise",durationMs:1000},{cmd:"MOTION fall",durationMs:1000}], lib, wopts);
+eq("compact planner preserves authored step count", compact.steps.length, 2);
+eq("cold transition becomes an in-step PREP command", compact.steps[0].cmd, "MOTION rise PREP 7700");
+eq("PREP duration extends the authored play window", compact.steps[0].durationMs, 8700);
+eq("interior transition is also in-step", compact.steps[1].cmd, "MOTION fall PREP 6160");
+eq("compact planner produces summaries but no hidden Motions", compact.summary.map(s=>s.kind), ["cold","interior"]);
+const displayed = expandPreRollStepsForDisplay(compact.steps);
+eq("Arrange expansion shows two display-only PREP blocks", displayed.filter(s=>s.bridge).length, 2);
+eq("Arrange expansion restores original Motion durations", displayed.filter(s=>!s.bridge).map(s=>s.durationMs), [1000,1000]);
 
 // A no-movement transition (fall holds 0 -> next fall entry 0) needs no bridge:
 // planInteriorBridge returns null when nothing moves past the slop threshold.
@@ -224,6 +238,24 @@ eq("interior bridge caught even without the flag",
 eq("other library fields preserved", stripped.setlists.map(s=>s.id), ["s"]);
 eq("null library is a safe no-op", stripBridges(null), null);
 eq("source library object is not mutated", baked.motions.length, 2);
+
+const preparedBake = { motions:[{id:"rise"}], sequences:[{id:"s",steps:[
+  {cmd:"MOTION rise PREP 6160",durationMs:7160},
+]}], setlists:[] };
+const unprepared = stripBridges(preparedBake);
+eq("pulled PREP command returns to an authored Motion step", unprepared.sequences[0].steps[0].cmd, "MOTION rise");
+eq("pulled PREP duration is removed from authored duration", unprepared.sequences[0].steps[0].durationMs, 1000);
+
+eq("valid references pass the bake gate", validateLibraryReferences({
+  motions:[{id:"m"}], sequences:[{id:"q",steps:[{cmd:"MOTION m"}]}],
+  setlists:[{id:"sl",entries:[{seqId:"q"}]}], activeSetlistId:"sl",
+}).ok, true);
+eq("missing Motion reference is named", validateLibraryReferences({
+  motions:[], sequences:[{id:"q",steps:[{cmd:"MOTION ghost"}]}], setlists:[],
+}).errors[0], {code:"missing-motion",owner:"q",index:0,missing:"ghost"});
+eq("missing Sequence reference is named", validateLibraryReferences({
+  motions:[], sequences:[], setlists:[{id:"sl",entries:[{seqId:"ghost"}]}],
+}).errors[0], {code:"missing-sequence",owner:"sl",index:0,missing:"ghost"});
 
 // --- Task 8: bridges are visible in the Arrange timeline (display-only) ---
 // The Arrange render tags auto-inserted bridge blocks with a distinct style so

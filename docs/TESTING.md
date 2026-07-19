@@ -1218,22 +1218,23 @@ leader. `schedulerConfig.graceMs` is the grace window (default 10000).
 - [x] `make -C test` — storage 22/22, motion 8/8, sequence 8/8, setlist 11/11, gallery 9/9, and all `sim-verify` browser simulation/editor checks passed (including the 44-case sequence-bridge suite). No firmware files changed on this branch (browser + docs only).
 - [x] Browser preview of `servo_controller.html` — seeded a two-motion library (Motion A holds servo B1.S0 at 90%, Motion B holds it at 10%) plus a sequence `A then B`, then triggered a bake. The bake log emitted the summary lines `↳ cold-start in "A then B": 1 servo(s), 7700ms`, `↳ bridge in "A then B": 1 servo(s), 6160ms`, and `2 bridge(s) inserted, +13.9s`. The authored Motion Library listed only A and B — no `__bridge_` motion appears as a deletable/editable item (synth bridges live only in the bake output). Console clean (no errors).
 
-### Manual hardware test: sequence transition bridges glide, not snap (servo-bri)
+### Manual hardware test: compact sequence pre-rolls glide, not snap (servo-y29)
 
-No firmware flash is needed (firmware is unchanged); the synthesized bridges ride
-in the baked sequence blob. Author a library whose sequence has a deliberate
-A→B servo discontinuity: Motion A ends with a winch servo high (e.g. 90%),
-Motion B starts that same servo low (e.g. 10%), and a sequence runs `MOTION A`
-then `MOTION B`. Bake it to a board that has that servo wired.
+Flash firmware build `servo-y29-1` before this test. The bake now stores a compact
+`MOTION <id> PREP <ms>` command instead of generated bridge Motions and extra
+Sequence steps. Author a library whose sequence has a deliberate A→B servo
+discontinuity: Motion A ends with a winch servo high (e.g. 90%), Motion B starts
+that same servo low (e.g. 10%), and a sequence runs `MOTION A` then `MOTION B`.
+Bake it to a board that has that servo wired.
 
 1. **Interior transition glides (no snap).** Leave the servo parked at Motion A's
    exit (90%), then `RUN` the sequence. Expect: at the A→B boundary the servo
-   *glides* smoothly from 90% down to 10% over the inserted bridge (~6.2 s ramp)
+   *glides* smoothly from 90% down to 10% over the firmware pre-roll (~6.2 s ramp)
    instead of snapping instantly. Watch the physical servo, not just the serial log.
    - Expected: `[ ] Pass  [ ] Fail —`
 2. **Cold start glides, not yanks (the original incident).** Power-cycle or
    otherwise leave the servo raised at an unknown high position, then `RUN` the
-   sequence from cold. Expect: the cold-start bridge ramps the servo to Motion A's
+   sequence from cold. Expect: the cold-start pre-roll ramps the servo to Motion A's
    entry pose smoothly (~7.7 s conservative ramp) rather than yanking it there at
    full speed the instant playback starts.
    - Expected: `[ ] Pass  [ ] Fail —`
@@ -1241,6 +1242,21 @@ then `MOTION B`. Bake it to a board that has that servo wired.
    two motions, confirm every transition with a >5% servo delta glides the same way
    (no residual snap between any pair of motions).
    - Expected: `[ ] Pass  [ ] Fail —`
+
+4. **Compact payload remains recoverable.** Pull the bake back from the board.
+   Expect: the editor shows only authored Motions and the original Sequence step
+   count; deploy-only `PREP` annotations are removed and omitted display fields
+   receive safe defaults.
+   - Expected: `[ ] Pass  [ ] Fail —`
+
+**2026-07-19 (servo-y29 compact bake + firmware pre-roll verification):**
+- [x] `make -C test` — storage 22/22, motion 12/12, sequence 8/8, setlist 11/11, gallery 9/9, and all browser simulation/editor checks passed.
+- [x] Bake-payload regression 9/9 — no hidden Motions, no Sequence step growth, compact metadata/default omission, PREP reversal on pull, and dangling-reference detection.
+- [x] Current `library.json` size model — board 1: 1549 bytes; board 2: 1420 bytes; board 3: 1600 bytes, all below the 4080-byte slot cap. The prior bridge-expanded payloads were 4477, 4110, and 4766 bytes respectively.
+- [x] Firmware Motion regression — single-keyframe tracks and implicit final holds work; prepared starts arm the real Motion after the glide and stop a prior DC output.
+- [x] `make -C test size` — 120408 / 122880 bytes (+2472 bytes OTA headroom), RAM 22872 / 32768 bytes (+9896 headroom).
+- [x] Inline browser script syntax and `git diff --check` — passed.
+- [ ] Hardware playback and pull-back recovery — use the four checks above when an Arduino is available.
 
 **2026-07-18 (servo-x2p baked Motion replay pre-roll):**
 - `node test/verify_baked_motion_preroll.mjs` passed 12/12: first play remains immediate; a full-range replay gets a 7.7s glide; every changed servo uses the same cluster-wide duration; each board targets keyframe 0; a prior nonzero DC endpoint stops; settled and sub-5% poses add no delay; all `MOTION` sources share the path; board telemetry restores replay history after a dashboard reload; and `STOP` invalidates a delayed start.

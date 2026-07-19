@@ -256,6 +256,56 @@ static void test_past_start_catches_up_to_phase() {
   ASSERT_EQ(motorState.currentSpeed, 50);
 }
 
+static void test_implicit_final_hold_and_single_keyframe_track() {
+  reset_state();
+  const char* compactBlob =
+    "{\"schemaVersion\":1,\"motions\":["
+      "{\"id\":\"compact\",\"durationMs\":1000,\"tracks\":["
+        "{\"kind\":\"servo\",\"boardId\":1,\"channel\":0,"
+          "\"keyframes\":[{\"atMs\":0,\"value\":25}]},"
+        "{\"kind\":\"dc\",\"boardId\":1,\"channel\":0,"
+          "\"keyframes\":[{\"atMs\":0,\"value\":10},{\"atMs\":500,\"value\":20}]}"
+      "]}],\"sequences\":[],\"setlists\":[],\"activeSetlistId\":null,\"schedulerConfig\":{}}";
+
+  ASSERT_TRUE(storageWriteSlot((const uint8_t*)compactBlob, strlen(compactBlob)));
+  ASSERT_TRUE(startMotionFromStorage("compact", false));
+  ASSERT_EQ(motionRuntime.keyframeCount, 3);
+  ASSERT_EQ(servoState[0].posPulse, 262);  // 25% of 150..600
+  ASSERT_EQ(motorState.currentSpeed, 10);
+
+  _mock_millis = 750;
+  updateMotion();
+  ASSERT_TRUE(motionRuntime.active);
+  ASSERT_EQ(servoState[0].posPulse, 262);  // single keyframe holds
+  ASSERT_EQ(motorState.currentSpeed, 20); // last DC keyframe holds to duration
+
+  _mock_millis = 1000;
+  updateMotion();
+  ASSERT_FALSE(motionRuntime.active);
+  ASSERT_EQ(motorState.currentSpeed, 20);
+}
+
+static void test_prepared_start_arms_motion_and_servo_glide() {
+  reset_state();
+  ASSERT_TRUE(storageWriteSlot((const uint8_t*)kBlob, strlen(kBlob)));
+  motorState.currentSpeed = 40;
+
+  ASSERT_TRUE(startMotionPreparedFromStorage("tidal-drift", 7700, false));
+  ASSERT_TRUE(motionRuntime.active);
+  ASSERT_EQ(motionRuntime.startMs, 7700);
+  ASSERT_EQ(motorState.currentSpeed, 0);
+  ASSERT_TRUE(servoState[0].moving);
+  ASSERT_TRUE(servoState[0].linearMove);
+  ASSERT_EQ(servoState[0].startPulse, 375);
+  ASSERT_EQ(servoState[0].targetPulse, 150);
+  ASSERT_EQ(servoState[0].moveDurationMs, 7700);
+
+  _mock_millis = 7699;
+  updateMotion();
+  ASSERT_TRUE(motionRuntime.active);
+  ASSERT_EQ(servoState[0].posPulse, 375); // Motion itself is still gated
+}
+
 int main() {
   printf("=== Motion Engine Tests ===\n");
   RUN(loads_motion_case_insensitive);
@@ -268,6 +318,8 @@ int main() {
   RUN(malformed_boardid_excludes_track);
   RUN(future_start_holds_pose_until_instant);
   RUN(past_start_catches_up_to_phase);
+  RUN(implicit_final_hold_and_single_keyframe_track);
+  RUN(prepared_start_arms_motion_and_servo_glide);
   printf("\n%d/%d passed, %d failed\n", _tests_passed, _tests_run, _tests_failed);
   return _tests_failed ? 1 : 0;
 }

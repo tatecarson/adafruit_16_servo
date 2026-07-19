@@ -104,7 +104,11 @@ static bool motionParseTrack(
     count++;
   }
 
-  if (count < 2 || out.keyframes[out.keyframeCount - 1].atMs != motionDurationMs) {
+  // A single keyframe is a constant hold, and a final keyframe before the
+  // Motion duration implicitly holds through the end. The old parser required
+  // the browser to duplicate every track's final value at durationMs, wasting
+  // one verbose JSON keyframe per track in the 4 KB bake slot.
+  if (count < 1) {
     out.keyframeCount = first;
     return false;
   }
@@ -337,6 +341,51 @@ inline bool startMotionFromStorageAt(const char* motionId, unsigned long localSt
     Serial.print(F(" ("));
     Serial.print(motionRuntime.trackCount);
     Serial.println(F(" tracks)"));
+  }
+  return true;
+}
+
+// Prepare a stored Motion without materializing a second "bridge Motion" in
+// EEPROM. The browser sizes prepareMs cluster-wide, then every board glides
+// its local servo tracks from the last commanded position to keyframe zero and
+// arms the real Motion for the end of that glide. Sequence steps call this via
+// the internal `MOTION <id> PREP <ms>` command form.
+inline bool startMotionPreparedFromStorage(const char* motionId, uint32_t prepareMs, bool announce) {
+  if (prepareMs == 0) return startMotionFromStorage(motionId, announce);
+
+  unsigned long prepareStartMs = millis();
+  if (!startMotionFromStorageAt(motionId, prepareStartMs + prepareMs, false)) return false;
+
+  // A completed DC track can otherwise leave the motor running throughout a
+  // servo pre-roll. Stop it until the newly armed Motion begins.
+  setMotorSpeedQuiet(0);
+
+  for (uint8_t i = 0; i < motionRuntime.trackCount; i++) {
+    MotionTrack& track = motionRuntime.tracks[i];
+    if (track.kind != MOTION_TRACK_SERVO || track.channel >= NUM_SERVOS ||
+        track.keyframeCount == 0) continue;
+
+    int16_t value = motionRuntime.keyframes[track.firstKeyframe].value;
+    uint8_t percent = (uint8_t)constrain(value, 0, 100);
+    uint8_t channel = track.channel;
+    uint16_t targetPulse = degreesToPulse(channel, percentToDegrees(channel, percent));
+
+    ServoState& state = servoState[channel];
+    state.stopped = false;
+    state.startPulse = state.posPulse;
+    state.targetPulse = targetPulse;
+    state.moveStartMs = prepareStartMs;
+    state.moveDurationMs = prepareMs;
+    state.moving = state.posPulse != targetPulse;
+    state.linearMove = true;
+  }
+
+  if (announce) {
+    Serial.print(F("Preparing motion "));
+    Serial.print(motionRuntime.id);
+    Serial.print(F(" for "));
+    Serial.print(prepareMs);
+    Serial.println(F("ms"));
   }
   return true;
 }

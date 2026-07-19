@@ -137,7 +137,32 @@ void processCommand(char* cmd) {
   else if (startsWith(cmd, "MOTION")) {
     int space = findChar(cmd, ' ', 0);
     if (space > 0 && cmd[space + 1] != '\0') {
-      startMotionFromStorage(cmd + space + 1, true);
+      // Public form: MOTION <id>. Baked Sequences may append the compact
+      // internal form `PREP <ms>` so the board glides to keyframe zero before
+      // the real Motion begins, without storing bridge Motions in EEPROM.
+      char idBuf[MOTION_ID_MAX_LEN + 1] = {0};
+      const char* p = cmd + space + 1;
+      while (*p == ' ') p++;
+      int i = 0;
+      while (*p && *p != ' ' && i < (int)sizeof(idBuf) - 1) {
+        char c = *p++;
+        if (c >= 'A' && c <= 'Z') c = (char)(c + ('a' - 'A'));
+        idBuf[i++] = c;
+      }
+      while (*p == ' ') p++;
+
+      if (*p == '\0') {
+        startMotionFromStorage(idBuf, true);
+      } else if (startsWith(p, "PREP ")) {
+        long prepareMs = atol(p + 5);
+        if (prepareMs > 0 && prepareMs <= 60000) {
+          startMotionPreparedFromStorage(idBuf, (uint32_t)prepareMs, true);
+        } else {
+          Serial.println(F("MOTION PREP rejected: 0<ms<=60000"));
+        }
+      } else {
+        Serial.println(F("Use: MOTION <id>"));
+      }
     } else {
       Serial.println(F("Use: MOTION <id>"));
     }
