@@ -6574,6 +6574,22 @@ function seedFirstKeyframesFromExit(prevMotion, newMotion) {
   }
   return newMotion;
 }
+// Remove auto-generated transition bridges from a library reconstructed from a
+// baked blob (pull-from-boards / file import), so bridges never become editable
+// motions or persist into an authored sequence (which would double-bridge or
+// leave orphan __bridge_ steps on the next bake). Bridge motions use a
+// "__bridge_" id prefix; bridge steps carry `bridge:true` (and interior ones a
+// "MOTION __bridge_" cmd as a belt-and-braces guard). Returns a new library.
+function stripBridges(lib) {
+  if (!lib) return lib;
+  const motions = (lib.motions || []).filter(m => !String(m && m.id).startsWith("__bridge_"));
+  const sequences = (lib.sequences || []).map(seq => ({
+    ...seq,
+    steps: (seq.steps || []).filter(s =>
+      s && s.bridge !== true && !/^\s*MOTION\s+__bridge_/i.test(String(s.cmd || ""))),
+  }));
+  return { ...lib, motions, sequences };
+}
 // === SEQ-BRIDGE-CORE END ===
 function sliceForBoard(lib, boardId) {
   const motions = [];
@@ -7068,13 +7084,18 @@ async function pullFromBoards() {
       activeSetlistId: source.blob.activeSetlistId ?? null,
       schedulerConfig: source.blob.schedulerConfig || { leaderBoardId: 1, graceMs: 10000, tagEnergy: [] },
     };
-    saveLibrary(lib);
+    // Bridges are bake-only synth artifacts; strip them so they never become
+    // editable motions or persist into an authored sequence (which would
+    // double-bridge / orphan __bridge_ steps on the next bake).
+    const cleanLib = stripBridges(lib);
+    saveLibrary(cleanLib);
     // Refresh per-ip snapshots so the baked panel + pre-bake diff reflect
-    // what we just read off the boards, not a stale/missing snapshot.
+    // what we just read off the boards, not a stale/missing snapshot. These
+    // SHOULD keep bridges (raw e.blob) — they mirror what's actually on-board.
     for (const e of entries) {
       try { localStorage.setItem(LIB_SNAP_PREFIX + e.ip, JSON.stringify(e.blob)); } catch {}
     }
-    bakeLog(`hydrated: ${motions.length} motion(s), ${lib.sequences.length} sequence(s), ${lib.setlists.length} setlist(s) from ${entries.length} board(s)`, "phosphor");
+    bakeLog(`hydrated: ${cleanLib.motions.length} motion(s), ${cleanLib.sequences.length} sequence(s), ${cleanLib.setlists.length} setlist(s) from ${entries.length} board(s)`, "phosphor");
     currentSeqId = null;
     currentMotionId = null;
     renderMotionEditor();
@@ -7102,7 +7123,8 @@ bakeFileEl.addEventListener("change", async () => {
     }
     // Strip bakedAtMs if present — we add it fresh at bake time.
     delete parsed.bakedAtMs;
-    saveLibrary(parsed);
+    // Strip bake-only bridge artifacts in case a baked blob was imported.
+    saveLibrary(stripBridges(parsed));
     bakeLog(`imported library from ${f.name} (${text.length} bytes)`, "phosphor");
     bakeFileInfoEl.textContent = `${f.name} · ${text.length}B`;
     renderLibSummary();

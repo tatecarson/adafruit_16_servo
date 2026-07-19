@@ -28,8 +28,8 @@ if (start < 0 || end <= start) {
 const core = html.slice(start + START.length, end);
 const dir = mkdtempSync(join(tmpdir(), "seq-bridge-core-"));
 const modPath = join(dir, "core.mjs");
-writeFileSync(modPath, `${core}\nexport { bridgeServoPose, planColdStartBridge, planInteriorBridge, insertSequenceBridges, seedFirstKeyframesFromExit };\n`, "utf8");
-const { bridgeServoPose, planColdStartBridge, planInteriorBridge, insertSequenceBridges, seedFirstKeyframesFromExit } = await import(pathToFileURL(modPath).href);
+writeFileSync(modPath, `${core}\nexport { bridgeServoPose, planColdStartBridge, planInteriorBridge, insertSequenceBridges, seedFirstKeyframesFromExit, stripBridges };\n`, "utf8");
+const { bridgeServoPose, planColdStartBridge, planInteriorBridge, insertSequenceBridges, seedFirstKeyframesFromExit, stripBridges } = await import(pathToFileURL(modPath).href);
 
 console.log("=== Sequence transition bridges ===");
 
@@ -152,6 +152,30 @@ eq("MOTION id lookup is case-insensitive",
 // A MOTION step with extra tokens does not match -> treated as opaque (no bridge).
 eq("MOTION step with extra args is opaque",
    insertSequenceBridges([{cmd:"MOTION rise extra"}], lib, wopts).steps.filter(s=>s.cmd.startsWith("DMOVE")).length, 0);
+
+// --- stripBridges (Task 7): undo bridges when a library is pulled/imported back ---
+const baked = {
+  motions: [
+    { id:"real", tracks:[] },
+    { id:"__bridge_sq-1_0", tracks:[] },
+  ],
+  sequences: [ { id:"sq-1", steps:[
+    { cmd:"DMOVE 0 0 7700", bridge:true },
+    { cmd:"", bridge:true },
+    { cmd:"MOTION real" },
+    { cmd:"MOTION __bridge_sq-1_0", bridge:true },
+    { cmd:"MOTION real2" },
+  ] } ],
+  setlists: [{ id:"s" }],
+};
+const stripped = stripBridges(baked);
+eq("bridge motions removed", stripped.motions.map(m=>m.id), ["real"]);
+eq("bridge steps removed, authored steps kept", stripped.sequences[0].steps.map(s=>s.cmd), ["MOTION real","MOTION real2"]);
+eq("interior bridge caught even without the flag",
+   stripBridges({ sequences:[{steps:[{cmd:"MOTION __bridge_x_0"},{cmd:"MOTION keep"}]}] }).sequences[0].steps.map(s=>s.cmd), ["MOTION keep"]);
+eq("other library fields preserved", stripped.setlists.map(s=>s.id), ["s"]);
+eq("null library is a safe no-op", stripBridges(null), null);
+eq("source library object is not mutated", baked.motions.length, 2);
 
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);
