@@ -3718,8 +3718,14 @@ function renderBakeInventory() {
   const enc = new TextEncoder();
   const size = obj => enc.encode(JSON.stringify(obj)).length;
 
+  // Size the bars off the bridged library so per-board bytes reflect what will
+  // actually be baked (bridge motions included). Passive preview: ignore
+  // _bridgeErrors — the real bake gate in bakeToAllBoards blocks on overflow.
+  // The item list below stays on the raw `lib` so synth __bridge_ motions are
+  // not surfaced as deletable rows.
+  const bakeLib = buildBakeLibrary(lib);
   const boardBytes = [1, 2, 3].map(boardId => {
-    const bytes = size(sliceForBoard(lib, boardId));
+    const bytes = size(sliceForBoard(bakeLib, boardId));
     const level = bytes > STORAGE_PAYLOAD_MAX ? "over" : (bytes >= STORAGE_PAYLOAD_MAX * 0.8 ? "warn" : "ok");
     return { boardId, bytes, level };
   });
@@ -3784,6 +3790,10 @@ function renderBakedPanel() {
     return;
   }
   const lib = loadLibrary();
+  // Compare the snapshot against the bridged library so "edited since bake"
+  // doesn't fire spuriously from bridge motions that the last bake wrote but
+  // the raw lib lacks. Passive preview: ignore _bridgeErrors (real bake gates).
+  const bakeLib = lib ? buildBakeLibrary(lib) : null;
   const blocks = boards.map(ip => {
     let snap = null;
     try { snap = JSON.parse(localStorage.getItem(LIB_SNAP_PREFIX + ip) || "null"); } catch {}
@@ -3795,8 +3805,8 @@ function renderBakedPanel() {
     const boardId = motions[0]?.tracks?.[0]?.boardId ?? null;
     // Staleness: does the current editor library still match what was baked?
     let staleNote = "";
-    if (lib && boardId != null) {
-      const d = diffBlob(snap, sliceForBoard(lib, boardId));
+    if (bakeLib && boardId != null) {
+      const d = diffBlob(snap, sliceForBoard(bakeLib, boardId));
       const n = d.added + d.changed + d.deleted;
       if (n) staleNote = `<span class="bb-stale">· edited since bake (${n}) — re-bake to update</span>`;
     }
@@ -6585,6 +6595,37 @@ function sliceForBoard(lib, boardId) {
   };
 }
 
+// Bridge every sequence against the full motion library, producing an augmented
+// library: bridge motions appended to `motions`, sequences rewritten with bridge
+// steps. Pure fns live in SEQ-BRIDGE-CORE; this passes the real firmware limits.
+// Receives the RAW library and must never be fed its own output (would re-bridge
+// already-bridged MOTION steps) — call it exactly once per bake on the raw lib.
+function buildBakeLibrary(lib) {
+  const sequences = [];
+  const bridgeMotions = [];
+  const summaries = [];
+  const errors = [];
+  for (const seq of (lib.sequences || [])) {
+    const r = insertSequenceBridges(seq.steps || [], lib.motions || [], {
+      seqId: seq.id,
+      msPerPercent: SERVO_FEASIBILITY_MS_PER_PERCENT,
+      minDeltaPercent: 5, floorMs: 800, unknownDeltaPercent: 100,
+      maxSteps: SEQ_MAX_STEPS,
+    });
+    sequences.push({ ...seq, steps: r.steps });
+    bridgeMotions.push(...r.bridgeMotions);
+    for (const s of r.summary) summaries.push({ seqId: seq.id, seqName: seq.name || seq.id, ...s });
+    if (r.error) errors.push({ seqId: seq.id, seqName: seq.name || seq.id, ...r.error });
+  }
+  return {
+    ...lib,
+    motions: [...(lib.motions || []), ...bridgeMotions],
+    sequences,
+    _bridgeSummaries: summaries,
+    _bridgeErrors: errors,
+  };
+}
+
 // Diff one sliced blob against the last snapshot for the same board.
 // Returns counts across motions+sequences+setlists. We count an item as
 // "changed" if its id matches a snapshot id but its minified JSON differs.
@@ -6708,6 +6749,18 @@ async function bakeToAllBoards(onlyIps = null, mode = onlyIps ? "targeted" : "al
     bakeLog(`unsupported schemaVersion ${lib.schemaVersion}, expected ${SCHEMA_VERSION}`, "alert");
     return;
   }
+  // Bridge sequences once, on the RAW lib, at the single real-bake call site.
+  // bakeLib already carries bridge motions + rewritten sequence steps; it is
+  // never fed back into buildBakeLibrary/insertSequenceBridges (that would
+  // re-bridge already-bridged steps). Everything downstream — conformance,
+  // sliceForBoard, diff, size — uses bakeLib so estimates match the hardware.
+  const bakeLib = buildBakeLibrary(lib);
+  if (bakeLib._bridgeErrors.length) {
+    for (const e of bakeLib._bridgeErrors) {
+      bakeLog(`Bridge overflow — sequence "${e.seqName}" needs ${e.produced} steps > ${e.max}. Shorten it or split it.`, "alert");
+    }
+    return;
+  }
   const feasibility = analyzeLibraryServoFeasibility(lib);
   if (feasibility.invalid.length) {
     bakeLog(`bake blocked: ${formatServoFeasibilityFinding(feasibility.invalid[0])}`, "alert");
@@ -6719,7 +6772,7 @@ async function bakeToAllBoards(onlyIps = null, mode = onlyIps ? "targeted" : "al
   // Conformance: tracks are auto-fixed to the firmware keyframe contract in
   // sliceForBoard, but a motion that still exceeds the firmware's total
   // keyframe/track budget can't be baked — block + name it (servo-4hc).
-  const conformance = analyzeBakeConformance(lib);
+  const conformance = analyzeBakeConformance(bakeLib);
   if (conformance.errors.length) {
     bakeLog(`bake blocked: ${formatBakeConformanceError(conformance.errors[0])}`, "alert");
     return;
@@ -6774,7 +6827,7 @@ async function bakeToAllBoards(onlyIps = null, mode = onlyIps ? "targeted" : "al
   // real UTF-8 byte counts; JSON.stringify().length would lie on non-ASCII.
   const encoder = new TextEncoder();
   const plans = targets.map(({ ip, boardId }) => {
-    const blob = sliceForBoard(lib, boardId);
+    const blob = sliceForBoard(bakeLib, boardId);
     const json = JSON.stringify(blob);
     const bytes = encoder.encode(json);
     let prev = null;
