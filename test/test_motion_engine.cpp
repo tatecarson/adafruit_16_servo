@@ -308,7 +308,11 @@ static void test_prepared_start_arms_motion_and_servo_glide() {
   ASSERT_TRUE(startMotionPreparedFromStorage("tidal-drift", 7700, false));
   ASSERT_TRUE(motionRuntime.active);
   ASSERT_EQ(motionRuntime.startMs, 7700);
-  ASSERT_EQ(motorState.currentSpeed, 0);
+  // A pre-roll must NOT touch motor state (servo-i0v). Sequencer DC lanes bake
+  // to `ROTATE` chord steps that fire immediately before this command, so
+  // zeroing here would silently wipe the operator's authored speed and leave
+  // the motor dead for the whole Motion. That was the original bug.
+  ASSERT_EQ(motorState.currentSpeed, 40);
   ASSERT_TRUE(servoState[0].moving);
   ASSERT_TRUE(servoState[0].linearMove);
   ASSERT_EQ(servoState[0].startPulse, 375);

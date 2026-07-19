@@ -1,7 +1,7 @@
 # Sequencer DC lanes — design
 
 Date: 2026-07-19
-Status: designed, not implemented
+Status: implemented (servo-i0v)
 
 ## Problem
 
@@ -34,7 +34,8 @@ moot: the new path emits plain `ROTATE`, the command already known to work.
    how existing motions drive the motors differently per board.
 4. **The ±50 cap stays**, enforced in the lane editor. Firmware `ROTATE`
    remains permissive at ±100 for manual testing.
-5. **No firmware change** in phase 1. The design is entirely browser-side.
+5. ~~**No firmware change** in phase 1.~~ **Wrong — corrected during implementation.**
+   Two firmware lines had to change; see [Firmware corrections](#firmware-corrections).
 
 ## Authoring model
 
@@ -102,9 +103,13 @@ model, so blanks render as `–` with an explanatory tooltip.
 **Arrange dialog** gains three read-only lanes below the step lane, sharing its
 x-axis and zoom, rendering the *flattened* result so the view matches the bake.
 
-Rendering reuses `motionConnectionPoints(points, duration, { kind: "dc" })`,
-which already produces the horizontal-hold-then-vertical-jump polyline DC step
-semantics need and is already covered by `test/verify_editor_keyframes.mjs`.
+Rendering does **not** reuse `motionConnectionPoints` as planned. That maps a
+time axis to percentages, but the Arrange track's block widths are floored at
+`minBlockPx`, so pixel position is not proportional to time and a time-based
+polyline would drift out of alignment with the blocks above it. `renderDcLanes`
+instead emits one bar per display block, reusing the block geometry directly —
+exact alignment, and a step function by construction, which is what a held
+motor speed is anyway.
 
 ## Deletions
 
@@ -118,10 +123,42 @@ servo_controller.html:
 
 Roughly 120 lines of the most intricate code in the file.
 
+## Firmware corrections
+
+The design claimed phase 1 was browser-only. Implementation disproved that
+twice, both times because a guard written for DC-inside-Motions became actively
+harmful once DC moved out.
+
+**1. `startMotionPreparedFromStorage` zeroed the motor unconditionally.** The
+pre-roll called `setMotorSpeedQuiet(0)` to stop a completed DC track running on
+through a servo glide. With DC on lanes, that call lands *after* the chord and
+wipes it — the motor stays dead for the whole Motion. Removed. This is the same
+shape as the original unexplained bug, and is very likely what it actually was.
+
+**2. `ROTATE` cancelled Motion playback.** Sensible when both drove the motor
+and had to arbitrate. Now they touch disjoint hardware, so a lane chord landing
+mid-Sequence would abort the very Motion it was authored to run alongside.
+`ROTATE` still cancels Sequences (a manual override should take over the show);
+the `sequenceFiringStep` guard keeps a chord from aborting its own runner.
+
+The pre-roll fix is pinned by `test/test_motion_engine.cpp`. The `ROTATE`
+fix is pinned by source assertions in `test/verify_dc_lanes.mjs`, since the
+C++ host suite does not link `command_interface.h`.
+
+## A pre-existing bug found on the way
+
+`compactStepForDevice` baked `target` as whatever the `<select>` produced — the
+string `"2"`. Firmware parses it with `bakeParseInteger`, which fails on the
+quote and falls back to 255, "addressed to no board". **Every board-targeted
+step in every baked Sequence has been silently dead.** Schema §3 always
+specified a bare integer. Now coerced with `Number(target)` and pinned by a
+test. Unrelated to DC lanes, but it blocked them: the first end-to-end run
+showed chords reaching EEPROM and never firing.
+
 ## Phasing
 
-**Phase 1 — browser only.** No firmware change, no reflash. Existing firmware
-ignores the now-absent DC tracks.
+**Phase 1 — browser, plus the two firmware corrections above.** Boards need a
+reflash for lanes to work; without it, chords are wiped by the pre-roll.
 
 **Phase 2 — optional, separate.** Strip `MOTION_TRACK_DC` handling from
 `motion_engine.h` and `servo_runtime.h` to reclaim OTA flash against
@@ -130,10 +167,17 @@ with an authoring problem.
 
 ## Migration
 
-Small: one motion (`library-test`) carries DC content, on boards 1 and 3.
-Library load strips DC tracks from all motions and logs what it dropped —
-motion name, board, keyframe count — so the envelopes can be re-authored in the
-lane. Nothing else in `library.json` is touched.
+`normalizeMotion` rebuilds tracks from the now servo-only `MOTION_TRACK_SPECS`,
+so legacy DC tracks stop surviving a save on their own. Dropping an authored
+envelope silently would be rude, so `reportLegacyDcTracks` names each one once
+per page load (console plus the library status line).
+
+`library.json` in this repo was migrated in place: the three inert DC tracks
+were removed from `library-test`, and `calm-drift` was seeded with
+`dc: { "1": -40, "3": 25 }` so there is something to verify on hardware
+immediately. That seed is a placeholder, not a reconstruction — the original
+25-keyframe envelope has no equivalent in a per-step model and was not
+translated.
 
 ## Validation
 
@@ -161,5 +205,20 @@ through phase 1 and are removed with phase 2.
 
 ## Open
 
-The underlying DC-in-Motion bug is designed around, not fixed. If DC ever
-returns to Motions, it returns unexplained.
+The original DC-in-Motion bug was never root-caused. The unconditional
+`setMotorSpeedQuiet(0)` in the pre-roll is a strong candidate — every affected
+Sequence step went through `MOTION <id> PREP <ms>` — but that was never
+confirmed against hardware, and it does not explain a bare `MOTION <id>` with a
+dense DC track failing. If DC ever returns to Motions, it returns unexplained.
+
+## Verified
+
+- `test/verify_dc_lanes.mjs` — 31 checks on the flattener, its consumers, and
+  the firmware invariants the lanes depend on
+- Full host suite green (`make -C test test`)
+- End-to-end: real `library.json` → browser bake code → firmware
+  `sequence_engine.h` + `motion_engine.h` compiled on host. Board 1 holds −40
+  and board 3 holds +25 across the pre-roll and the whole Motion; board 2,
+  which has no lane values, stays at 0.
+- Browser: DOM round-trip through the lane inputs, `target` baking as a number,
+  and the Arrange lanes rendering across the pre-roll block.

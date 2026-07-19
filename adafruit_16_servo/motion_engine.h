@@ -357,9 +357,13 @@ inline bool startMotionPreparedFromStorage(const char* motionId, uint32_t prepar
   unsigned long prepareStartMs = millis();
   if (!startMotionFromStorageAt(motionId, prepareStartMs + prepareMs, false)) return false;
 
-  // A completed DC track can otherwise leave the motor running throughout a
-  // servo pre-roll. Stop it until the newly armed Motion begins.
-  setMotorSpeedQuiet(0);
+  // NOTE (servo-i0v): this used to unconditionally cut the motor to 0 here,
+  // guarding against a completed DC track running on through a servo pre-roll.
+  // Motions no longer carry DC tracks — motor speed is authored on Sequencer DC
+  // lanes, which bake to `ROTATE` chord steps immediately before this one. Zeroing
+  // here would wipe that chord and leave the motor silent for the whole Motion,
+  // so the pre-roll must leave motor state alone. cancelMotionPlayback() still
+  // stops any legacy in-flight DC track.
 
   for (uint8_t i = 0; i < motionRuntime.trackCount; i++) {
     MotionTrack& track = motionRuntime.tracks[i];
