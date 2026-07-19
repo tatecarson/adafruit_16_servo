@@ -34,7 +34,8 @@ sim-verify:
 	  node verify_editor_keyframes.mjs && \
 	  node verify_seq_preview.mjs && \
 	  node verify_ids.mjs && \
-	  node verify_seq_arrangement.mjs; \
+	  node verify_seq_arrangement.mjs && \
+	  node verify_seq_bridges.mjs; \
 	fi
 
 # Aggregate run of every host suite. The legacy time-multiplier suite was

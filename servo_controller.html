@@ -3499,6 +3499,9 @@ const SCHEMA_VERSION = 1;
 // playback (servo-4hc).
 const MOTION_MAX_KEYFRAMES = 64;
 const MOTION_MAX_TRACKS = 17;
+// Mirror of firmware SEQ_MAX_STEPS (adafruit_16_servo/servo_runtime.h). Baked
+// sequences (including auto-inserted transition bridges) must fit this many steps.
+const SEQ_MAX_STEPS = 16;
 // EEPROM slot byte budget for a whole per-board bake blob (storage.h
 // STORAGE_PAYLOAD_MAX). The firmware refuses to write a larger slot; guard it
 // before POST so the operator gets a clear "trim the library" message rather
@@ -6407,6 +6410,9 @@ function formatBakeConformanceError(e) {
 // is conformed to the firmware's keyframe contract (servo-4hc). Sequences,
 // setlists, schedulerConfig, activeSetlistId are full-library on every
 // board so any board can become leader (per schema §5).
+// === SEQ-BRIDGE-CORE START ===
+// (functions added in later tasks)
+// === SEQ-BRIDGE-CORE END ===
 function sliceForBoard(lib, boardId) {
   const motions = [];
   for (const m of lib.motions || []) {
