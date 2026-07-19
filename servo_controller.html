@@ -6538,6 +6538,22 @@ function insertSequenceBridges(steps, motions, opts) {
     : null;
   return { steps:outSteps, bridgeMotions, summary, error };
 }
+// Layer 1: when creating a new motion, seed each servo track's first keyframe
+// from the previous motion's exit pose so authoring "starts where the last one
+// ended". Convenience only (reduces generated bridges); mutates + returns newMotion.
+function seedFirstKeyframesFromExit(prevMotion, newMotion) {
+  if (!prevMotion || !newMotion) return newMotion;
+  const exit = bridgeServoPose(prevMotion, "exit");
+  for (const t of (newMotion.tracks || [])) {
+    if (t.kind !== "servo") continue;
+    const key = `${t.boardId}:servo:${t.channel}`;
+    if (!(key in exit)) continue;
+    if (!Array.isArray(t.keyframes)) t.keyframes = [];
+    if (t.keyframes.length && Number(t.keyframes[0].atMs) === 0) t.keyframes[0].value = exit[key];
+    else t.keyframes.unshift({ atMs:0, value:exit[key] });
+  }
+  return newMotion;
+}
 // === SEQ-BRIDGE-CORE END ===
 function sliceForBoard(lib, boardId) {
   const motions = [];

@@ -97,5 +97,21 @@ eq("motion after opaque step gets a DMOVE cold-start bridge",
 const many = Array.from({length:20},()=>({cmd:"MOTION rise",durationMs:1000}));
 eq("over-budget sequence reports an error", insertSequenceBridges(many, lib, wopts).error.code, "bridge-budget");
 
+// --- Task 5: seedFirstKeyframesFromExit ---
+const prev = { tracks:[
+  {kind:"servo",boardId:1,channel:0,keyframes:[{atMs:0,value:0},{atMs:1000,value:70}]},
+  {kind:"dc",   boardId:1,channel:0,keyframes:[{atMs:0,value:0},{atMs:1000,value:40}]},
+]};
+const fresh = { tracks:[
+  {kind:"servo",boardId:1,channel:0,keyframes:[{atMs:0,value:0}]},
+  {kind:"servo",boardId:2,channel:1,keyframes:[{atMs:0,value:0}]},
+  {kind:"dc",   boardId:1,channel:0,keyframes:[{atMs:0,value:0}]},
+]};
+seedFirstKeyframesFromExit(prev, fresh);
+eq("servo keyframe-0 seeded from previous exit", fresh.tracks[0].keyframes[0].value, 70);
+eq("servo with no previous exit stays at 0", fresh.tracks[1].keyframes[0].value, 0);
+eq("dc tracks are never seeded", fresh.tracks[2].keyframes[0].value, 0);
+eq("no previous motion is a safe no-op", seedFirstKeyframesFromExit(null, {tracks:[]}).tracks, []);
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);
