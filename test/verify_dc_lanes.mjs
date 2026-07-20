@@ -177,14 +177,33 @@ const chords = out => out.steps.filter(s => s.dcChord).map(s => `${s.cmd}@${s.ta
     "compactStepForDevice bakes target as a number, not the select's string");
 }
 
-// --- one flattener, two consumers --------------------------------------
-// Live playback and the bake must agree. Divergence between those paths is the
-// bug class this whole feature was built to retire, so assert both call it.
+// --- emitAll: previewing one step out of sequence ----------------------
+{
+  const out = core.flattenDcLanes([step("MOTION a", 1000, { 1: 0 })], { loop: true, emitAll: true });
+  check(chords(out).join(",") === "ROTATE 0@1",
+    "emitAll sends an explicit 0 that the sticky diff would otherwise suppress");
+}
+{
+  const out = core.flattenDcLanes([step("MOTION a", 1000, { 1: 30, 3: -20 })], { loop: true, emitAll: true });
+  check(chords(out).join(",") === "ROTATE 30@1,ROTATE -20@3", "emitAll sends every speed named on the step");
+  check(out.steps[out.steps.length - 1].cmd === "MOTION a", "the step's own cmd still fires last");
+}
+{
+  const out = core.flattenDcLanes([step("MOTION a", 1000, { 1: 30 })], { loop: false, emitAll: true });
+  check(chords(out).length === 1, "emitAll does not append a trailing park (the step is not a whole sequence)");
+}
+
+// --- one flattener, THREE consumers ------------------------------------
+// Bake, live playback, and per-step Preview must agree. Divergence between any
+// of these is the bug class this feature was built to retire. Preview was
+// missed on the first pass and silently ignored the lane.
 {
   const bakeCall = /function buildBakeLibrary[\s\S]{0,2000}?flattenDcLanes\(/.test(html);
   const liveCall = /function playSequenceFrom[\s\S]{0,2000}?flattenDcLanes\(/.test(html);
+  const previewCall = /dataset\.preview[\s\S]{0,1200}?flattenDcLanes\(/.test(html);
   check(bakeCall, "buildBakeLibrary flattens DC lanes");
   check(liveCall, "the browser live sequence player flattens DC lanes through the same function");
+  check(previewCall, "the per-step Preview button flattens DC lanes through the same function");
 }
 
 // --- firmware invariants the lanes depend on ----------------------------

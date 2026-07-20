@@ -7229,8 +7229,14 @@ function isMotorStopCmd(cmd) {
 // Returns { steps, lane, error }. `lane` is the { atMs, boardId, value }
 // timeline the Arrange view renders, so the drawing and the bake can never
 // disagree about what the motor does.
+// `emitAll` drops the "already at this speed" suppression and the trailing
+// park. Previewing a single step fires it out of sequence, so there is no
+// accumulated lane state to diff against — an explicit `0` has to reach the
+// motor rather than being suppressed because the tracked state happens to
+// start at 0.
 function flattenDcLanes(steps, options = {}) {
   const loop = !!options.loop;
+  const emitAll = !!options.emitAll;
   const maxSteps = options.maxSteps != null ? options.maxSteps : SEQ_MAX_STEPS;
   const out = [];
   const lane = [];
@@ -7254,7 +7260,7 @@ function flattenDcLanes(steps, options = {}) {
     const dc = readStepDcMap(step);
     for (const boardId of DC_LANE_BOARD_IDS) {
       if (!(boardId in dc)) continue;
-      if (current.get(boardId) === dc[boardId]) continue;
+      if (!emitAll && current.get(boardId) === dc[boardId]) continue;
       emit(boardId, dc[boardId]);
     }
     const { dc: _authoringOnly, ...runnable } = step || {};
@@ -7273,7 +7279,7 @@ function flattenDcLanes(steps, options = {}) {
 
   // A non-looping sequence ends by parking whatever is still turning. A loop
   // carries its state around the wrap instead, so the motor runs continuously.
-  if (!loop) {
+  if (!loop && !emitAll) {
     for (const boardId of DC_LANE_BOARD_IDS) {
       if (current.get(boardId) === 0) continue;
       emit(boardId, 0);
@@ -8270,8 +8276,14 @@ seqStepsEl.addEventListener("click", async e => {
   const seq = readSequenceFromDom();
   saveCurrentSequence(seq);
   const step = normalizeStep(seq.steps[parseInt(preview, 10)]);
-  setSeqStatus(`preview ${pad2(parseInt(preview, 10) + 1)} · ${step.cmd}`, "amber");
-  await dispatchSequenceStep(step);
+  // Preview fires this step the way playback would, DC lane included — through
+  // the same flattener, so a previewed step and a played step cannot diverge.
+  // emitAll because a step previewed out of sequence has no accumulated lane
+  // state: every speed it names must actually be sent.
+  const previewSteps = flattenDcLanes([step], { loop: true, emitAll: true }).steps;
+  const dcCount = previewSteps.length - 1;
+  setSeqStatus(`preview ${pad2(parseInt(preview, 10) + 1)} · ${step.cmd}${dcCount > 0 ? ` · ${dcCount} dc` : ""}`, "amber");
+  for (const runnable of previewSteps) await dispatchSequenceStep(runnable);
   setTimeout(pollOnce, 200);
 });
 seqStepsEl.addEventListener("dragstart", e => {
