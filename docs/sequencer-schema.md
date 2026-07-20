@@ -61,10 +61,10 @@ A keyframed pattern across servos and DC motors. Cluster-scope by default; board
       ]
     },
     {
-      "kind": "dc",
-      "boardId": 1,
+      "kind": "servo",
+      "boardId": 2,
       "channel": 0,
-      "label": "spool",
+      "label": "right wing",
       "keyframes": [
         { "atMs": 0,    "value":  0  },
         { "atMs": 2000, "value": 40  },
@@ -91,9 +91,9 @@ A keyframed pattern across servos and DC motors. Cluster-scope by default; board
 
 | Field | Type | Required | Notes |
 |---|---|---|---|
-| `kind` | `"servo"` \| `"dc"` | yes | Determines `value` range. |
+| `kind` | `"servo"` | yes | Motions are servo-only. DC speed is authored on Sequence steps — see [DC lanes](#dc-lanes). |
 | `boardId` | 1 \| 2 \| 3 | yes | Stable per-device ID. |
-| `channel` | integer | yes | Servo: 0–2 (current hardware uses 3 of 16 PCA9685 channels). DC: 0. |
+| `channel` | integer | yes | 0–2 (current hardware uses 3 of 16 PCA9685 channels). |
 | `label` | string | no | ≤32 chars. Composer's note. Not used by firmware. |
 | `keyframes` | Keyframe[] | yes | ≥ 1 keyframe; first must have `atMs: 0`. A one-keyframe track is a constant hold. |
 
@@ -104,17 +104,17 @@ A `(boardId, kind, channel)` triple must be unique within a Motion (no two track
 | Field | Type | Required | Notes |
 |---|---|---|---|
 | `atMs` | integer ≥ 0 | yes | Strictly increasing within a track. First keyframe must be `atMs: 0`; the last must not exceed the Motion's `durationMs`. Its value is held implicitly for any remaining time. |
-| `value` | number | yes | Servo: 0–100 absolute percent down (`0` = fully up/retracted, `100` = fully down/lowered). DC Motion: −50..+50 (signed speed, safety-limited). |
+| `value` | number | yes | 0–100 absolute percent down (`0` = fully up/retracted, `100` = fully down/lowered). |
 | `easing` | `"linear"` | no | Default `"linear"`. Only `"linear"` is supported in `schemaVersion: 1`. Reserved values for future use: `"easeIn"`, `"easeOut"`, `"easeInOut"`, `"hold"`. The `easing` on a keyframe controls how the value is approached **from the previous keyframe** (i.e., it's the easing of the incoming segment). The first keyframe's `easing` is ignored. |
-| `bypassRamp` | boolean | no | DC tracks only. Historically reserved for opting out of a firmware speed-ramp on the DC motor. That ramp path has since been removed — DC values are always written directly — so this field has no effect and is accepted but ignored. May be repurposed in a future schema version. |
+| `bypassRamp` | boolean | no | Legacy DC-track field. Motions no longer carry DC tracks; accepted and ignored. |
 
 ### Interpolation rules (firmware)
 
 - Between two adjacent keyframes at `t0`/`v0` and `t1`/`v1`, with `t0 < t < t1`:
   - `linear`: `value(t) = v0 + (v1 - v0) * (t - t0) / (t1 - t0)`
 - Servo values are interpreted as absolute percent-down positions, then mapped through each channel's calibrated up/down travel before being written to the PCA9685 every tick.
-- DC values are written **directly** to the motor outputs and safety-clamped to −50..+50 during Motion loading and playback. The keyframe curve is the only smoothing applied — author smooth DC ramps as additional keyframes. `STOP` and any cancelling command cut DC to 0 abruptly via the same direct path. (`ROTATE` remains a separate manual command with a wider range and likewise sets motor speed instantly; there is no firmware speed-ramp.)
 - Motion playback ends exactly at `durationMs`; each track implicitly holds its final keyframe value until then.
+- Motions do not touch the DC motor. `ROTATE` therefore no longer cancels Motion playback — the two drive disjoint hardware.
 
 ### Servo slew-rate authoring notes
 
@@ -167,15 +167,43 @@ An ordered list of commands with explicit durations.
 |---|---|---|---|
 | `cmd` | string | yes | Any command the existing parser accepts: `MOTION <id>`, `PLAY n`, `SPLAY n [LOOP]`, `ROTATE <-100..100>`, `RIG ...`, `MOVE <ch> <deg> <ms>`, `S<ch> <deg>`, `TIMESCALE <n>`, `STOP`, etc. Max 96 chars. |
 | `durationMs` | integer ≥ 0 | yes | How long until the next step fires. `0` = fire next step on the same tick (used for "chord" parallel firing across boards). |
-| `target` | `"all"` \| 1 \| 2 \| 3 | yes | `"all"` broadcasts; a `boardId` restricts execution to that one board. Boards skip steps not addressed to them. |
+| `target` | `"all"` \| 1 \| 2 \| 3 | yes | `"all"` broadcasts; a `boardId` restricts execution to that one board. Boards skip steps not addressed to them. Baked as a **bare integer** — a quoted `"2"` fails `bakeParseInteger` and the firmware treats the step as addressed to no board at all. |
+| `dc` | object | no | Authoring-only per-board motor speeds — see [DC lanes](#dc-lanes). Stripped at bake time; never reaches the device. |
 | `label` | string | no | ≤64 chars. Composer's note. Never sent to firmware (stripped at bake time). |
 | `hold` | boolean | no | Composition-only. Stripped at bake time. |
+
+### DC lanes
+
+DC motor speed is authored on the Sequence, not inside a Motion. Each step
+carries an optional `dc` map of board id to signed speed:
+
+```json
+{ "cmd": "MOTION tidal-drift", "durationMs": 8000, "target": "all",
+  "dc": { "1": -40, "3": 25 } }
+```
+
+- Range is −50..+50, clamped by the editor. (Manual `ROTATE` keeps its wider
+  ±100 range; the narrower lane cap is an authoring guardrail.)
+- Speeds are **sticky**. A board absent from the map holds its last commanded
+  speed — a motor has a running state, not a pose. `null` / omitted means
+  *unchanged*; `0` means *stop*.
+- At bake time the lanes flatten into targeted zero-duration `ROTATE` chord
+  steps emitted immediately before the step they were authored against, so the
+  device schema is unchanged and no new firmware command exists. Each change
+  costs one step against the 16-step budget.
+- A `STOP` step zeroes every motor, and the flattener resets its tracked state
+  there. A non-looping Sequence ends by parking any board still turning.
+- Flattening runs **after** pre-roll rewriting, so a DC change on a step that
+  became `MOTION <id> PREP <ms>` takes effect at the step boundary — during the
+  servo glide, not at the Motion's true start. The Arrange view draws the lane
+  across the pre-roll block so this overlap is visible while authoring.
 
 ### Step execution rules (firmware)
 
 - Each board runs the sequence in parallel; per-board skipping makes coordination implicit.
 - A new command interrupts whatever the board was doing — there is no queueing.
 - `STOP` halts the current Sequence's clock as well as any in-flight Motion / SPLAY / ROTATE on that board.
+- `ROTATE` cancels a running Sequence (a manual override takes over the show) but **not** a running Motion: Motions are servo-only, so the two no longer contend. A DC lane chord dispatched from inside a Sequence step does not abort its own runner.
 
 ---
 

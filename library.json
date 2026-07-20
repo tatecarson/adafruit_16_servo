@@ -1,395 +1,329 @@
 {
-  "schemaVersion": 1,
-  "motions": [
+ "schemaVersion": 1,
+ "motions": [
+  {
+   "id": "mt-rise01",
+   "name": "Rise",
+   "tags": [
+    "calm"
+   ],
+   "scope": "cluster",
+   "durationMs": 6000,
+   "tracks": [
     {
-      "id": "library-test",
-      "name": "library test",
-      "tags": [],
-      "scope": "cluster",
-      "durationMs": 8000,
-      "tracks": [
-        {
-          "kind": "servo",
-          "boardId": 1,
-          "channel": 0,
-          "label": "B1.S0",
-          "keyframes": [
-            {
-              "atMs": 0,
-              "value": 0
-            }
-          ]
-        },
-        {
-          "kind": "servo",
-          "boardId": 1,
-          "channel": 1,
-          "label": "B1.S1",
-          "keyframes": [
-            {
-              "atMs": 0,
-              "value": 0
-            }
-          ]
-        },
-        {
-          "kind": "servo",
-          "boardId": 1,
-          "channel": 2,
-          "label": "B1.S2",
-          "keyframes": [
-            {
-              "atMs": 0,
-              "value": 0
-            }
-          ]
-        },
-        {
-          "kind": "dc",
-          "boardId": 1,
-          "channel": 0,
-          "label": "B1.DC",
-          "keyframes": [
-            {
-              "atMs": 0,
-              "value": 0
-            },
-            {
-              "atMs": 400,
-              "value": -100
-            },
-            {
-              "atMs": 500,
-              "value": -84
-            },
-            {
-              "atMs": 600,
-              "value": -68
-            },
-            {
-              "atMs": 700,
-              "value": -52
-            },
-            {
-              "atMs": 800,
-              "value": -36
-            },
-            {
-              "atMs": 900,
-              "value": -19
-            },
-            {
-              "atMs": 1000,
-              "value": -3
-            },
-            {
-              "atMs": 1100,
-              "value": 13
-            },
-            {
-              "atMs": 1200,
-              "value": 29
-            },
-            {
-              "atMs": 1300,
-              "value": 45
-            },
-            {
-              "atMs": 1400,
-              "value": 61
-            },
-            {
-              "atMs": 1500,
-              "value": 45
-            },
-            {
-              "atMs": 1600,
-              "value": 29
-            },
-            {
-              "atMs": 1700,
-              "value": 13
-            },
-            {
-              "atMs": 1800,
-              "value": -3
-            },
-            {
-              "atMs": 1900,
-              "value": -19
-            },
-            {
-              "atMs": 2000,
-              "value": -36
-            },
-            {
-              "atMs": 2100,
-              "value": -52
-            },
-            {
-              "atMs": 2200,
-              "value": -68
-            },
-            {
-              "atMs": 2300,
-              "value": -84
-            },
-            {
-              "atMs": 2400,
-              "value": -100
-            },
-            {
-              "atMs": 3200,
-              "value": -100
-            },
-            {
-              "atMs": 4400,
-              "value": 95
-            },
-            {
-              "atMs": 5500,
-              "value": 95
-            }
-          ]
-        },
-        {
-          "kind": "servo",
-          "boardId": 2,
-          "channel": 0,
-          "label": "B2.S0",
-          "keyframes": [
-            {
-              "atMs": 0,
-              "value": 0
-            }
-          ]
-        },
-        {
-          "kind": "servo",
-          "boardId": 2,
-          "channel": 1,
-          "label": "B2.S1",
-          "keyframes": [
-            {
-              "atMs": 0,
-              "value": 0
-            }
-          ]
-        },
-        {
-          "kind": "servo",
-          "boardId": 2,
-          "channel": 2,
-          "label": "B2.S2",
-          "keyframes": [
-            {
-              "atMs": 0,
-              "value": 0
-            }
-          ]
-        },
-        {
-          "kind": "dc",
-          "boardId": 2,
-          "channel": 0,
-          "label": "B2.DC",
-          "keyframes": [
-            {
-              "atMs": 0,
-              "value": 0
-            }
-          ]
-        },
-        {
-          "kind": "servo",
-          "boardId": 3,
-          "channel": 0,
-          "label": "B3.S0",
-          "keyframes": [
-            {
-              "atMs": 0,
-              "value": 0
-            }
-          ]
-        },
-        {
-          "kind": "servo",
-          "boardId": 3,
-          "channel": 1,
-          "label": "B3.S1",
-          "keyframes": [
-            {
-              "atMs": 0,
-              "value": 0
-            }
-          ]
-        },
-        {
-          "kind": "servo",
-          "boardId": 3,
-          "channel": 2,
-          "label": "B3.S2",
-          "keyframes": [
-            {
-              "atMs": 0,
-              "value": 0
-            }
-          ]
-        },
-        {
-          "kind": "dc",
-          "boardId": 3,
-          "channel": 0,
-          "label": "B3.DC",
-          "keyframes": [
-            {
-              "atMs": 0,
-              "value": 0
-            },
-            {
-              "atMs": 2500,
-              "value": 89
-            },
-            {
-              "atMs": 5100,
-              "value": -57
-            },
-            {
-              "atMs": 6500,
-              "value": 100
-            }
-          ]
-        }
-      ]
-    }
-  ],
-  "sequences": [
-    {
-      "id": "new-sequence",
-      "name": "New Sequence",
-      "tags": [],
-      "steps": [
-        {
-          "cmd": "STOP",
-          "durationMs": 1000,
-          "target": "all",
-          "label": "",
-          "hold": false
-        }
-      ]
-    },
-    {
-      "id": "calm-drift",
-      "name": "Calm Drift",
-      "tags": [
-        "calm"
-      ],
-      "steps": [
-        {
-          "cmd": "MOTION library-test",
-          "durationMs": 8000,
-          "target": "all",
-          "label": "drift",
-          "hold": false
-        },
-        {
-          "cmd": "STOP",
-          "durationMs": 4000,
-          "target": "all",
-          "label": "settle",
-          "hold": true
-        }
-      ]
-    },
-    {
-      "id": "pulse",
-      "name": "Pulse",
-      "tags": [
-        "medium"
-      ],
-      "steps": [
-        {
-          "cmd": "MOTION library-test",
-          "durationMs": 6000,
-          "target": "all",
-          "label": "pulse",
-          "hold": false
-        }
-      ]
-    },
-    {
-      "id": "frantic",
-      "name": "Frantic",
-      "tags": [
-        "frantic"
-      ],
-      "steps": [
-        {
-          "cmd": "MOTION library-test",
-          "durationMs": 2000,
-          "target": "all",
-          "label": "burst",
-          "hold": false
-        },
-        {
-          "cmd": "MOTION library-test",
-          "durationMs": 2000,
-          "target": "all",
-          "label": "burst2",
-          "hold": false
-        }
-      ]
-    }
-  ],
-  "setlists": [
-    {
-      "id": "new-setlist",
-      "name": "New Setlist",
-      "mode": "ordered",
-      "entries": [],
-      "shuffleRules": {
-        "avoidSameTag": false,
-        "minGapEntries": 0,
-        "moodArc": "random",
-        "seed": 0
+     "kind": "servo",
+     "boardId": 3,
+     "channel": 0,
+     "label": "B3.S0",
+     "keyframes": [
+      {
+       "atMs": 0,
+       "value": 100
+      },
+      {
+       "atMs": 6000,
+       "value": 40
       }
+     ]
     },
     {
-      "id": "gallery-demo",
-      "name": "Gallery Demo",
-      "mode": "shuffle",
-      "entries": [
-        {
-          "seqId": "calm-drift",
-          "repeat": 1,
-          "gapMs": 3000,
-          "weight": 30
-        },
-        {
-          "seqId": "pulse",
-          "repeat": 1,
-          "gapMs": 1500,
-          "weight": 1
-        },
-        {
-          "seqId": "frantic",
-          "repeat": 2,
-          "gapMs": 500,
-          "weight": 1
-        }
-      ],
-      "shuffleRules": {
-        "avoidSameTag": false,
-        "minGapEntries": 0,
-        "moodArc": "random",
-        "seed": 0
+     "kind": "servo",
+     "boardId": 3,
+     "channel": 1,
+     "label": "B3.S1",
+     "keyframes": [
+      {
+       "atMs": 0,
+       "value": 100
+      },
+      {
+       "atMs": 6000,
+       "value": 43
       }
+     ]
+    },
+    {
+     "kind": "servo",
+     "boardId": 3,
+     "channel": 2,
+     "label": "B3.S2",
+     "keyframes": [
+      {
+       "atMs": 0,
+       "value": 100
+      },
+      {
+       "atMs": 6000,
+       "value": 46
+      }
+     ]
     }
-  ],
-  "activeSetlistId": null,
-  "schedulerConfig": {
-    "leaderBoardId": 1,
-    "graceMs": 10000,
-    "tagEnergy": []
+   ]
+  },
+  {
+   "id": "mt-sett02",
+   "name": "Settle",
+   "tags": [
+    "calm"
+   ],
+   "scope": "cluster",
+   "durationMs": 4500,
+   "tracks": [
+    {
+     "kind": "servo",
+     "boardId": 3,
+     "channel": 0,
+     "label": "B3.S0",
+     "keyframes": [
+      {
+       "atMs": 0,
+       "value": 40
+      },
+      {
+       "atMs": 4500,
+       "value": 85
+      }
+     ]
+    },
+    {
+     "kind": "servo",
+     "boardId": 3,
+     "channel": 1,
+     "label": "B3.S1",
+     "keyframes": [
+      {
+       "atMs": 0,
+       "value": 43
+      },
+      {
+       "atMs": 4500,
+       "value": 88
+      }
+     ]
+    },
+    {
+     "kind": "servo",
+     "boardId": 3,
+     "channel": 2,
+     "label": "B3.S2",
+     "keyframes": [
+      {
+       "atMs": 0,
+       "value": 46
+      },
+      {
+       "atMs": 4500,
+       "value": 91
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "mt-ripp03",
+   "name": "Ripple",
+   "tags": [
+    "medium"
+   ],
+   "scope": "cluster",
+   "durationMs": 6000,
+   "tracks": [
+    {
+     "kind": "servo",
+     "boardId": 3,
+     "channel": 0,
+     "label": "B3.S0",
+     "keyframes": [
+      {
+       "atMs": 0,
+       "value": 85
+      },
+      {
+       "atMs": 3000,
+       "value": 55
+      },
+      {
+       "atMs": 6000,
+       "value": 85
+      }
+     ]
+    },
+    {
+     "kind": "servo",
+     "boardId": 3,
+     "channel": 1,
+     "label": "B3.S1",
+     "keyframes": [
+      {
+       "atMs": 0,
+       "value": 88
+      },
+      {
+       "atMs": 3000,
+       "value": 59
+      },
+      {
+       "atMs": 6000,
+       "value": 88
+      }
+     ]
+    },
+    {
+     "kind": "servo",
+     "boardId": 3,
+     "channel": 2,
+     "label": "B3.S2",
+     "keyframes": [
+      {
+       "atMs": 0,
+       "value": 91
+      },
+      {
+       "atMs": 3000,
+       "value": 63
+      },
+      {
+       "atMs": 6000,
+       "value": 91
+      }
+     ]
+    }
+   ]
   }
+ ],
+ "sequences": [
+  {
+   "id": "sq-warm01",
+   "name": "Warm Up",
+   "tags": [
+    "calm"
+   ],
+   "steps": [
+    {
+     "cmd": "MOTION mt-rise01",
+     "durationMs": 6000,
+     "target": "all",
+     "label": "rise \u00b7 motor 25",
+     "hold": false,
+     "dc": {
+      "3": 25
+     }
+    },
+    {
+     "cmd": "MOTION mt-sett02",
+     "durationMs": 4500,
+     "target": "all",
+     "label": "settle \u00b7 motor off",
+     "hold": false,
+     "dc": {
+      "3": 0
+     }
+    }
+   ]
+  },
+  {
+   "id": "sq-drift1",
+   "name": "Drift Cycle",
+   "tags": [
+    "calm"
+   ],
+   "steps": [
+    {
+     "cmd": "MOTION mt-rise01",
+     "durationMs": 6000,
+     "target": "all",
+     "label": "rise \u00b7 fwd 20",
+     "hold": false,
+     "dc": {
+      "3": 20
+     }
+    },
+    {
+     "cmd": "MOTION mt-ripp03",
+     "durationMs": 6000,
+     "target": "all",
+     "label": "ripple \u00b7 rev 30",
+     "hold": false,
+     "dc": {
+      "3": -30
+     }
+    },
+    {
+     "cmd": "MOTION mt-sett02",
+     "durationMs": 4500,
+     "target": "all",
+     "label": "settle \u00b7 motor off",
+     "hold": false,
+     "dc": {
+      "3": 0
+     }
+    }
+   ]
+  },
+  {
+   "id": "sq-pulse1",
+   "name": "Motor Pulse",
+   "tags": [
+    "medium"
+   ],
+   "steps": [
+    {
+     "cmd": "MOTION mt-ripp03",
+     "durationMs": 6000,
+     "target": "all",
+     "label": "ripple \u00b7 motor 40",
+     "hold": false,
+     "dc": {
+      "3": 40
+     }
+    },
+    {
+     "cmd": "STOP",
+     "durationMs": 2000,
+     "target": "all",
+     "label": "cut",
+     "hold": false
+    }
+   ]
+  }
+ ],
+ "setlists": [
+  {
+   "id": "bench-test",
+   "name": "Bench Test",
+   "mode": "ordered",
+   "entries": [
+    {
+     "seqId": "sq-warm01",
+     "repeat": 1,
+     "gapMs": 2000,
+     "weight": 1
+    },
+    {
+     "seqId": "sq-drift1",
+     "repeat": 1,
+     "gapMs": 3000,
+     "weight": 1
+    },
+    {
+     "seqId": "sq-pulse1",
+     "repeat": 1,
+     "gapMs": 2000,
+     "weight": 1
+    }
+   ],
+   "shuffleRules": {
+    "avoidSameTag": false,
+    "minGapEntries": 0,
+    "moodArc": "random",
+    "seed": 0
+   }
+  }
+ ],
+ "activeSetlistId": "bench-test",
+ "schedulerConfig": {
+  "leaderBoardId": 3,
+  "graceMs": 10000,
+  "tagEnergy": []
+ }
 }

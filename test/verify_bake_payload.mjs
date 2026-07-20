@@ -48,6 +48,7 @@ function block(start, end) {
 }
 
 const bridgeCore = block("// === SEQ-BRIDGE-CORE START ===", "// === SEQ-BRIDGE-CORE END ===");
+const dcLaneCore = block("// === DC-LANE-CORE START ===", "// === DC-LANE-CORE END ===");
 const payloadCore = block("// === BAKE-PAYLOAD-CORE START ===", "// === BAKE-PAYLOAD-CORE END ===");
 const dir = mkdtempSync(join(tmpdir(), "bake-payload-core-"));
 const modulePath = join(dir, "core.mjs");
@@ -60,6 +61,7 @@ const STORAGE_DUAL_PAYLOAD_MAX = 4080;
 const STORAGE_PAYLOAD_MAX = 6000;
 function conformTrackForBake(track) { return track; }
 ${bridgeCore}
+${dcLaneCore}
 ${payloadCore}
 export { buildBakeLibrary, sliceForBoard, hydrateDeviceLibraryForEditor, validateLibraryReferences, bakeStorageTier };
 `, "utf8");

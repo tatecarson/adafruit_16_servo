@@ -16,7 +16,6 @@ const specs = [1, 2, 3].flatMap(boardId => [
   { kind: "servo", boardId, channel: 0 },
   { kind: "servo", boardId, channel: 1 },
   { kind: "servo", boardId, channel: 2 },
-  { kind: "dc", boardId, channel: 0 },
 ]);
 const track = (kind, boardId, channel, values) => ({
   kind, boardId, channel,
@@ -51,12 +50,10 @@ check(/previousMotionId\s*=\s*telemetryMotionId\s*\|\|\s*lastBakedMotionId/.test
 const previous = motion("arc", [
   track("servo", 1, 0, [[0, 0], [8000, 100]]),
   track("servo", 2, 1, [[0, 20], [8000, 80]]),
-  track("dc", 1, 0, [[0, 0], [8000, 45]]),
 ]);
 const replay = motion("arc", [
   track("servo", 1, 0, [[0, 0], [8000, 100]]),
   track("servo", 2, 1, [[0, 20], [8000, 80]]),
-  track("dc", 1, 0, [[0, 0], [8000, 45]]),
 ]);
 const replayPlan = context.plan(previous, replay, specs);
 check(replayPlan.durationMs === 7700, "full-range replay gets the measured 7.7s warm-up");
@@ -67,9 +64,6 @@ check(replayPlan.moves.some(move => move.boardId === 1 && move.channel === 0 && 
   "board 1 rewinds to its first keyframe");
 check(replayPlan.moves.some(move => move.boardId === 2 && move.channel === 1 && move.toValue === 20),
   "board 2 rewinds to its first keyframe");
-check(JSON.stringify(replayPlan.dcStopBoardIds) === "[1]",
-  "a prior nonzero DC endpoint is stopped during servo warm-up");
-
 const settled = motion("hold", [track("servo", 1, 0, [[0, 50], [8000, 50]])]);
 const settledPlan = context.plan(settled, settled, specs);
 check(settledPlan.durationMs === 0 && settledPlan.moves.length === 0,
@@ -80,4 +74,4 @@ const tinyNext = motion("tiny", [track("servo", 1, 0, [[0, 10], [1000, 13]])]);
 check(context.plan(tinyPrevious, tinyNext, specs).durationMs === 0,
   "sub-five-percent drift does not add a perceptible warm-up");
 
-console.log(`\n${passed}/13 baked Motion pre-roll checks passed.`);
+console.log(`\n${passed}/12 baked Motion pre-roll checks passed.`);

@@ -1042,6 +1042,36 @@
     background: var(--amber);
     border-color: var(--amber);
   }
+  /* Per-board DC lane inputs (servo-i0v). Three narrow cells; an empty one
+     means "unchanged", which is why the placeholder is a dash rather than 0. */
+  .seq-dc {
+    display: flex;
+    gap: 2px;
+  }
+  .seq-dc input {
+    width: 3.2em;
+    min-width: 0;
+    text-align: center;
+    padding: 2px 1px;
+    -moz-appearance: textfield;
+  }
+  .seq-dc input::-webkit-outer-spin-button,
+  .seq-dc input::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+  .seq-dc input::placeholder {
+    color: var(--ink-mute);
+  }
+  .seq-dc input:not(:placeholder-shown) {
+    border-color: var(--amber);
+    color: var(--amber);
+  }
+  .seq-dc-help {
+    cursor: help;
+    color: var(--ink-mute);
+    font-weight: 400;
+  }
   .seq-tools {
     display: flex;
     justify-content: space-between;
@@ -1144,6 +1174,29 @@
   .seq-arrange-tick { position: absolute; bottom: 7px; transform: translateX(-1px); white-space: nowrap; }
   .seq-arrange-tick::after { content: ""; position: absolute; left: 0; top: 15px; height: 9px; border-left: 1px solid var(--rule-hi); }
   .seq-arrange-track { position: relative; display: flex; align-items: stretch; height: 152px; margin-top: 12px; }
+  /* Parallel DC lanes (servo-i0v): one per board, sharing the step track's
+     x-axis so motor state is legible against the servo work at every instant.
+     Bars are step functions — a motor holds its speed until told otherwise. */
+  .seq-dc-lanes { margin-top: 8px; border-top: 1px solid var(--rule); padding-top: 6px; }
+  .seq-dc-lane { display: flex; align-items: stretch; height: 26px; margin-bottom: 2px; }
+  .seq-dc-lane.idle { opacity: 0.45; }
+  .seq-dc-lane-label {
+    flex: 0 0 auto; width: 52px; font-size: 10px; letter-spacing: 0.06em;
+    color: var(--ink-mute); align-self: center;
+  }
+  .seq-dc-lane-cells { display: flex; align-items: stretch; }
+  .seq-dc-cell {
+    position: relative; flex: 0 0 auto; display: flex; align-items: flex-end;
+    justify-content: center; border-right: 1px solid var(--bg);
+    background: color-mix(in srgb, var(--ink-mute) 12%, transparent);
+  }
+  .seq-dc-cell .fill { position: absolute; left: 0; right: 0; bottom: 0; }
+  .seq-dc-cell.fwd .fill { background: color-mix(in srgb, var(--phosphor) 55%, transparent); }
+  .seq-dc-cell.rev .fill { background: color-mix(in srgb, var(--amber) 55%, transparent); }
+  .seq-dc-cell.stop .fill { background: transparent; }
+  .seq-dc-cell .v {
+    position: relative; font-size: 10px; line-height: 26px; color: var(--ink);
+  }
   .seq-arrange-block {
     position: relative;
     flex: 0 0 auto;
@@ -2260,6 +2313,7 @@
             <th>cmd <span id="seqCmdHelp" title="" style="cursor:help;color:var(--ink-mute);font-weight:400">&#9432;</span></th>
             <th>duration</th>
             <th>target</th>
+            <th>dc <span class="seq-dc-help" title="Motor speed per board, -50..50. Blank = unchanged (the motor holds its last speed); 0 = stop. Each change costs one firmware step.">&#9432;</span></th>
             <th>label</th>
             <th>hold</th>
             <th>preview</th>
@@ -2459,7 +2513,7 @@
     <span class="num">// 06</span>
     <span class="label">Motion</span>
     <span class="rule"></span>
-    <span class="hint">12-track cluster keyframes · servo % down (0=up, 100=down) · dc safe limit -50..50 spd · live scrub · ⌥-drag a shape · ⇧-drag to select (Del removes) · Clr clears a row · shared library</span>
+    <span class="hint">9-track cluster keyframes · servo % down (0=up, 100=down) · motor speed moved to Sequencer DC lanes · live scrub · ⌥-drag a shape · ⇧-drag to select (Del removes) · Clr clears a row · shared library</span>
   </div>
 
   <div class="panel motion-editor">
@@ -3793,7 +3847,32 @@ async function saveLibraryToFile(lib) {
 function loadLibrary() {
   const raw = localStorage.getItem(LIB_KEY);
   if (!raw) return null;
-  try { return JSON.parse(raw); } catch { return null; }
+  try { return reportLegacyDcTracks(JSON.parse(raw)); } catch { return null; }
+}
+
+// DC left the Motion editor in servo-i0v, so normalizeMotion() rebuilds tracks
+// from the now servo-only MOTION_TRACK_SPECS and any legacy DC track simply
+// stops surviving a save. Dropping an operator's authored envelope silently
+// would be rude, so name each one once per page load; the speeds have to be
+// re-entered on the Sequencer's DC lanes.
+let legacyDcReported = false;
+function reportLegacyDcTracks(lib) {
+  if (legacyDcReported || !lib) return lib;
+  const dropped = [];
+  for (const motion of (lib.motions || [])) {
+    for (const track of (motion.tracks || [])) {
+      if (track?.kind !== "dc") continue;
+      const count = (track.keyframes || []).length;
+      if (count === 0) continue;
+      dropped.push(`${motion.name || motion.id} · B${track.boardId} (${count} keyframe${count === 1 ? "" : "s"})`);
+    }
+  }
+  legacyDcReported = true;
+  if (dropped.length) {
+    console.warn(`[servo-i0v] DC tracks dropped from Motions — re-author on the Sequencer DC lanes:\n  ${dropped.join("\n  ")}`);
+    setLibraryStorageStatus(`${dropped.length} legacy DC track${dropped.length === 1 ? "" : "s"} dropped — see console; re-author on Sequencer DC lanes`, "warn");
+  }
+  return lib;
 }
 
 function saveLibrary(lib) {
@@ -4036,14 +4115,16 @@ const motionLoopEl       = $("#motionLoop");
 // dispatches via the firmware's existing DOWN <ch> <pct> command which
 // uses percentToDegrees() against each channel's calibrated up/downDegrees
 // range, so live playback uses the full mechanical travel regardless of
-// totalDegrees. DC Motion tracks are capped at -50..50 speed for hardware
-// safety; this is intentionally narrower than the manual ROTATE command.
-const MOTION_DC_SPEED_LIMIT = 50;
+// totalDegrees.
+//
+// Motions are servo-only (servo-i0v). DC speed moved to per-step lanes on the
+// Sequence, where it flattens to ordinary ROTATE chord steps — see
+// DC-LANE-CORE. A motor carries a running speed, not a pose, so it never
+// belonged on the same keyframe clock as servo positions.
 const MOTION_TRACK_SPECS = [1, 2, 3].flatMap(boardId => ([
   { kind: "servo", boardId, channel: 0, label: `B${boardId}.S0`, min: 0, max: 100, unit: "%" },
   { kind: "servo", boardId, channel: 1, label: `B${boardId}.S1`, min: 0, max: 100, unit: "%" },
   { kind: "servo", boardId, channel: 2, label: `B${boardId}.S2`, min: 0, max: 100, unit: "%" },
-  { kind: "dc",    boardId, channel: 0, label: `B${boardId}.DC`, min: -MOTION_DC_SPEED_LIMIT, max: MOTION_DC_SPEED_LIMIT, unit: "spd" },
 ]));
 // Where a track sits when nothing else defines it (servo-xfq). A winch only
 // holds position while it is driven; unpowered, the ring's own weight pulls it
@@ -4057,26 +4138,13 @@ const MOTION_TRACK_SPECS = [1, 2, 3].flatMap(boardId => ([
 // are the same physical fact, so they must not be able to drift apart.
 const MOTION_SERVO_REST_PERCENT = 100;
 function defaultTrackValue(spec) {
-  return spec?.kind === "servo" ? MOTION_SERVO_REST_PERCENT : 0;
+  return MOTION_SERVO_REST_PERCENT;
 }
 
 const SERVO_FEASIBILITY_MS_PER_PERCENT = 77;
 const SERVO_STACCATO_MS_PER_PERCENT = 120;
 const SERVO_TINY_DELTA_PERCENT = 2;
 
-// DC live-playback throughput floor (servo-a1e). Unlike servos, DC tracks
-// have no slew constraint — the motor steps to a new speed instantly. Their
-// limit is transport-side: each value-changing DC keyframe emits one ROTATE
-// over the browser→board HTTP path during Play Live, and the Chrome
-// connection pool plus per-board processing rate can only push so many in a
-// window. Operator test matrix (docs/TESTING.md, servo-a1e.1) found ~2000ms
-// spacing (8s/4kf) plays cleanly while 1000ms (8s/8kf and 4s/4kf) already
-// drops roughly half the setpoints. So below WARN we flag "may lag" and
-// below MIN we block Play Live. These limits are LIVE-ONLY: baked MOTION
-// playback runs natively on the firmware with no HTTP throttle, so the
-// MOTION/bake path is intentionally not gated by them.
-const DC_LIVE_WARN_SPACING_MS = 2000;
-const DC_LIVE_MIN_SPACING_MS = 1200;
 
 let currentMotionId = null;
 let motionDirty = false;
@@ -4129,7 +4197,7 @@ function trackSpecKey(spec) {
 // same floor here, with one maximum duration shared by every board so the
 // subsequent synchronized MOTION start remains aligned across the cluster.
 function planBakedMotionPreRoll(previousMotion, nextMotion, trackSpecs, msPerPercent = 77) {
-  if (!previousMotion || !nextMotion) return { durationMs: 0, moves: [], dcStopBoardIds: [] };
+  if (!previousMotion || !nextMotion) return { durationMs: 0, moves: [] };
 
   const trackFor = (motion, spec) => (motion.tracks || []).find(track =>
     track.kind === spec.kind && Number(track.boardId) === Number(spec.boardId)
@@ -4144,15 +4212,9 @@ function planBakedMotionPreRoll(previousMotion, nextMotion, trackSpecs, msPerPer
 
   let maxDelta = 0;
   const pending = [];
-  const dcStopBoardIds = new Set();
   for (const spec of trackSpecs || []) {
     const previousTrack = trackFor(previousMotion, spec);
     const nextTrack = trackFor(nextMotion, spec);
-    if (spec.kind === "dc") {
-      const priorSpeed = endpoint(previousTrack, false);
-      if (priorSpeed != null && priorSpeed !== 0) dcStopBoardIds.add(Number(spec.boardId));
-      continue;
-    }
     if (spec.kind !== "servo") continue;
     const fromValue = endpoint(previousTrack, false);
     const toValue = endpoint(nextTrack, true);
@@ -4163,12 +4225,11 @@ function planBakedMotionPreRoll(previousMotion, nextMotion, trackSpecs, msPerPer
     pending.push({ boardId: Number(spec.boardId), channel: Number(spec.channel), toValue: Math.round(toValue) });
   }
 
-  if (!pending.length) return { durationMs: 0, moves: [], dcStopBoardIds: [] };
+  if (!pending.length) return { durationMs: 0, moves: [] };
   const durationMs = Math.max(800, Math.ceil(maxDelta * msPerPercent));
   return {
     durationMs,
     moves: pending.map(move => ({ ...move, durationMs })),
-    dcStopBoardIds: Array.from(dcStopBoardIds).sort((a, b) => a - b),
   };
 }
 // === BAKED-PREROLL-CORE END ===
@@ -4209,10 +4270,6 @@ async function sendBakedMotionWithPreRoll(originIp, motionId) {
     setMotionStatus(`preparing baked start pose · ${seconds}s`, "amber");
 
     const sends = [];
-    for (const boardId of plan.dcStopBoardIds) {
-      const ip = ipForBoardId(boardId);
-      if (ip) sends.push(sendCommandNow(ip, "ROTATE 0"));
-    }
     for (const move of plan.moves) {
       const ip = ipForBoardId(move.boardId);
       if (ip) sends.push(sendCommandNow(ip, `DMOVE ${move.channel} ${move.toValue} ${move.durationMs}`));
@@ -4392,101 +4449,12 @@ function analyzeLibraryServoFeasibility(lib) {
   return report;
 }
 
-// DC live-playback throughput analysis (servo-a1e). Each DC keyframe that
-// CHANGES the dispatched speed emits one ROTATE during Play Live; a keyframe
-// whose (rounded) value matches the previous one emits nothing, because the
-// live dispatch delta-gates on the rounded value (lastSent). So we first
-// reduce the keyframes to the actual ROTATE *event* stream — using the same
-// Math.round the dispatcher uses — and then measure the spacing between
-// consecutive events. The gap between two events is the runway the board has
-// to process the first before the second arrives; if it is below MIN the
-// second lands late (block), below WARN it may lag (warn). Measuring events
-// rather than adjacent keyframes avoids falsely flagging a fast change that
-// merely follows a long hold. Coalescing dense events into a scheduled queue
-// is deliberately out of scope here (model + warn only).
-function analyzeDcLiveEventPair(track, spec, fromEvt, toEvt, motion) {
-  const deltaSpeed = Math.abs(toEvt.value - fromEvt.value);
-  const spacingMs = Math.max(0, toEvt.atMs - fromEvt.atMs);
-  const finding = {
-    kind: "dc",
-    motionId: motion.id,
-    motionName: motion.name || motion.id,
-    trackKey: motionTrackKey(track),
-    label: spec.label,
-    boardId: spec.boardId,
-    channel: spec.channel,
-    fromAtMs: fromEvt.atMs,
-    toAtMs: toEvt.atMs,
-    fromValue: fromEvt.value,
-    toValue: toEvt.value,
-    deltaSpeed,
-    spacingMs,
-    minSpacingMs: DC_LIVE_MIN_SPACING_MS,
-    warnSpacingMs: DC_LIVE_WARN_SPACING_MS,
-    level: "ok",
-  };
-  if (spacingMs < DC_LIVE_MIN_SPACING_MS) finding.level = "invalid";
-  else if (spacingMs < DC_LIVE_WARN_SPACING_MS) finding.level = "warning";
-  return finding;
-}
-
-// Reduce normalized keyframes to the ROTATE events the live dispatcher would
-// actually emit: the first frame, then every frame whose rounded value
-// differs from the previously emitted one. Values are rounded to mirror
-// sendMotionFrame's `Math.round(clampMotionValue(...))` + lastSent gate.
-function _dcRotateEvents(frames) {
-  const events = [];
-  let last = null;
-  for (const f of frames) {
-    const v = Math.round(f.value);
-    if (last === null || v !== last) {
-      events.push({ atMs: f.atMs, value: v });
-      last = v;
-    }
-  }
-  return events;
-}
-
-function analyzeMotionDcLiveFeasibility(motion) {
-  const report = { motionId: motion.id, motionName: motion.name || motion.id, all: [], invalid: [], warnings: [], holds: [], ok: [] };
-  for (const spec of MOTION_TRACK_SPECS.filter(s => s.kind === "dc")) {
-    const track = findTrack(motion, spec);
-    if (!track) continue;
-    const events = _dcRotateEvents(normalizeKeyframes(track, motion.durationMs, spec));
-    for (let i = 0; i + 1 < events.length; i++) {
-      const finding = analyzeDcLiveEventPair(track, spec, events[i], events[i + 1], motion);
-      report.all.push(finding);
-      if (finding.level === "invalid") report.invalid.push(finding);
-      else if (finding.level === "warning") report.warnings.push(finding);
-      else report.ok.push(finding);
-    }
-  }
-  return report;
-}
-
-function formatDcLiveFeasibilityFinding(finding) {
-  const motionPrefix = finding.motionName ? `${finding.motionName} · ` : "";
-  if (finding.level === "invalid") {
-    return `${motionPrefix}${finding.label} ${finding.fromValue}→${finding.toValue} spd ${finding.spacingMs}ms apart — Play Live needs >=${finding.minSpacingMs}ms between DC events (baked MOTION ok)`;
-  }
-  if (finding.level === "warning") {
-    return `${motionPrefix}${finding.label} ${finding.fromValue}→${finding.toValue} spd ${finding.spacingMs}ms apart may lag live (>=${finding.warnSpacingMs}ms recommended; baked MOTION ok)`;
-  }
-  return `${motionPrefix}${finding.label} ok`;
-}
-
-// Dispatch tooltip formatting by track kind so servo (slew) and DC
-// (throughput) findings can share the timeline rendering path.
+// Motion feasibility findings are servo slew only now that DC left the
+// keyframe editor (servo-i0v). The DC live-throughput analysis and its HTTP
+// send throttle went with it: a DC lane emits at most one ROTATE per step
+// boundary, which no transport budget can saturate.
 function formatFeasibilityFinding(finding) {
-  return finding?.kind === "dc"
-    ? formatDcLiveFeasibilityFinding(finding)
-    : formatServoFeasibilityFinding(finding);
-}
-
-function dcLiveFeasibilityWarningSuffix(report) {
-  if (!report?.warnings?.length) return "";
-  const noun = report.warnings.length === 1 ? "DC segment" : "DC segments";
-  return ` · ${report.warnings.length} dense ${noun} may lag live`;
+  return formatServoFeasibilityFinding(finding);
 }
 
 function formatServoFeasibilityFinding(finding) {
@@ -4673,7 +4641,6 @@ function valueAtTrackTime(track, spec, atMs) {
     if (frames[i].atMs >= atMs) { next = frames[i]; break; }
   }
   if (!prev || !next || prev.atMs === next.atMs) return prev?.value ?? next?.value ?? 0;
-  if (spec.kind === "dc") return prev.value;  // step
   const u = (atMs - prev.atMs) / (next.atMs - prev.atMs);
   return prev.value + (next.value - prev.value) * u;  // ramp
 }
@@ -4708,12 +4675,8 @@ function renderMotionEditor() {
   const motion = getCurrentMotion(lib);
   if (!motion) return;
   const feasibilityReport = analyzeMotionServoFeasibility(motion);
-  // DC live-throughput findings render on DC rows alongside servo slew
-  // findings on servo rows (servo-a1e). Both are LIVE-playback advisories;
-  // baked MOTION is not throttled the same way.
-  const dcLiveReport = analyzeMotionDcLiveFeasibility(motion);
   const feasibilityByTrack = new Map();
-  for (const finding of [...feasibilityReport.all, ...dcLiveReport.all]) {
+  for (const finding of feasibilityReport.all) {
     if (!feasibilityByTrack.has(finding.trackKey)) feasibilityByTrack.set(finding.trackKey, []);
     feasibilityByTrack.get(finding.trackKey).push(finding);
   }
@@ -4773,9 +4736,7 @@ function renderMotionEditor() {
       const liveDragHtml = liveDragReadout === null
         ? ""
         : `<output class="motion-drag-value ${spec.kind}" style="left:${liveDragReadout.leftPct}%; top:${liveDragReadout.topPct}%">${escapeHtml(liveDragReadout.text)}</output>`;
-      const rangeText = spec.kind === "dc"
-        ? `${spec.min}..${spec.max} ${spec.unit} · safe cap`
-        : `${spec.min}..${spec.max} ${spec.unit}`;
+      const rangeText = `${spec.min}..${spec.max} ${spec.unit}`;
       html += `<div class="motion-row ${spec.kind}${collapsed ? " hidden" : ""}${muted ? " muted" : ""}" data-track="${escapeHtml(key)}">
         <div class="motion-label">
           <span class="id">${escapeHtml(spec.label)}</span>
@@ -5387,30 +5348,14 @@ async function sendMotionFrame(motion, atMs, force = false) {
       continue;
     }
 
-    // DC tracks (and force-scrub on servos): instant dispatch with the
-    // existing step + delta-gate logic. DC keyframes are setpoint events;
-    // the value the firmware needs is the previous keyframe's value held
-    // forward, which valueAtTrackTime already returns for kind==="dc".
+    // Force-scrub on servos: instant dispatch so the operator gets immediate
+    // positioning, bypassing the per-segment DMOVE path above.
     const rawValue = valueAtTrackTime(track, spec, atMs);
     const value = Math.round(clampMotionValue(rawValue, spec));
     if (!force && lastSent[key] === value) continue;
-    // DC live throttle (servo-6g9): cap DC ROTATE rate per track to the live
-    // throughput floor so a dense DC envelope streams sustainably instead of
-    // being blocked. We skip without recording lastSent, so once the window
-    // elapses the next tick sends the *current* (latest) value — a decimated
-    // preview. Baked MOTION playback runs every setpoint at full rate.
-    if (!force && spec.kind === "dc") {
-      const now = performance.now();
-      const lastAt = motionPlayer.lastDcSentAt?.[key] ?? -Infinity;
-      if (now - lastAt < DC_LIVE_MIN_SPACING_MS) continue;
-      (motionPlayer.lastDcSentAt || (motionPlayer.lastDcSentAt = {}))[key] = now;
-    }
     lastSent[key] = value;
     motionLastDispatched.set(key, value);
-    const cmd = spec.kind === "servo"
-      ? `DOWN ${spec.channel} ${value}`
-      : `ROTATE ${value}`;
-    sendMotionCommand(ip, cmd, signal);
+    sendMotionCommand(ip, `DOWN ${spec.channel} ${value}`, signal);
   }
   motionPlayer.lastSent = lastSent;
   motionPlayer.segmentDispatched = segmentDispatched;
@@ -5425,7 +5370,7 @@ function stopMotionPlayback(sendStop = false) {
   // fetches will reject from the abort signal and their .finally()
   // handlers will find nothing pending, so no re-trigger.
   clearMotionSendQueues();
-  motionPlayer = { active: false, raf: 0, startedAt: 0, lastSendAt: 0, lastSent: {}, lastDcSentAt: {}, segmentDispatched: new Map(), fetchAbort: null };
+  motionPlayer = { active: false, raf: 0, startedAt: 0, lastSendAt: 0, lastSent: {}, segmentDispatched: new Map(), fetchAbort: null };
   motionPlayEl.disabled = false;
   motionStopEl.disabled = true;
   if (sendStop) {
@@ -5568,27 +5513,18 @@ function tickMotionPlayback() {
 function playMotionLive() {
   const motion = readMotionFromDom();
   const feasibility = analyzeMotionServoFeasibility(motion);
-  // DC live-throughput floor applies to Play Live only (servo-a1e): the
-  // browser→board HTTP path can't stream over-dense ROTATEs in time. Baked
-  // MOTION playback (#motionFire) is intentionally NOT gated by this.
-  const dcLive = analyzeMotionDcLiveFeasibility(motion);
   if (feasibility.invalid.length) {
     setMotionStatus(`blocked · ${formatServoFeasibilityFinding(feasibility.invalid[0])}`, "alert");
     return;
   }
-  // Dense DC no longer blocks Play Live (servo-6g9): the DC stream is throttled
-  // at send time (sendMotionFrame) to the live throughput floor, so it previews
-  // a decimated version while the baked MOTION still runs every setpoint. The
-  // warning suffix below tells the operator the live preview is approximate.
   saveCurrentMotion(motion);
   stopMotionPlayback(false);
   const preRoll = _planMotionPreRoll(motion);
-  const warningSuffix = `${servoFeasibilityWarningSuffix(feasibility)}${dcLiveFeasibilityWarningSuffix(dcLive)}`;
+  const warningSuffix = servoFeasibilityWarningSuffix(feasibility);
   motionPlayer = {
     active: true, raf: 0,
     startedAt: performance.now(), lastSendAt: 0,
     lastSent: {},
-    lastDcSentAt: {},   // per-track DC send timestamps for live throttle (servo-6g9)
     // Per-track segment index map (servo-79q). sendMotionFrame dispatches
     // one DMOVE per segment for servo tracks instead of streaming DOWN at
     // 5Hz; this tracks which segment we've already fired so we only emit
@@ -6223,6 +6159,13 @@ function normalizeStep(step) {
     target: step?.target ?? "all",
     label: String(step?.label || ""),
     hold: !!step?.hold,
+    // Authoring-only per-board motor speeds (servo-i0v). Absent boards mean
+    // "unchanged"; compactStepForDevice never emits this field, and
+    // flattenDcLanes turns it into ROTATE chords before anything is baked.
+    dc: readStepDcMap(step),
+    // Preserved so generated chords can report the authored row they own.
+    ...(step?.authoredIndex != null ? { authoredIndex: step.authoredIndex } : {}),
+    ...(step?.dcChord ? { dcChord: true } : {}),
   };
 }
 
@@ -6236,6 +6179,10 @@ function readSequenceFromDom() {
     target: row.querySelector("[data-field=target]").value,
     label: row.querySelector("[data-field=label]").value,
     hold: row.querySelector("[data-field=hold]").checked,
+    // An empty input reads as "" and readStepDcMap drops it, which is how
+    // "unchanged" survives the round-trip and stays distinct from 0 (stop).
+    dc: Object.fromEntries(DC_LANE_BOARD_IDS.map(boardId =>
+      [boardId, row.querySelector(`[data-dc-board="${boardId}"]`)?.value ?? ""])),
   })).filter(step => step.cmd);
   return { ...existing, steps: steps.length ? steps : [{ cmd: "STOP", durationMs: 1000, target: "all" }] };
 }
@@ -6385,14 +6332,19 @@ function renderSequenceArrangement() {
   const available = Math.max(0, (seqArrangeScrollEl.clientWidth || 0) - 36);
   const trackWidth = Math.max(layout.widthPx, available);
   const selected = seqPlayer.active
-    ? Math.max(0, Math.min(seqPlayer.index, steps.length - 1))
+    ? Math.max(0, Math.min(activeAuthoredStepIndex(), steps.length - 1))
     : Math.max(0, Math.min(seqArrangeSelectedIndex, steps.length - 1));
   seqArrangeSelectedIndex = selected;
   seqArrangeTitleEl.textContent = seq.name || seq.id;
   const preRollCount = bridged.summary.length;
-  seqArrangeMetaEl.textContent = `${steps.length} step${steps.length === 1 ? "" : "s"}${preRollCount > 0 ? ` · ${preRollCount} pre-roll${preRollCount === 1 ? "" : "s"}` : ""} · total ${formatMs(layout.totalMs)} · id ${seq.id}`;
-  if (bridged.error) {
-    seqArrangeWarnEl.textContent = `⚠ sequence exceeds the ${SEQ_MAX_STEPS}-step firmware budget — shorten it`;
+  // What actually reaches EEPROM is the flattened list, so the budget readout
+  // has to count DC chords alongside the authored steps.
+  const flattened = flattenDcLanes(bridged.steps, { loop: false, maxSteps: SEQ_MAX_STEPS });
+  const chordCount = flattened.steps.length - bridged.steps.length;
+  seqArrangeMetaEl.textContent = `${steps.length} step${steps.length === 1 ? "" : "s"}${preRollCount > 0 ? ` · ${preRollCount} pre-roll${preRollCount === 1 ? "" : "s"}` : ""}${chordCount > 0 ? ` · ${chordCount} dc chord${chordCount === 1 ? "" : "s"}` : ""} · ${flattened.steps.length}/${SEQ_MAX_STEPS} firmware steps · total ${formatMs(layout.totalMs)} · id ${seq.id}`;
+  if (bridged.error || flattened.error) {
+    const produced = flattened.error ? flattened.error.produced : bridged.error.produced;
+    seqArrangeWarnEl.textContent = `⚠ ${produced} firmware steps exceeds the ${SEQ_MAX_STEPS}-step budget — remove steps or DC changes`;
     seqArrangeWarnEl.hidden = false;
   } else {
     seqArrangeWarnEl.hidden = true;
@@ -6438,13 +6390,73 @@ function renderSequenceArrangement() {
     </article>`;
   }).join("");
   const playheadLeft = authoredLeftPx[selected] ?? 0;
+  const dcLanesHtml = renderDcLanes(displaySteps, layout, trackWidth);
   seqArrangeCanvasEl.innerHTML = `<div class="seq-arrange-ruler" style="width:${trackWidth.toFixed(2)}px">${ticks}</div>
     <div class="seq-arrange-playhead" style="left:${(18 + playheadLeft).toFixed(2)}px"></div>
-    <div class="seq-arrange-track" style="width:${trackWidth.toFixed(2)}px">${blocks}</div>`;
+    <div class="seq-arrange-track" style="width:${trackWidth.toFixed(2)}px">${blocks}</div>
+    ${dcLanesHtml}`;
   seqArrangeStatusEl.textContent = seqPlayer.active
     ? `Playing step ${pad2(selected + 1)} · arrangement locked during playback`
     : `Scrub ${pad2(selected + 1)} / ${pad2(steps.length)} · drag to reorder`;
   renderSequenceArrangementMotionLibrary(lib);
+}
+
+// Motor state in force over each display block, for the Arrange lanes.
+//
+// A pre-roll block inherits the DC values of the authored step it precedes,
+// because that is exactly what happens on the rig: the chord fires at the step
+// boundary, so the motor is already turning while the servos glide. Drawing it
+// this way is the whole point — the operator sees the overlap here instead of
+// discovering it on the hardware.
+function dcStateByDisplayBlock(displaySteps) {
+  const list = displaySteps || [];
+  const owners = list.map((step, i) => {
+    if (step?.bridge !== true) return step;
+    for (let j = i + 1; j < list.length; j++) if (list[j]?.bridge !== true) return list[j];
+    return null;
+  });
+  const current = new Map(DC_LANE_BOARD_IDS.map(boardId => [boardId, 0]));
+  const seen = new Set();
+  return list.map((step, i) => {
+    const owner = owners[i];
+    // A pre-roll and the step it belongs to share one owner; apply it once.
+    if (owner && !seen.has(owner)) {
+      seen.add(owner);
+      const dc = readStepDcMap(owner);
+      for (const boardId of DC_LANE_BOARD_IDS) {
+        if (boardId in dc) current.set(boardId, dc[boardId]);
+      }
+    }
+    // STOP fires at this block's start, so the block itself is already stopped.
+    if (isMotorStopCmd(step?.cmd)) {
+      for (const boardId of DC_LANE_BOARD_IDS) current.set(boardId, 0);
+    }
+    return Object.fromEntries(DC_LANE_BOARD_IDS.map(b => [b, current.get(b)]));
+  });
+}
+
+function renderDcLanes(displaySteps, layout, trackWidth) {
+  const states = dcStateByDisplayBlock(displaySteps);
+  const rows = DC_LANE_BOARD_IDS.map(boardId => {
+    const idle = states.every(state => state[boardId] === 0);
+    const cells = states.map((state, i) => {
+      const geometry = layout.blocks[i];
+      if (!geometry) return "";
+      const value = state[boardId];
+      const magnitude = Math.min(100, Math.abs(value) / DC_LANE_SPEED_LIMIT * 100);
+      const dir = value > 0 ? "fwd" : value < 0 ? "rev" : "stop";
+      return `<span class="seq-dc-cell ${dir}" style="width:${geometry.widthPx.toFixed(2)}px"
+          title="B${boardId} · ${value === 0 ? "stopped" : `${value} spd`}">
+        <span class="fill" style="height:${magnitude.toFixed(1)}%"></span>
+        ${geometry.widthPx > 42 && value !== 0 ? `<span class="v">${value}</span>` : ""}
+      </span>`;
+    }).join("");
+    return `<div class="seq-dc-lane${idle ? " idle" : ""}">
+      <span class="seq-dc-lane-label">B${boardId}.DC</span>
+      <div class="seq-dc-lane-cells" style="width:${trackWidth.toFixed(2)}px">${cells}</div>
+    </div>`;
+  }).join("");
+  return `<div class="seq-dc-lanes">${rows}</div>`;
 }
 
 function fitSequenceArrangement() {
@@ -6579,7 +6591,7 @@ function renderSequencer() {
 
   seqStepsEl.innerHTML = (seq.steps || []).map((raw, index) => {
     const step = normalizeStep(raw);
-    const active = seqPlayer.active && seqPlayer.index === index;
+    const active = seqPlayer.active && activeAuthoredStepIndex() === index;
     const expanded = seqExpandedSteps.has(index);
     const row = `<tr data-index="${index}" draggable="true"${active ? ' class="active"' : ''}>
       <td class="seq-drag" title="Drag to reorder">=</td>
@@ -6587,13 +6599,14 @@ function renderSequencer() {
       <td><input data-field="cmd" type="text" list="seqCmdSuggest" spellcheck="false" autocomplete="off" value="${escapeHtml(step.cmd)}" title="${escapeHtml(CMD_HELP)}"></td>
       <td><input data-field="durationMs" type="number" min="0" step="100" value="${step.durationMs}"></td>
       <td><select data-field="target">${targetOptions(step.target)}</select></td>
+      <td class="seq-dc">${DC_LANE_BOARD_IDS.map(boardId => `<input data-dc-board="${boardId}" type="number" min="${-DC_LANE_SPEED_LIMIT}" max="${DC_LANE_SPEED_LIMIT}" step="5" placeholder="–" title="B${boardId} motor speed · blank = unchanged, 0 = stop" value="${step.dc[boardId] != null ? step.dc[boardId] : ""}">`).join("")}</td>
       <td><input data-field="label" type="text" value="${escapeHtml(step.label)}" spellcheck="false"></td>
       <td class="seq-hold"><input data-field="hold" type="checkbox"${step.hold ? " checked" : ""}></td>
       <td><button class="cmd compact" data-preview="${index}">Preview</button></td>
       <td><button class="cmd compact alert" data-step-remove="${index}" title="Remove step">x</button></td>
     </tr>`;
     const previewRow = expanded
-      ? `<tr class="seq-preview-row" data-preview-row="${index}"><td colspan="9">${renderSeqStepPreview(step, lib)}</td></tr>`
+      ? `<tr class="seq-preview-row" data-preview-row="${index}"><td colspan="10">${renderSeqStepPreview(step, lib)}</td></tr>`
       : "";
     return row + previewRow;
   }).join("");
@@ -6630,11 +6643,20 @@ async function dispatchSequenceStep(step) {
   return { ok: await sendCommand(ip, cmd), target: ip };
 }
 
+// The player walks the flattened list (authored steps plus generated DC
+// chords); the table and the Arrange timeline show authored rows only. This
+// maps one to the other so a chord highlights the step that owns it.
+function activeAuthoredStepIndex() {
+  const runnable = seqPlayer.runSteps && seqPlayer.runSteps[seqPlayer.index];
+  if (runnable && runnable.authoredIndex != null) return runnable.authoredIndex;
+  return seqPlayer.index;
+}
+
 function stopSequencePlayback(sendStop = false) {
   if (seqPlayer.timer) clearTimeout(seqPlayer.timer);
   const wasDryRun = seqPlayer.dryRun;
   seqRunSerial++;
-  seqPlayer = { active: false, paused: false, index: 0, timer: null, remainingMs: 0, stepStartedAt: 0, runId: seqRunSerial, runStartedAt: 0, dryRun: false, logCount: seqPlayer.logCount, broadcastIp: null };
+  seqPlayer = { active: false, paused: false, index: 0, timer: null, remainingMs: 0, stepStartedAt: 0, runId: seqRunSerial, runStartedAt: 0, dryRun: false, logCount: seqPlayer.logCount, broadcastIp: null, runSteps: [] };
   seqScrubEl.value = 0;
   seqPlayEl.disabled = false;
   seqPauseEl.disabled = true;
@@ -6656,9 +6678,17 @@ async function playSequenceFrom(index = 0, dryRun = false) {
   if (!seq.steps.length) return;
   if (seqPlayer.timer) clearTimeout(seqPlayer.timer);
   const runId = ++seqRunSerial;
+  // Live playback walks the SAME flattened list the bake produces, so a DC
+  // lane behaves identically whether it is previewed from the browser or run
+  // from EEPROM. (Live play does not apply pre-rolls, matching existing
+  // behavior, so the authored steps flatten directly.) Each runnable step
+  // carries the authored row it came from for scrub + highlight.
+  const authored = (seq.steps || []).map((s, i) => ({ ...normalizeStep(s), authoredIndex: i }));
+  const flat = flattenDcLanes(authored, { loop: seqLoopEl.checked });
+  seqPlayer.runSteps = flat.steps;
   seqPlayer.active = true;
   seqPlayer.paused = false;
-  seqPlayer.index = Math.max(0, Math.min(index, seq.steps.length - 1));
+  seqPlayer.index = Math.max(0, flat.steps.findIndex(s => s.authoredIndex === Math.max(0, Math.min(index, seq.steps.length - 1))));
   seqPlayer.runId = runId;
   seqPlayer.runStartedAt = performance.now();
   seqPlayer.dryRun = dryRun;
@@ -6676,13 +6706,15 @@ async function playSequenceFrom(index = 0, dryRun = false) {
 
 async function runSequenceStep(runId = seqPlayer.runId) {
   if (!seqPlayer.active || seqPlayer.runId !== runId) return;
-  const seq = getCurrentSequence();
-  const index = seqPlayer.index;
-  const step = normalizeStep(seq.steps[index]);
+  const runnable = seqPlayer.runSteps[seqPlayer.index];
+  if (!runnable) { stopSequencePlayback(false); return; }
+  const step = normalizeStep(runnable);
+  // Chords are generated, so the UI reports the authored row they belong to.
+  const index = runnable.authoredIndex != null ? runnable.authoredIndex : seqPlayer.index;
   seqScrubEl.value = index;
   renderSequencer();
   setSeqStatus(`playing ${pad2(index + 1)} · ${step.cmd}`, "amber");
-  seqLog(`step ${pad2(index + 1)} send · ${step.cmd} · next in ${step.durationMs}ms`, "warn");
+  seqLog(`step ${pad2(index + 1)} send · ${step.cmd}${runnable.dcChord ? " · dc lane" : ""} · next in ${step.durationMs}ms`, "warn");
   const sent = await dispatchSequenceStep(step);
   if (!seqPlayer.active || seqPlayer.runId !== runId) {
     seqLog(`step ${pad2(index + 1)} ignored after stale send returned`, "bad");
@@ -6706,9 +6738,8 @@ function scheduleNextSequenceStep(delayMs, runId = seqPlayer.runId) {
   seqPlayer.stepStartedAt = Date.now();
   seqPlayer.timer = setTimeout(async () => {
     if (!seqPlayer.active || seqPlayer.runId !== runId) return;
-    const seq = getCurrentSequence();
     seqPlayer.index++;
-    if (seqPlayer.index >= seq.steps.length) {
+    if (seqPlayer.index >= seqPlayer.runSteps.length) {
       if (seqLoopEl.checked) seqPlayer.index = 0;
       else {
         seqLog(`run ${runId} complete`, "ok");
@@ -6733,11 +6764,10 @@ function pauseOrResumeSequence() {
   seqPlayer.paused = false;
   seqPauseEl.textContent = "Pause";
   setSeqStatus(`resumed ${pad2(seqPlayer.index + 1)}`, "amber");
-  const seq = getCurrentSequence();
-  const current = normalizeStep(seq.steps[seqPlayer.index]);
+  const current = normalizeStep(seqPlayer.runSteps[seqPlayer.index] || {});
   if (current.hold) {
     seqPlayer.index++;
-    if (seqPlayer.index >= seq.steps.length) {
+    if (seqPlayer.index >= seqPlayer.runSteps.length) {
       if (seqLoopEl.checked) seqPlayer.index = 0;
       else { stopSequencePlayback(false); return; }
     }
@@ -6771,9 +6801,7 @@ function addSequenceStep() {
 function conformTrackForBake(track, durationMs) {
   const spec = MOTION_TRACK_SPECS.find(s =>
     s.boardId === track.boardId && s.kind === track.kind && s.channel === track.channel)
-    || (track.kind === "dc"
-      ? { kind: "dc", min: -MOTION_DC_SPEED_LIMIT, max: MOTION_DC_SPEED_LIMIT }
-      : { kind: track.kind, min: 0, max: 100 });
+    || { kind: track.kind, min: 0, max: 100 };
   const frames = normalizeKeyframes(track, durationMs, spec); // sorted, clamped, first at 0
   return { ...track, keyframes: frames };
 }
@@ -7144,6 +7172,142 @@ function validateLibraryReferences(lib) {
 }
 // === SEQ-BRIDGE-CORE END ===
 
+// === DC-LANE-CORE START ===
+// Per-step DC lanes (servo-i0v). DC speed used to be keyframed inside Motions
+// alongside servo tracks. It now lives on the Sequence step as an optional
+// { boardId: speed } map, and this flattens that into the targeted
+// zero-duration `ROTATE` chord steps the firmware already runs — so there is
+// no new device schema and no new firmware command.
+//
+// Speeds are STICKY: a board absent from a step's map holds its last commanded
+// speed. A motor has a running state, not a pose, so "unchanged" and "stop"
+// have to be distinguishable — null/"" is unchanged, 0 is stop.
+//
+// Authoring stays clamped to ±50 (the servo-1gc safety limit) even though bare
+// ROTATE accepts ±100; the wider range remains available for manual testing.
+const DC_LANE_SPEED_LIMIT = 50;
+const DC_LANE_BOARD_IDS = [1, 2, 3];
+
+function clampDcLaneValue(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return 0;
+  return Math.max(-DC_LANE_SPEED_LIMIT, Math.min(DC_LANE_SPEED_LIMIT, Math.round(n)));
+}
+
+// Blank/absent entries are dropped so "unchanged" survives a round-trip through
+// the DOM (where an empty number input reads as "").
+function readStepDcMap(step) {
+  const raw = (step && step.dc) || {};
+  const out = {};
+  for (const boardId of DC_LANE_BOARD_IDS) {
+    const value = raw[boardId] ?? raw[String(boardId)];
+    if (value == null || value === "") continue;
+    const n = Number(value);
+    if (!Number.isFinite(n)) continue;
+    out[boardId] = clampDcLaneValue(n);
+  }
+  return out;
+}
+
+// `STOP` cuts every motor to 0 in firmware (command_interface.h), so the
+// flattener has to zero its tracked state there or a later "unchanged" would
+// be a lie and the motor would stay silent.
+function isMotorStopCmd(cmd) {
+  return /^\s*STOP\s*$/i.test(String(cmd || ""));
+}
+
+// Flatten authored lanes into runnable steps.
+//
+// Runs AFTER rewriteSequencePreRolls: a DC change on a step that became
+// `MOTION <id> PREP <ms>` therefore takes effect at the step boundary — during
+// the servo pre-roll glide, not at the Motion's true start. Buying the exact
+// start would cost a step split plus a dwell per transition against a 16-step
+// budget; instead the Arrange lane draws across the pre-roll block so a motor
+// running through the glide is visible while authoring rather than discovered
+// on the rig.
+//
+// Returns { steps, lane, error }. `lane` is the { atMs, boardId, value }
+// timeline the Arrange view renders, so the drawing and the bake can never
+// disagree about what the motor does.
+// `emitAll` drops the "already at this speed" suppression and the trailing
+// park. Previewing a single step fires it out of sequence, so there is no
+// accumulated lane state to diff against — an explicit `0` has to reach the
+// motor rather than being suppressed because the tracked state happens to
+// start at 0.
+function flattenDcLanes(steps, options = {}) {
+  const loop = !!options.loop;
+  const emitAll = !!options.emitAll;
+  const maxSteps = options.maxSteps != null ? options.maxSteps : SEQ_MAX_STEPS;
+  const out = [];
+  const lane = [];
+  const current = new Map(DC_LANE_BOARD_IDS.map(boardId => [boardId, 0]));
+  let atMs = 0;
+
+  // A chord inherits the authored row it was written against (when the caller
+  // tagged one), so scrubbing and row highlighting land on the operator's step
+  // rather than on a generated chord they cannot see in the table.
+  let owner;
+  const emit = (boardId, value) => {
+    current.set(boardId, value);
+    lane.push({ atMs, boardId, value });
+    out.push({ cmd: `ROTATE ${value}`, durationMs: 0, target: String(boardId),
+      label: "↳ dc", hold: false, dcChord: true,
+      ...(owner && owner.authoredIndex != null ? { authoredIndex: owner.authoredIndex } : {}) });
+  };
+
+  for (const step of (steps || [])) {
+    owner = step;
+    const dc = readStepDcMap(step);
+    for (const boardId of DC_LANE_BOARD_IDS) {
+      if (!(boardId in dc)) continue;
+      if (!emitAll && current.get(boardId) === dc[boardId]) continue;
+      emit(boardId, dc[boardId]);
+    }
+    const { dc: _authoringOnly, ...runnable } = step || {};
+    out.push(runnable);
+    // The step's own cmd fires at this same instant, so a STOP zeroes the
+    // motors here — before the clock advances.
+    if (isMotorStopCmd(step && step.cmd)) {
+      for (const boardId of DC_LANE_BOARD_IDS) {
+        if (current.get(boardId) === 0) continue;
+        current.set(boardId, 0);
+        lane.push({ atMs, boardId, value: 0 });
+      }
+    }
+    atMs += Math.max(0, parseInt(step && step.durationMs, 10) || 0);
+  }
+
+  // A non-looping sequence ends by parking whatever is still turning. A loop
+  // carries its state around the wrap instead, so the motor runs continuously.
+  if (!loop && !emitAll) {
+    for (const boardId of DC_LANE_BOARD_IDS) {
+      if (current.get(boardId) === 0) continue;
+      emit(boardId, 0);
+    }
+  }
+
+  const error = out.length > maxSteps
+    ? { code: "dc-step-budget", produced: out.length, max: maxSteps }
+    : null;
+  return { steps: out, lane, error };
+}
+
+// Read the lane back as a per-board step function for rendering: the value in
+// force at each point, held until the next change.
+function dcLaneSegments(lane, totalMs) {
+  const duration = Math.max(1, Number(totalMs) || 0);
+  const byBoard = new Map(DC_LANE_BOARD_IDS.map(boardId => [boardId, []]));
+  for (const point of (lane || [])) {
+    const list = byBoard.get(point.boardId);
+    if (list) list.push({ atMs: Math.max(0, Math.min(duration, point.atMs)), value: point.value });
+  }
+  return DC_LANE_BOARD_IDS.map(boardId => {
+    const points = byBoard.get(boardId) || [];
+    return { boardId, label: `B${boardId}.DC`, points, active: points.some(p => p.value !== 0) };
+  });
+}
+// === DC-LANE-CORE END ===
+
 // === BAKE-PAYLOAD-CORE START ===
 function bakeStorageTier(byteCount) {
   const bytes = Math.max(0, Number(byteCount) || 0);
@@ -7185,8 +7349,12 @@ function compactStepForDevice(step) {
     cmd: String(step?.cmd || ""),
     durationMs: Math.max(0, parseInt(step?.durationMs, 10) || 0),
   };
+  // Emit target as a NUMBER. The firmware parses it with bakeParseInteger,
+  // which fails on a quoted "2" and falls back to 255 ("no board") — so a
+  // board-targeted step baked from the string the <select> produces never
+  // fired anywhere. Schema §3 always specified `"all" | 1 | 2 | 3`.
   const target = step?.target;
-  if (target != null && target !== "all" && Number(target) !== 0) out.target = target;
+  if (target != null && target !== "all" && Number(target) !== 0) out.target = Number(target);
   return out;
 }
 
@@ -7237,7 +7405,7 @@ function hydrateDeviceLibraryForEditor(input) {
       scope: m.scope || "cluster",
       tracks: (m.tracks || []).map(t => ({
         ...t,
-        label: t.label || `B${t.boardId}.${t.kind === "dc" ? "DC" : `S${t.channel}`}`,
+        label: t.label || `B${t.boardId}.S${t.channel}`,
       })),
     })),
     sequences: (lib.sequences || []).map(s => ({
@@ -7315,9 +7483,15 @@ function buildBakeLibrary(lib) {
       minDeltaPercent: 5, floorMs: 800, restPercent: MOTION_SERVO_REST_PERCENT,
       maxSteps: SEQ_MAX_STEPS,
     });
-    sequences.push({ ...seq, steps: r.steps });
+    // DC lanes flatten AFTER pre-roll rewriting so a chord lands on the same
+    // step the operator authored it against. Always baked as non-looping: the
+    // trailing park is the safe end state, and `RUN <id> LOOP` / setlist
+    // repeats simply re-fire the opening chords on each pass.
+    const flat = flattenDcLanes(r.steps, { loop: false, maxSteps: SEQ_MAX_STEPS });
+    sequences.push({ ...seq, steps: flat.steps });
     for (const s of r.summary) summaries.push({ seqId: seq.id, seqName: seq.name || seq.id, ...s });
     if (r.error) errors.push({ seqId: seq.id, seqName: seq.name || seq.id, ...r.error });
+    if (flat.error) errors.push({ seqId: seq.id, seqName: seq.name || seq.id, ...flat.error });
   }
   return {
     ...lib,
@@ -8102,8 +8276,14 @@ seqStepsEl.addEventListener("click", async e => {
   const seq = readSequenceFromDom();
   saveCurrentSequence(seq);
   const step = normalizeStep(seq.steps[parseInt(preview, 10)]);
-  setSeqStatus(`preview ${pad2(parseInt(preview, 10) + 1)} · ${step.cmd}`, "amber");
-  await dispatchSequenceStep(step);
+  // Preview fires this step the way playback would, DC lane included — through
+  // the same flattener, so a previewed step and a played step cannot diverge.
+  // emitAll because a step previewed out of sequence has no accumulated lane
+  // state: every speed it names must actually be sent.
+  const previewSteps = flattenDcLanes([step], { loop: true, emitAll: true }).steps;
+  const dcCount = previewSteps.length - 1;
+  setSeqStatus(`preview ${pad2(parseInt(preview, 10) + 1)} · ${step.cmd}${dcCount > 0 ? ` · ${dcCount} dc` : ""}`, "amber");
+  for (const runnable of previewSteps) await dispatchSequenceStep(runnable);
   setTimeout(pollOnce, 200);
 });
 seqStepsEl.addEventListener("dragstart", e => {

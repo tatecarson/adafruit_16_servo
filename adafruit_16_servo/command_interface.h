@@ -342,7 +342,14 @@ void processCommand(char* cmd) {
     int space = findChar(cmd, ' ', 0);
     if (space > 0) {
       int16_t speed = atoi(cmd + space + 1);
-      cancelMotionPlayback();
+      // ROTATE no longer cancels Motion playback (servo-i0v). Motions are
+      // servo-only now, so the two touch disjoint hardware and cancelling was
+      // pure collateral damage — a Sequencer DC lane bakes to ROTATE chord
+      // steps, and one landing mid-Sequence would otherwise abort the very
+      // Motion it was authored to run alongside. Sequences are still cancelled
+      // so a manual ROTATE takes over the show; the sequenceFiringStep guard
+      // inside cancelSequencePlayback keeps a lane chord from aborting its own
+      // runner.
       cancelSequencePlayback();
       setMotorSpeed((int8_t)constrain(speed, -100, 100));
     } else {
