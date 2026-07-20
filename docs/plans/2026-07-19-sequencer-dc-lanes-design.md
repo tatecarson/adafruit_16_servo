@@ -210,6 +210,27 @@ Existing `verify_bake_payload.mjs` and `verify_seq_bridges.mjs` need updating
 for DC removal. The DC assertions in `test/test_motion_engine.cpp` stay valid
 through phase 1 and are removed with phase 2.
 
+## Operational note: boardId must match the rig
+
+DC lanes target boards by `boardId`, and so does the bake: `bakeToAllBoards`
+asks each board `GET /boardId` and hands it `sliceForBoard(lib, thatId)`.
+A board whose stored id disagrees with how the rig is wired fails in a way that
+looks like two unrelated bugs at once:
+
+- Browser **Play/Preview** still works — it resolves a board through
+  `ipForBoardId`, which falls back to list *position* when no board reports the
+  requested id. The command lands on the right hardware by accident.
+- The **bake** does not. A board reporting `1` receives the board-1 slice; if
+  every track is authored for board 3, that slice contains `"motions": []` and
+  every `MOTION` fails with `motion-not-found` while the DC chords — dispatched
+  by position — keep working. Servos dead, motor fine.
+- On-device **RUN** fails the other way: `target:3` chords are skipped by a
+  board calling itself 1. Motor dead, servos fine.
+
+Encountered during bring-up: 192.168.8.198 was wired as board 3 but had `1` in
+EEPROM. `BOARDID 3` fixed it. When a lane "works in Play but not after baking",
+check `curl http://<ip>/boardId` first.
+
 ## Open
 
 The original DC-in-Motion bug was never root-caused, and nothing found during
@@ -223,12 +244,13 @@ Motions, it returns unexplained.
 
 ## Verified
 
-- `test/verify_dc_lanes.mjs` — 31 checks on the flattener, its consumers, and
-  the firmware invariants the lanes depend on
-- Full host suite green (`make -C test test`)
-- End-to-end: real `library.json` → browser bake code → firmware
-  `sequence_engine.h` + `motion_engine.h` compiled on host. Board 1 holds −40
-  and board 3 holds +25 across the pre-roll and the whole Motion; board 2,
-  which has no lane values, stays at 0.
-- Browser: DOM round-trip through the lane inputs, `target` baking as a number,
-  and the Arrange lanes rendering across the pre-roll block.
+- `test/verify_dc_lanes.mjs` — 36 checks on the flattener, its three consumers,
+  and the firmware invariants the lanes depend on
+- Full host suite green (`make -C test test`); firmware fits the OTA partition
+  at 121352/122880 bytes
+- Host simulation: real `library.json` → browser bake code → firmware
+  `sequence_engine.h` + `motion_engine.h` compiled natively
+- **Confirmed on hardware by the operator.** A single-board rig (board 3,
+  192.168.8.198) runs `sq-drift1` with servos and DC motor driven in parallel
+  from one Sequence.
+
