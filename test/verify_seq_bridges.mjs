@@ -42,8 +42,8 @@ const snapCore = html.slice(ss + SNAP_START.length, se);
 
 const dir = mkdtempSync(join(tmpdir(), "seq-bridge-core-"));
 const modPath = join(dir, "core.mjs");
-writeFileSync(modPath, `${snapCore}${core}\nexport { bridgeServoPose, planColdStartBridge, planInteriorBridge, insertSequenceBridges, rewriteSequencePreRolls, expandPreRollStepsForDisplay, seedFirstKeyframesFromExit, stripBridges, validateLibraryReferences };\n`, "utf8");
-const { bridgeServoPose, planColdStartBridge, planInteriorBridge, insertSequenceBridges, rewriteSequencePreRolls, expandPreRollStepsForDisplay, seedFirstKeyframesFromExit, stripBridges, validateLibraryReferences } = await import(pathToFileURL(modPath).href);
+writeFileSync(modPath, `${snapCore}${core}\nexport { bridgeServoPose, planColdStartBridge, planInteriorBridge, insertSequenceBridges, rewriteSequencePreRolls, expandPreRollStepsForDisplay, describePreRollTravel, seedFirstKeyframesFromExit, stripBridges, validateLibraryReferences };\n`, "utf8");
+const { bridgeServoPose, planColdStartBridge, planInteriorBridge, insertSequenceBridges, rewriteSequencePreRolls, expandPreRollStepsForDisplay, describePreRollTravel, seedFirstKeyframesFromExit, stripBridges, validateLibraryReferences } = await import(pathToFileURL(modPath).href);
 
 console.log("=== Sequence transition bridges ===");
 
@@ -183,6 +183,87 @@ eq("all pre-rolls off bakes the authored steps verbatim",
 eq("steps without noPrep are unchanged",
    rewriteSequencePreRolls([{cmd:"MOTION rise",durationMs:1000}], lib, wopts).steps[0].cmd,
    "MOTION rise PREP 7700");
+
+// --- servo-rvn: the plan must say which winches travel, and from where ---
+// The planners already know every endpoint; they used to report only channel
+// keys, which is why a PREP block could say "7700ms" and nothing else.
+{
+  const moved = planInteriorBridge(
+    { "1:servo:0": 20, "1:servo:1": 90, "1:servo:2": 50 },
+    { "1:servo:0": 70, "1:servo:1": 40, "1:servo:2": 52 },
+    "__x", wopts);
+  eq("interior plan reports both endpoints per channel",
+     moved.moves.map(m => [m.label, m.from, m.to]),
+     [["B1.S0", 20, 70], ["B1.S1", 90, 40]]);
+  eq("a channel under the movement threshold is not reported as travelling",
+     moved.moves.some(m => m.label === "B1.S2"), false);
+
+  // Cold start sizes against the worse of two plausible starts: a fresh
+  // power-on at rest, or an immediate re-run from where the sequence parked.
+  // The reported `from` has to be whichever one it actually sized against, or
+  // the explanation would name a distance the operator is not being charged.
+  // Entry 90 is only 10 from rest but 80 from where a re-run would start, so
+  // the re-run is the start that sizes this glide — and the one to report.
+  const cold = planColdStartBridge({ "1:servo:0": 90 },
+    { ...wopts, rerunFromPose: { "1:servo:0": 10 } });
+  eq("cold plan reports the start it sized against, not just the rest pose",
+     cold.moves.map(m => [m.label, m.from, m.to]), [["B1.S0", 10, 90]]);
+  eq("and sizes the glide from that same distance", cold.durationMs, 80 * 77);
+  // When rest is the further start, rest is what gets reported.
+  eq("rest is reported when rest is what sized the glide",
+     planColdStartBridge({ "1:servo:0": 40 },
+       { ...wopts, rerunFromPose: { "1:servo:0": 10 } }).moves.map(m => [m.from, m.to]),
+     [[100, 40]]);
+
+  const fromRest = planColdStartBridge({ "1:servo:0": 40 }, wopts);
+  eq("with no re-run history it reports the rest pose",
+     fromRest.moves.map(m => [m.label, m.from, m.to]), [["B1.S0", 100, 40]]);
+}
+
+// The moves ride along in the summary so Arrange can explain a pre-roll it is
+// drawing — including one that has been switched off.
+{
+  const r = rewriteSequencePreRolls([{cmd:"MOTION rise",durationMs:1000}], lib, wopts);
+  eq("summary carries the per-channel moves",
+     r.summary[0].moves.map(m => [m.label, m.from, m.to]), [["B1.S0", 100, 0]]);
+  const offSummary = rewriteSequencePreRolls(
+    [{cmd:"MOTION rise",durationMs:1000,noPrep:true}], lib, wopts).summary[0];
+  eq("a refused pre-roll still reports what it would have moved",
+     offSummary.moves.map(m => [m.label, m.from, m.to]), [["B1.S0", 100, 0]]);
+  eq("and the display ghost carries them through",
+     expandPreRollStepsForDisplay(
+       rewriteSequencePreRolls([{cmd:"MOTION rise",durationMs:1000,noPrep:true}], lib, wopts).steps,
+       [offSummary])[0].moves.length, 1);
+}
+
+// --- describePreRollTravel: the plain-language line the block shows ---------
+// 0% is fully UP and 100% is fully down, so a RISING value is travel DOWN.
+// Getting this backwards in the UI would be worse than saying nothing.
+{
+  const d = describePreRollTravel;
+  eq("a rising value reads as travelling down",
+     d([{label:"B1.S0", from:0, to:100}]).headline, "B1.S0 down to 100%");
+  eq("a falling value reads as travelling up",
+     d([{label:"B1.S0", from:100, to:0}]).headline, "B1.S0 up to 0%");
+  eq("several winches to a shared target are counted",
+     d([{label:"B1.S0",from:100,to:40},{label:"B1.S1",from:100,to:40}]).headline,
+     "2 winches up to 40%");
+  eq("a spread of targets is shown as a range",
+     d([{label:"B1.S0",from:100,to:96},{label:"B1.S1",from:100,to:90}]).headline,
+     "2 winches up to 90–96%");
+  // A channel whose endpoints match isn't travelling, so it is not counted.
+  eq("a channel that does not actually move is left out",
+     d([{label:"B1.S0",from:100,to:96},{label:"B1.S1",from:100,to:100}]).count, 1);
+  eq("mixed directions do not claim a direction",
+     d([{label:"B1.S0",from:0,to:50},{label:"B1.S1",from:100,to:50}]).headline,
+     "2 winches to 50%");
+  eq("nothing moving says so", d([]).headline, "nothing to move");
+  eq("rows list every channel for the tooltip",
+     d([{label:"B1.S0",from:100,to:40},{label:"B1.S1",from:90,to:40}]).rows,
+     ["B1.S0 100% → 40%", "B1.S1 90% → 40%"]);
+  eq("the count is the number of winches that actually travel",
+     d([{label:"B1.S0",from:100,to:40}]).count, 1);
+}
 
 // --- servo-3o6 round trip: snapping removes the pre-roll at the source ---
 // Two motions whose exit and entry both land on 40 leave a delta of 0, which
