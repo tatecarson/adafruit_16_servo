@@ -32,6 +32,7 @@ sim-verify:
 	  node verify_sim_analysis.mjs && \
 	  node verify_shape_curves.mjs && \
 	  node verify_editor_keyframes.mjs && \
+	  node verify_motion_normalize.mjs && \
 	  node verify_seq_preview.mjs && \
 	  node verify_ids.mjs && \
 	  node verify_seq_arrangement.mjs && \
