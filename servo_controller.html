@@ -6530,39 +6530,6 @@ function renderSequenceArrangement() {
 }
 
 // Motor state in force over each display block, for the Arrange lanes.
-//
-// A pre-roll block inherits the DC values of the authored step it precedes,
-// because that is exactly what happens on the rig: the chord fires at the step
-// boundary, so the motor is already turning while the servos glide. Drawing it
-// this way is the whole point — the operator sees the overlap here instead of
-// discovering it on the hardware.
-function dcStateByDisplayBlock(displaySteps) {
-  const list = displaySteps || [];
-  const owners = list.map((step, i) => {
-    if (step?.bridge !== true) return step;
-    for (let j = i + 1; j < list.length; j++) if (list[j]?.bridge !== true) return list[j];
-    return null;
-  });
-  const current = new Map(DC_LANE_BOARD_IDS.map(boardId => [boardId, 0]));
-  const seen = new Set();
-  return list.map((step, i) => {
-    const owner = owners[i];
-    // A pre-roll and the step it belongs to share one owner; apply it once.
-    if (owner && !seen.has(owner)) {
-      seen.add(owner);
-      const dc = readStepDcMap(owner);
-      for (const boardId of DC_LANE_BOARD_IDS) {
-        if (boardId in dc) current.set(boardId, dc[boardId]);
-      }
-    }
-    // STOP fires at this block's start, so the block itself is already stopped.
-    if (isMotorStopCmd(step?.cmd)) {
-      for (const boardId of DC_LANE_BOARD_IDS) current.set(boardId, 0);
-    }
-    return Object.fromEntries(DC_LANE_BOARD_IDS.map(b => [b, current.get(b)]));
-  });
-}
-
 function renderDcLanes(displaySteps, layout, trackWidth) {
   const states = dcStateByDisplayBlock(displaySteps);
   const rows = DC_LANE_BOARD_IDS.map(boardId => {
@@ -7379,6 +7346,34 @@ function validateLibraryReferences(lib) {
 // === SEQ-BRIDGE-CORE END ===
 
 // === DC-LANE-CORE START ===
+// Motor state in force over each display block, for the Arrange lanes.
+//
+// The change lands on the AUTHORED step, not on the travel glide in front of
+// it. That mirrors what flattenDcLanes now bakes (servo-d5y): a step carrying
+// both a glide and a DC change is split so the chord fires on the Motion's
+// first keyframe. Before that split the chord fired at the glide's start and
+// this function drew it there — honestly, but the rig was reversing the motor
+// seconds before the Motion it was authored against.
+function dcStateByDisplayBlock(displaySteps) {
+  const list = displaySteps || [];
+  const current = new Map(DC_LANE_BOARD_IDS.map(boardId => [boardId, 0]));
+  return list.map(step => {
+    // A travel block is not an authored step and carries no dc of its own, so
+    // it simply holds whatever was already turning.
+    if (step?.bridge !== true) {
+      const dc = readStepDcMap(step);
+      for (const boardId of DC_LANE_BOARD_IDS) {
+        if (boardId in dc) current.set(boardId, dc[boardId]);
+      }
+    }
+    // STOP fires at this block's start, so the block itself is already stopped.
+    if (isMotorStopCmd(step?.cmd)) {
+      for (const boardId of DC_LANE_BOARD_IDS) current.set(boardId, 0);
+    }
+    return Object.fromEntries(DC_LANE_BOARD_IDS.map(b => [b, current.get(b)]));
+  });
+}
+
 // Per-step DC lanes (servo-i0v). DC speed used to be keyframed inside Motions
 // alongside servo tracks. It now lives on the Sequence step as an optional
 // { boardId: speed } map, and this flattens that into the targeted
@@ -7464,11 +7459,36 @@ function flattenDcLanes(steps, options = {}) {
   for (const step of (steps || [])) {
     owner = step;
     const dc = readStepDcMap(step);
-    for (const boardId of DC_LANE_BOARD_IDS) {
-      if (!(boardId in dc)) continue;
-      if (!emitAll && current.get(boardId) === dc[boardId]) continue;
-      emit(boardId, dc[boardId]);
+    const pending = DC_LANE_BOARD_IDS.filter(boardId =>
+      (boardId in dc) && (emitAll || current.get(boardId) !== dc[boardId]));
+
+    // A travel glide lives INSIDE its step (`MOTION x PREP n`, duration d+n),
+    // but a chord can only fire at a step boundary — so an un-split step fires
+    // the motor change at the START of the glide, seconds before the Motion it
+    // was authored against (servo-d5y). Split the glide onto its own clock so
+    // the chord lands on the Motion's first keyframe instead:
+    //
+    //   MOTION x PREP n (n ms) · ROTATE v (0 ms) · dwell (d ms)
+    //
+    // Safe because an empty cmd fires nothing (sequenceFireCurrentStep skips
+    // it) and ROTATE does not cancel Motion playback, so the armed Motion runs
+    // straight through both boundaries. Costs one step, so only do it when a
+    // chord is actually waiting to be re-timed.
+    const prep = /^\s*(MOTION\s+\S+\s+PREP\s+(\d+))\s*$/i.exec(String(step?.cmd || ""));
+    if (prep && pending.length) {
+      const prepareMs = Math.max(0, parseInt(prep[2], 10) || 0);
+      const playMs = Math.max(0, (parseInt(step.durationMs, 10) || 0) - prepareMs);
+      const { dc: _prepAuthoringOnly, ...runnable } = step || {};
+      out.push({ ...runnable, durationMs: prepareMs });
+      atMs += prepareMs;
+      for (const boardId of pending) emit(boardId, dc[boardId]);
+      out.push({ cmd: "", durationMs: playMs, target: "all", label: "↳ motion", hold: false,
+        ...(step.authoredIndex != null ? { authoredIndex: step.authoredIndex } : {}) });
+      atMs += playMs;
+      continue;
     }
+
+    for (const boardId of pending) emit(boardId, dc[boardId]);
     const { dc: _authoringOnly, ...runnable } = step || {};
     out.push(runnable);
     // The step's own cmd fires at this same instant, so a STOP zeroes the
