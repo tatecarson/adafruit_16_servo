@@ -30,9 +30,19 @@ if (start < 0 || end <= start) {
   process.exit(1);
 }
 const core = html.slice(start + START.length, end);
+
+// seedFirstKeyframesFromExit snaps its seed to the 5-grid (servo-3o6), so this
+// block needs the SNAP-CORE helpers prepended to run standalone.
+const SNAP_START = "// === SNAP-CORE START ===";
+const SNAP_END = "// === SNAP-CORE END ===";
+const ss = html.indexOf(SNAP_START);
+const se = html.indexOf(SNAP_END, ss + SNAP_START.length);
+if (ss < 0 || se <= ss) { fail("SNAP-CORE markers not found or out of order"); process.exit(1); }
+const snapCore = html.slice(ss + SNAP_START.length, se);
+
 const dir = mkdtempSync(join(tmpdir(), "seq-bridge-core-"));
 const modPath = join(dir, "core.mjs");
-writeFileSync(modPath, `${core}\nexport { bridgeServoPose, planColdStartBridge, planInteriorBridge, insertSequenceBridges, rewriteSequencePreRolls, expandPreRollStepsForDisplay, seedFirstKeyframesFromExit, stripBridges, validateLibraryReferences };\n`, "utf8");
+writeFileSync(modPath, `${snapCore}${core}\nexport { bridgeServoPose, planColdStartBridge, planInteriorBridge, insertSequenceBridges, rewriteSequencePreRolls, expandPreRollStepsForDisplay, seedFirstKeyframesFromExit, stripBridges, validateLibraryReferences };\n`, "utf8");
 const { bridgeServoPose, planColdStartBridge, planInteriorBridge, insertSequenceBridges, rewriteSequencePreRolls, expandPreRollStepsForDisplay, seedFirstKeyframesFromExit, stripBridges, validateLibraryReferences } = await import(pathToFileURL(modPath).href);
 
 console.log("=== Sequence transition bridges ===");
@@ -123,6 +133,84 @@ eq("compact planner produces summaries but no hidden Motions", compact.summary.m
 const displayed = expandPreRollStepsForDisplay(compact.steps);
 eq("Arrange expansion shows two display-only PREP blocks", displayed.filter(s=>s.bridge).length, 2);
 eq("Arrange expansion restores original Motion durations", displayed.filter(s=>!s.bridge).map(s=>s.durationMs), [1000,1000]);
+
+// --- servo-cjv: per-step pre-roll opt-out ---
+// A pre-roll is generated, never authored, so "delete this one" is recorded as
+// a refusal (`noPrep`) on the step it would have preceded.
+const optOut = rewriteSequencePreRolls(
+  [{cmd:"MOTION rise",durationMs:1000,noPrep:true},{cmd:"MOTION fall",durationMs:1000}], lib, wopts);
+eq("noPrep step keeps its bare MOTION command", optOut.steps[0].cmd, "MOTION rise");
+eq("noPrep step gains no pre-roll duration", optOut.steps[0].durationMs, 1000);
+// The trap: skipping the pre-roll must NOT skip the exit-pose bookkeeping, or
+// the next motion's pre-roll gets planned from a stale position and mis-sized.
+eq("following pre-roll is still sized from the skipped motion's exit pose",
+   optOut.steps[1].cmd, "MOTION fall PREP 6160");
+eq("disabled pre-roll is reported with the glide it gave up",
+   optOut.summary.map(s => [s.kind, s.durationMs, s.disabled === true]),
+   [["cold",7700,true],["interior",6160,false]]);
+
+// Arrange has to keep drawing something clickable, or switching a pre-roll off
+// would make it unrecoverable. The summary carries the ghost.
+const displayedOptOut = expandPreRollStepsForDisplay(optOut.steps, optOut.summary);
+eq("disabled pre-roll still draws a block in Arrange",
+   displayedOptOut.filter(s => s.bridge).length, 2);
+eq("the disabled one is a zero-duration ghost, the live one keeps its time",
+   displayedOptOut.filter(s => s.bridge).map(s => [s.durationMs, s.disabled === true]),
+   [[0,true],[6160,false]]);
+eq("ghost carries the would-be glide for the operator warning",
+   displayedOptOut.find(s => s.disabled)?.wouldBeMs, 7700);
+eq("ghost is pinned to the step it belongs to", displayedOptOut[0].bridge, true);
+
+// Summary must stay index-correct when a NON-motion step sits in the middle,
+// since stepIndex is what pins a ghost to its block.
+const mixed = rewriteSequencePreRolls(
+  [{cmd:"STOP",durationMs:500},{cmd:"MOTION rise",durationMs:1000,noPrep:true}], lib, wopts);
+eq("summary stepIndex points at the authored step, not the motion count",
+   mixed.summary.map(s => s.stepIndex), [1]);
+eq("ghost lands after the non-motion step",
+   expandPreRollStepsForDisplay(mixed.steps, mixed.summary).map(s => s.cmd),
+   ["STOP", "", "MOTION rise"]);
+
+// Turning every pre-roll off must cost nothing at bake: no PREP, no padding.
+const allOff = rewriteSequencePreRolls(
+  [{cmd:"MOTION rise",durationMs:1000,noPrep:true},{cmd:"MOTION fall",durationMs:1000,noPrep:true}],
+  lib, wopts);
+eq("all pre-rolls off bakes the authored steps verbatim",
+   allOff.steps.map(s => [s.cmd, s.durationMs]),
+   [["MOTION rise",1000],["MOTION fall",1000]]);
+
+// Absent `noPrep` must behave exactly as before — no migration for saved work.
+eq("steps without noPrep are unchanged",
+   rewriteSequencePreRolls([{cmd:"MOTION rise",durationMs:1000}], lib, wopts).steps[0].cmd,
+   "MOTION rise PREP 7700");
+
+// --- servo-3o6 round trip: snapping removes the pre-roll at the source ---
+// Two motions whose exit and entry both land on 40 leave a delta of 0, which
+// falls under the 5% interior threshold. This is the whole point of the
+// 5-grid: no opt-out needed because no pre-roll is planned.
+const alignedLib = [
+  { id:"a", durationMs:1000, tracks:[{kind:"servo",boardId:1,channel:0,
+    keyframes:[{atMs:0,value:100},{atMs:1000,value:40}]}] },
+  { id:"b", durationMs:1000, tracks:[{kind:"servo",boardId:1,channel:0,
+    keyframes:[{atMs:0,value:40},{atMs:1000,value:100}]}] },
+];
+const aligned = rewriteSequencePreRolls(
+  [{cmd:"MOTION a",durationMs:1000},{cmd:"MOTION b",durationMs:1000}], alignedLib, wopts);
+eq("motions meeting on a snapped value need no interior pre-roll",
+   aligned.steps[1].cmd, "MOTION b");
+
+// Seeding a new Motion from the previous one's exit is the other way a first
+// keyframe gets set. An off-grid legacy exit must not seed an off-grid entry:
+// the drift it introduces (at most 2.5%) stays well under the 5% threshold, so
+// it still costs no pre-roll, and the new Motion starts life on the grid.
+{
+  const prev = { id:"p", durationMs:1000, tracks:[{kind:"servo",boardId:1,channel:0,
+    keyframes:[{atMs:0,value:0},{atMs:1000,value:43}]}] };
+  const fresh = { id:"n", durationMs:1000, tracks:[{kind:"servo",boardId:1,channel:0,
+    keyframes:[{atMs:0,value:0},{atMs:1000,value:80}]}] };
+  eq("seeded first keyframe lands on the grid",
+     seedFirstKeyframesFromExit(prev, fresh).tracks[0].keyframes[0].value, 45);
+}
 
 // A no-movement transition (fall holds 0 -> next fall entry 0) needs no bridge:
 // planInteriorBridge returns null when nothing moves past the slop threshold.
