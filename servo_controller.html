@@ -3764,6 +3764,7 @@ const libraryStorageStatusEl = $("#libraryStorageStatus");
 const seqSelectEl     = $("#seqSelect");
 const seqNameEl       = $("#seqName");
 const seqIdLabelEl    = $("#seqIdLabel");
+const seqFollowBadgeEl = $("#seqFollowBadge");
 const seqTagsEl       = $("#seqTags");
 const seqTagInputEl   = $("#seqTagInput");
 const seqTotalEl      = $("#seqTotal");
@@ -3838,6 +3839,10 @@ function flattenSequenceForDevice(seq, motions) {
 function isSeqEditing() {
   if (seqDirty) return true;
   const el = document.activeElement;
+  // Mid-rename counts: an auto-switch would make the later blur-commit stamp
+  // sequence A's name onto sequence B. (seqSelectEl is deliberately excluded —
+  // its focus lingers after a manual pick and would suppress auto-follow.)
+  if (el === seqNameEl) return true;
   return !!(el && seqStepsEl && seqStepsEl.contains(el));
 }
 
@@ -3887,36 +3892,51 @@ function updateSeqHighlight() {
     viewSeqId: viewSeq ? viewSeq.id : null,
     isEditing: isSeqEditing(),
   });
-  // Re-render only when something visible changed — this runs every ~800ms
-  // poll and must not thrash the DOM.
+  // Re-render the step table only when the ROW highlight moved. The badge
+  // fields (source/jumpHintSeqId) must NOT enter this gate: a table rebuild
+  // (renderSequencer → seqStepsEl.innerHTML=) destroys the operator's focus
+  // (collapsing the edit guard one poll later) and reverts typed-but-unsaved
+  // cell values to the saved library. The badge renders independently below.
   const changed = decision.highlightSeqId !== currentSeqHighlight.highlightSeqId
-    || decision.highlightStep !== currentSeqHighlight.highlightStep
-    || decision.jumpHintSeqId !== currentSeqHighlight.jumpHintSeqId
-    || decision.source !== currentSeqHighlight.source;
+    || decision.highlightStep !== currentSeqHighlight.highlightStep;
   currentSeqHighlight = decision;
   if (decision.autoSwitch && decision.highlightSeqId && viewSeq && decision.highlightSeqId !== viewSeq.id) {
-    switchToSequence(decision.highlightSeqId);   // re-renders via the existing path
+    // switchToSequence re-renders via the existing path. If the id is missing
+    // from the library (device runs a baked copy the browser deleted) it
+    // no-ops, so fall back to the plain render — a stale row highlight must
+    // not linger.
+    if (!switchToSequence(decision.highlightSeqId) && changed) renderSequenceHighlightOnly();
   } else if (changed) {
     renderSequenceHighlightOnly();
   }
-  renderSeqFollowIndicator(decision);
+  renderSeqFollowIndicator(decision, lib);
 }
 
 // The header pill that explains why the view moved ("following playback") or
 // offers the jump when an edit blocked the auto-switch (servo-4rq).
-function renderSeqFollowIndicator(d) {
-  const el = document.getElementById("seqFollowBadge");
+function renderSeqFollowIndicator(d, lib = sequenceLibrary()) {
+  const el = seqFollowBadgeEl;
   if (!el) return;
+  // Compute the desired state first; this runs every poll, so skip the DOM
+  // writes when nothing changed.
+  let hidden = true, cls = "seq-follow", text = "", jumpId = null;
   if (d.source === "telemetry" && d.highlightSeqId && !d.jumpHintSeqId) {
-    el.hidden = false; el.className = "seq-follow following"; el.textContent = "● following playback";
-    el.onclick = null;
+    hidden = false;
+    if ((lib.sequences || []).some(s => s.id === d.highlightSeqId)) {
+      cls = "seq-follow following"; text = "● following playback";
+    } else {
+      // Device-only run: nothing to follow or jump to, so say so (muted base
+      // style) instead of claiming to follow.
+      text = `${d.highlightSeqId} playing · not in library`;
+    }
   } else if (d.jumpHintSeqId) {
-    el.hidden = false; el.className = "seq-follow jump";
-    el.textContent = `${d.jumpHintSeqId} playing → follow`;
-    el.onclick = () => switchToSequence(d.jumpHintSeqId);
-  } else {
-    el.hidden = true; el.onclick = null;
+    hidden = false; cls = "seq-follow jump";
+    text = `${d.jumpHintSeqId} playing → follow`;
+    jumpId = d.jumpHintSeqId;
   }
+  if (el.hidden === hidden && el.className === cls && el.textContent === text) return;
+  el.hidden = hidden; el.className = cls; el.textContent = text;
+  el.onclick = jumpId ? () => switchToSequence(jumpId) : null;
 }
 
 function renderSequenceHighlightOnly() {
@@ -8581,14 +8601,17 @@ bakeBudgetEl.addEventListener("click", (e) => {
 // Single switch path for the <select>, telemetry auto-follow, and the jump
 // badge. Mirrors the manual handler exactly: pending edits are saved first,
 // so clicking the badge is as safe as using the select (servo-4rq).
+// Returns true when the switch happened, false when the id isn't in the
+// library (the caller may need to render anyway).
 function switchToSequence(id) {
   const lib = sequenceLibrary();
-  if (!(lib.sequences || []).some(s => s.id === id)) return;
+  if (!(lib.sequences || []).some(s => s.id === id)) return false;
   if (seqDirty) saveCurrentSequence(readSequenceFromDom());
   currentSeqId = id;
   seqDirty = false;
   seqExpandedSteps.clear();   // step indices belong to the previous sequence
   renderSequencer();
+  return true;
 }
 
 seqSelectEl.addEventListener("change", () => {

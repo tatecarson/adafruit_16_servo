@@ -334,6 +334,10 @@ function updateSeqHighlight() {
   const changedSwitchTarget = decision.autoSwitch && decision.highlightSeqId !== (viewSeq && viewSeq.id);
   currentSeqHighlight = decision;
   // Task 5 handles autoSwitch + badge. For now just re-render the highlight.
+  // NOTE (post-review): the step-table re-render gate compares ONLY
+  // highlightSeqId/highlightStep. The badge fields (source/jumpHintSeqId)
+  // must NOT enter that gate — a table rebuild destroys the operator's focus
+  // and reverts unsaved cell edits; the badge renders independently each poll.
   if (!changedSwitchTarget) renderSequenceHighlightOnly();
 }
 ```
