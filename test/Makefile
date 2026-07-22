@@ -36,6 +36,7 @@ sim-verify:
 	  node verify_seq_preview.mjs && \
 	  node verify_ids.mjs && \
 	  node verify_seq_arrangement.mjs && \
+	  node verify_seq_highlight.mjs && \
 	  node verify_motor_test_safety.mjs && \
 	  node verify_seq_bridges.mjs && \
 	  node verify_bake_payload.mjs && \

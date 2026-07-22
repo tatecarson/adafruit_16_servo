@@ -6385,6 +6385,34 @@ function carryStepAuthoringFlags(domStep, priorStep) {
 }
 // === SEQ-ARRANGE-CORE END ===
 
+// === SEQ-HIGHLIGHT-CORE START ===
+// Pure helpers that drive the sequencer's current-step highlight from device
+// telemetry (servo-4rq), so it lights up during firmware-driven setlist/gallery
+// playback and not only during browser-driven seqPlayer playback. No DOM here.
+
+// Pick the authoritative board's runseq from a per-board snapshot. Prefer the
+// setlist leader; otherwise the lowest-numbered active board (cluster members
+// mirror the leader, so any active board reports the same run). A board whose
+// last poll is older than freshMs is treated as not running, so a disconnected
+// board cannot freeze a stale highlight. Returns a normalized run or null.
+function readRunseqTelemetry(byBoard, leaderBoardId, nowMs, freshMs = 2500) {
+  const live = (byBoard || [])
+    .filter(b => b && b.runseq && b.runseq.active === true &&
+                 Number.isFinite(b.lastSeenMs) && (nowMs - b.lastSeenMs) <= freshMs)
+    .sort((a, b) => a.boardId - b.boardId);
+  if (!live.length) return null;
+  const chosen = live.find(b => b.boardId === leaderBoardId) || live[0];
+  const r = chosen.runseq;
+  return {
+    id: String(r.id || ""),
+    firmwareStep: Math.max(0, parseInt(r.step, 10) || 0),
+    firmwareStepCount: Math.max(0, parseInt(r.steps, 10) || 0),
+    loop: !!r.loop,
+    stepMs: Math.max(0, parseInt(r.stepMs, 10) || 0),
+  };
+}
+// === SEQ-HIGHLIGHT-CORE END ===
+
 function renderSequenceArrangementPreview(motion, wrapperClass = "seq-arrange-preview") {
   const strips = motionPreviewStrips(motion, MOTION_TRACK_SPECS).slice(0, 4);
   if (!strips.length) return `<div class="${wrapperClass}"><span class="seq-arrange-preview-empty">no animated tracks</span></div>`;
