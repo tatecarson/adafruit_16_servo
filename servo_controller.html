@@ -4138,6 +4138,7 @@ const motionLoopEl       = $("#motionLoop");
 // Sequence, where it flattens to ordinary ROTATE chord steps — see
 // DC-LANE-CORE. A motor carries a running speed, not a pose, so it never
 // belonged on the same keyframe clock as servo positions.
+// === MOTION-SPEC-CORE START ===
 const MOTION_TRACK_SPECS = [1, 2, 3].flatMap(boardId => ([
   { kind: "servo", boardId, channel: 0, label: `B${boardId}.S0`, min: 0, max: 100, unit: "%" },
   { kind: "servo", boardId, channel: 1, label: `B${boardId}.S1`, min: 0, max: 100, unit: "%" },
@@ -4157,6 +4158,7 @@ const MOTION_SERVO_REST_PERCENT = 100;
 function defaultTrackValue(spec) {
   return MOTION_SERVO_REST_PERCENT;
 }
+// === MOTION-SPEC-CORE END ===
 
 const SERVO_FEASIBILITY_MS_PER_PERCENT = 77;
 const SERVO_STACCATO_MS_PER_PERCENT = 120;
@@ -4196,14 +4198,6 @@ const motionCollapsedBoards = new Set();
 const motionMutedTracks = new Set();
 let motionSoloTracks = new Set();
 const motionSelectedKeys = new Map();   // trackKey -> Set<atMs> (servo-dmu)
-
-function motionTrackKey(track) {
-  return `${track.boardId}:${track.kind}:${track.channel}`;
-}
-
-function trackSpecKey(spec) {
-  return `${spec.boardId}:${spec.kind}:${spec.channel}`;
-}
 
 // === BAKED-PREROLL-CORE START ===
 // Build one cluster-wide start-pose plan for baked Motion playback. Firmware
@@ -4333,6 +4327,15 @@ function defaultMotion(lib, name = "New Motion") {
 // should re-author after migration; the rescale preserves visible motion
 // shape but the absolute physical position changes (live playback now
 // hits the full mechanical sweep via DOWN <ch> <pct>).
+// === MOTION-NORMALIZE-CORE START ===
+function motionTrackKey(track) {
+  return `${track.boardId}:${track.kind}:${track.channel}`;
+}
+
+function trackSpecKey(spec) {
+  return `${spec.boardId}:${spec.kind}:${spec.channel}`;
+}
+
 function _migrateServoLegacyDegrees(rawKeyframes) {
   let needsMigration = false;
   for (const raw of rawKeyframes || []) {
@@ -4373,7 +4376,16 @@ function normalizeKeyframes(track, durationMs, spec) {
   }
   // Only synthesize a start boundary. End position is now defined by the
   // last explicit keyframe on the track.
-  if (!byTime.has(0)) byTime.set(0, { atMs: 0, value: 0 });
+  //
+  // The synthesized value is the REST pose, not 0 (servo-b4r). normalizeMotion
+  // materializes all nine spec tracks for every Motion, so this boundary is
+  // what a channel the author never touched ends up commanding — and on this
+  // rig 0% is fully UP while the unpowered rest pose is 100% (fully down).
+  // Synthesizing 0 therefore turned every un-authored channel into a silent
+  // full-travel raise, which the cold-start planner then correctly charged
+  // seconds of pre-roll to cover. Same phantom descent servo-xfq removed from
+  // emptyMotion; this path was missed.
+  if (!byTime.has(0)) byTime.set(0, { atMs: 0, value: defaultTrackValue(spec) });
   return Array.from(byTime.values()).sort((a, b) => a.atMs - b.atMs);
 }
 
@@ -4398,6 +4410,7 @@ function normalizeMotion(motion) {
     }),
   };
 }
+// === MOTION-NORMALIZE-CORE END ===
 
 function analyzeServoSegmentFeasibility(track, spec, fromKf, toKf, motion) {
   const deltaPercent = Math.abs((toKf?.value ?? 0) - (fromKf?.value ?? 0));

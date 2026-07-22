@@ -99,6 +99,14 @@ A keyframed pattern across servos and DC motors. Cluster-scope by default; board
 
 A `(boardId, kind, channel)` triple must be unique within a Motion (no two tracks targeting the same physical actuator).
 
+**Un-authored channels hold at rest.** The browser materializes all nine tracks
+for every Motion, so a Motion saved with tracks for one board comes back with
+tracks for all three. A channel the author never touched is given a single
+keyframe at `MOTION_SERVO_REST_PERCENT` (100% — fully down, where the unpowered
+ring settles). That is a hold, not a move: it matches where the rig already is,
+so it costs no pre-roll and no travel. Synthesizing `0` there instead would
+command a full-travel *raise* on every channel the author ignored (servo-b4r).
+
 ### Keyframe
 
 | Field | Type | Required | Notes |
