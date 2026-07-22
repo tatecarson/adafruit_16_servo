@@ -78,6 +78,10 @@ eq("out-of-range firmware step is unreliable",
    mapFirmwareStepToAuthored(flat, 9, 3), { authoredIndex: null, reliable: false });
 eq("a step with no authoredIndex yields null but stays reliable",
    mapFirmwareStepToAuthored([{}, { authoredIndex: 0 }], 0, 2), { authoredIndex: null, reliable: true });
+eq("a negative firmware step is unreliable",
+   mapFirmwareStepToAuthored(flat, -1, 3), { authoredIndex: null, reliable: false });
+eq("a null flatSteps list is unreliable",
+   mapFirmwareStepToAuthored(null, 0, 0), { authoredIndex: null, reliable: false });
 
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);
