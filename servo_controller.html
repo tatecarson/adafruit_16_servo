@@ -3908,8 +3908,13 @@ function updateSeqHighlight() {
   // the previous decision) means a repaint skipped here is simply retried on
   // the next poll after blur/drag-end. The badge fields (source/jumpHintSeqId)
   // stay out of this gate; the badge renders independently below.
-  const needsRender = decision.highlightSeqId !== seqHighlightRendered.seqId
-    || decision.highlightStep !== seqHighlightRendered.step;
+  // needsRender compares the PAINTABLE PROJECTION of the decision (what
+  // renderSequencer would actually record for the current view), not the raw
+  // decision — so degraded states (count mismatch → null step, run id not in
+  // the library) converge with the tracker instead of repainting every poll.
+  const expectedStep = viewSeq && decision.highlightSeqId === viewSeq.id ? decision.highlightStep : null;
+  const needsRender = (expectedStep != null ? viewSeq.id : null) !== seqHighlightRendered.seqId
+    || expectedStep !== seqHighlightRendered.step;
   const renderSafe = !isSeqEditing() && seqArrangePointer == null && seqDragIndex == null;
   currentSeqHighlight = decision;
   if (decision.autoSwitch && decision.highlightSeqId && viewSeq && decision.highlightSeqId !== viewSeq.id) {
