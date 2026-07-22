@@ -6424,6 +6424,30 @@ function mapFirmwareStepToAuthored(flatSteps, firmwareStep, firmwareStepCount) {
   const ai = list[firmwareStep] && list[firmwareStep].authoredIndex;
   return { authoredIndex: Number.isInteger(ai) ? ai : null, reliable: true };
 }
+// Resolve which source drives the highlight and whether the view should follow
+// playback. An active seqPlayer wins — it is exact and lag-free. Telemetry fills
+// the gap only when seqPlayer is idle: highlight in place when the run is the
+// sequence on screen; otherwise auto-switch to it unless the operator is editing,
+// in which case surface a jump badge and leave the view put. `null` inputs
+// (nothing running) clear the highlight.
+function decideSeqHighlight(x) {
+  if (x.seqPlayerActive) {
+    return { highlightSeqId: x.seqPlayerSeqId, highlightStep: x.seqPlayerStep,
+             source: "player", autoSwitch: false, jumpHintSeqId: null };
+  }
+  const runId = x.runseqSeqId || null;
+  if (!runId) {
+    return { highlightSeqId: null, highlightStep: null, source: "none", autoSwitch: false, jumpHintSeqId: null };
+  }
+  const step = Number.isInteger(x.runseqStep) ? x.runseqStep : null;
+  if (runId === x.viewSeqId) {
+    return { highlightSeqId: runId, highlightStep: step, source: "telemetry", autoSwitch: false, jumpHintSeqId: null };
+  }
+  if (x.isEditing) {
+    return { highlightSeqId: null, highlightStep: null, source: "telemetry", autoSwitch: false, jumpHintSeqId: runId };
+  }
+  return { highlightSeqId: runId, highlightStep: step, source: "telemetry", autoSwitch: true, jumpHintSeqId: null };
+}
 // === SEQ-HIGHLIGHT-CORE END ===
 
 function renderSequenceArrangementPreview(motion, wrapperClass = "seq-arrange-preview") {

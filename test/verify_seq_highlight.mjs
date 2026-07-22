@@ -22,8 +22,8 @@ if (s < 0 || e <= s) { fail("SEQ-HIGHLIGHT-CORE markers not found"); process.exi
 const dir = mkdtempSync(join(tmpdir(), "seq-highlight-core-"));
 const modPath = join(dir, "core.mjs");
 writeFileSync(modPath, html.slice(s + START.length, e) +
-  "\nexport { readRunseqTelemetry, mapFirmwareStepToAuthored };\n", "utf8");
-const { readRunseqTelemetry, mapFirmwareStepToAuthored } = await import(pathToFileURL(modPath).href);
+  "\nexport { readRunseqTelemetry, mapFirmwareStepToAuthored, decideSeqHighlight };\n", "utf8");
+const { readRunseqTelemetry, mapFirmwareStepToAuthored, decideSeqHighlight } = await import(pathToFileURL(modPath).href);
 
 console.log("=== Sequencer telemetry highlight ===");
 
@@ -82,6 +82,35 @@ eq("a negative firmware step is unreliable",
    mapFirmwareStepToAuthored(flat, -1, 3), { authoredIndex: null, reliable: false });
 eq("a null flatSteps list is unreliable",
    mapFirmwareStepToAuthored(null, 0, 0), { authoredIndex: null, reliable: false });
+
+// decideSeqHighlight({ seqPlayerActive, seqPlayerSeqId, seqPlayerStep,
+//   runseqSeqId, runseqStep, viewSeqId, isEditing }) -> highlight decision
+const D = decideSeqHighlight;
+
+eq("seqPlayer wins outright when active",
+   D({ seqPlayerActive: true, seqPlayerSeqId: "a", seqPlayerStep: 2,
+       runseqSeqId: "b", runseqStep: 5, viewSeqId: "a", isEditing: false }),
+   { highlightSeqId: "a", highlightStep: 2, source: "player", autoSwitch: false, jumpHintSeqId: null });
+
+eq("telemetry highlights the step when viewing the running sequence",
+   D({ seqPlayerActive: false, runseqSeqId: "a", runseqStep: 1, viewSeqId: "a", isEditing: false }),
+   { highlightSeqId: "a", highlightStep: 1, source: "telemetry", autoSwitch: false, jumpHintSeqId: null });
+
+eq("telemetry auto-switches to a different running sequence when idle",
+   D({ seqPlayerActive: false, runseqSeqId: "b", runseqStep: 0, viewSeqId: "a", isEditing: false }),
+   { highlightSeqId: "b", highlightStep: 0, source: "telemetry", autoSwitch: true, jumpHintSeqId: null });
+
+eq("editing blocks the switch and offers a jump badge instead",
+   D({ seqPlayerActive: false, runseqSeqId: "b", runseqStep: 0, viewSeqId: "a", isEditing: true }),
+   { highlightSeqId: null, highlightStep: null, source: "telemetry", autoSwitch: false, jumpHintSeqId: "b" });
+
+eq("a null step (unreliable mapping) still highlights the sequence title",
+   D({ seqPlayerActive: false, runseqSeqId: "a", runseqStep: null, viewSeqId: "a", isEditing: false }),
+   { highlightSeqId: "a", highlightStep: null, source: "telemetry", autoSwitch: false, jumpHintSeqId: null });
+
+eq("nothing running clears everything",
+   D({ seqPlayerActive: false, runseqSeqId: null, runseqStep: null, viewSeqId: "a", isEditing: false }),
+   { highlightSeqId: null, highlightStep: null, source: "none", autoSwitch: false, jumpHintSeqId: null });
 
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);
