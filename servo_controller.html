@@ -3930,9 +3930,16 @@ function renderSeqFollowIndicator(d, lib = sequenceLibrary()) {
       text = `${d.highlightSeqId} playing · not in library`;
     }
   } else if (d.jumpHintSeqId) {
-    hidden = false; cls = "seq-follow jump";
-    text = `${d.jumpHintSeqId} playing → follow`;
-    jumpId = d.jumpHintSeqId;
+    hidden = false;
+    if ((lib.sequences || []).some(s => s.id === d.jumpHintSeqId)) {
+      cls = "seq-follow jump";
+      text = `${d.jumpHintSeqId} playing → follow`;
+      jumpId = d.jumpHintSeqId;
+    } else {
+      // Same degradation as the following branch: a device-only run has
+      // nothing to jump to, so don't offer a click that would no-op.
+      text = `${d.jumpHintSeqId} playing · not in library`;
+    }
   }
   if (el.hidden === hidden && el.className === cls && el.textContent === text) return;
   el.hidden = hidden; el.className = cls; el.textContent = text;
