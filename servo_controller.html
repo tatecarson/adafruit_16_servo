@@ -1162,10 +1162,15 @@
       linear-gradient(90deg, rgba(75,227,193,.035) 1px, transparent 1px);
     background-size: 24px 24px;
   }
-  .seq-arrange-canvas { position: relative; min-width: 100%; min-height: 100%; padding: 54px 18px 74px; }
+  /* Every timeline row shares one x-axis. The DC lanes reserve a fixed left
+     gutter for their B*.DC labels (servo-i0v); the ruler and track carry the
+     SAME gutter as empty space so ticks, blocks, and motor cells all start at
+     the same x. Without it the labelled lanes sat one gutter-width to the right
+     of the Motions they annotate. */
+  .seq-arrange-canvas { position: relative; min-width: 100%; min-height: 100%; padding: 54px 18px 74px; --lane-gutter: 52px; }
   .seq-arrange-ruler {
     position: absolute;
-    inset: 0 18px auto;
+    top: 0; right: 18px; left: calc(18px + var(--lane-gutter));
     height: 38px;
     border-bottom: 1px solid var(--rule);
     color: var(--ink-mute);
@@ -1173,7 +1178,7 @@
   }
   .seq-arrange-tick { position: absolute; bottom: 7px; transform: translateX(-1px); white-space: nowrap; }
   .seq-arrange-tick::after { content: ""; position: absolute; left: 0; top: 15px; height: 9px; border-left: 1px solid var(--rule-hi); }
-  .seq-arrange-track { position: relative; display: flex; align-items: stretch; height: 152px; margin-top: 12px; }
+  .seq-arrange-track { position: relative; display: flex; align-items: stretch; height: 152px; margin-top: 12px; margin-left: var(--lane-gutter); }
   /* Parallel DC lanes (servo-i0v): one per board, sharing the step track's
      x-axis so motor state is legible against the servo work at every instant.
      Bars are step functions — a motor holds its speed until told otherwise. */
@@ -6300,6 +6305,11 @@ function formatMs(ms) {
 }
 
 // === SEQ-ARRANGE-CORE START ===
+// Left gutter reserved for the DC lanes' B*.DC labels. The ruler and track
+// carry the same gutter (CSS --lane-gutter), so the playhead — absolutely
+// positioned in the canvas — has to add it too or it drifts left of the block
+// it marks. Keep this in sync with the CSS value.
+const SEQ_ARRANGE_LANE_GUTTER = 52;
 // Pure arrangement helpers are kept extractable for host-side browser tests.
 function sequenceArrangementLayout(steps, pixelsPerSecond = 90, minBlockPx = 30) {
   const scale = Math.max(1, Number(pixelsPerSecond) || 90) / 1000;
@@ -6520,7 +6530,7 @@ function renderSequenceArrangement() {
   const playheadLeft = authoredLeftPx[selected] ?? 0;
   const dcLanesHtml = renderDcLanes(displaySteps, layout, trackWidth);
   seqArrangeCanvasEl.innerHTML = `<div class="seq-arrange-ruler" style="width:${trackWidth.toFixed(2)}px">${ticks}</div>
-    <div class="seq-arrange-playhead" style="left:${(18 + playheadLeft).toFixed(2)}px"></div>
+    <div class="seq-arrange-playhead" style="left:${(18 + SEQ_ARRANGE_LANE_GUTTER + playheadLeft).toFixed(2)}px"></div>
     <div class="seq-arrange-track" style="width:${trackWidth.toFixed(2)}px">${blocks}</div>
     ${dcLanesHtml}`;
   seqArrangeStatusEl.textContent = seqPlayer.active
