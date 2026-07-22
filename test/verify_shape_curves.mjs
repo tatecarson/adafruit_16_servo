@@ -35,9 +35,18 @@ const e = html.indexOf(END, s + START.length);
 if (s < 0 || e <= s) { fail("SHAPE-CORE markers not found or out of order"); process.exit(1); }
 const core = html.slice(s + START.length, e);
 
+// SHAPE-CORE snaps generated values to the 5-grid (servo-3o6), so it needs the
+// helpers from SNAP-CORE prepended to run standalone.
+const SNAP_START = "// === SNAP-CORE START ===";
+const SNAP_END = "// === SNAP-CORE END ===";
+const ss = html.indexOf(SNAP_START);
+const se = html.indexOf(SNAP_END, ss + SNAP_START.length);
+if (ss < 0 || se <= ss) { fail("SNAP-CORE markers not found or out of order"); process.exit(1); }
+const snapCore = html.slice(ss + SNAP_START.length, se);
+
 const dir = mkdtempSync(join(tmpdir(), "shape-core-"));
 const modPath = join(dir, "core.mjs");
-writeFileSync(modPath, core + "\nexport { shapeValue, generateShapeKeyframes, mergeShapeIntoKeyframes, fitKeyframesToNeighbors, simplifyKeyframes };\n", "utf8");
+writeFileSync(modPath, snapCore + core + "\nexport { shapeValue, generateShapeKeyframes, mergeShapeIntoKeyframes, fitKeyframesToNeighbors, simplifyKeyframes };\n", "utf8");
 const mod = await import(pathToFileURL(modPath).href);
 for (const fn of ["shapeValue", "generateShapeKeyframes", "mergeShapeIntoKeyframes", "fitKeyframesToNeighbors", "simplifyKeyframes"]) {
   if (typeof mod[fn] !== "function") fail(`SHAPE-CORE does not export ${fn}()`);
@@ -223,6 +232,44 @@ function chainFeasible(seq) {
   // Endpoints are always preserved; tiny inputs pass through.
   eq("two points pass through", simplifyKeyframes([{ atMs: 0, value: 0 }, { atMs: 100, value: 5 }], "servo"),
      [{ atMs: 0, value: 0 }, { atMs: 100, value: 5 }]);
+}
+
+// --- servo-3o6: painted shapes land on the 5-grid too ------------------------
+// A shape that ends on 43 is exactly the off-grid boundary value that
+// resurrects a pre-roll, so generated servo keyframes snap like hand-placed
+// ones. Feasibility still comes last: the slew clamp gets the final word.
+{
+  const onGrid = kfs => kfs.every(k => k.value % 5 === 0);
+  for (const shape of ["rampUp", "rampDown", "sine", "triangle", "easeIn", "easeOut"]) {
+    const { keyframes } = generateShapeKeyframes({
+      shape, t0: 0, t1: 20000, low: 3, high: 97, spec: SERVO, msPerPct: MS_PER_PCT,
+    });
+    assert(`${shape} generates only 5-grid servo values`, onGrid(keyframes));
+    assert(`${shape} stays within the slew limit after snapping`, feasible(keyframes));
+  }
+  // The square trapezoid takes its own code path, so it gets its own check.
+  const sq = generateShapeKeyframes({
+    shape: "square", t0: 0, t1: 20000, low: 10, high: 90, spec: SERVO, msPerPct: MS_PER_PCT,
+  });
+  assert("square trapezoid generates only 5-grid values", onGrid(sq.keyframes));
+  assert("square trapezoid stays feasible after snapping", feasible(sq.keyframes));
+
+  // DC tracks are speeds, not positions, and never take part in pre-roll
+  // planning — leave their resolution alone.
+  const dc = generateShapeKeyframes({
+    shape: "sine", t0: 0, t1: 4000, low: -50, high: 50, spec: DC, msPerPct: MS_PER_PCT,
+  });
+  assert("DC shapes keep full resolution", dc.keyframes.some(k => k.value % 5 !== 0));
+
+  // fitKeyframesToNeighbors pulls values toward the kept keyframes on either
+  // side. Snapping must not push one back out past what the neighbour allows.
+  const fitted = fitKeyframesToNeighbors(
+    [{ atMs: 1000, value: 100 }],
+    { atMs: 0, value: 0 }, null, MS_PER_PCT,
+  );
+  assert("neighbour fit lands on the grid", fitted.every(k => k.value % 5 === 0));
+  assert("neighbour fit stays reachable from the previous keyframe",
+         Math.abs(fitted[0].value - 0) * MS_PER_PCT <= 1000 + 1e-6);
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

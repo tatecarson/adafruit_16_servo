@@ -32,8 +32,8 @@ if (start < 0 || end <= start) {
 const core = html.slice(start + START.length, end);
 const dir = mkdtempSync(join(tmpdir(), "seq-arrangement-core-"));
 const modPath = join(dir, "core.mjs");
-writeFileSync(modPath, `${core}\nexport { sequenceArrangementLayout, reorderSequenceSteps, sequenceStepForMotion, chooseSequenceArrangementMotion };\n`, "utf8");
-const { sequenceArrangementLayout, reorderSequenceSteps, sequenceStepForMotion, chooseSequenceArrangementMotion } = await import(pathToFileURL(modPath).href);
+writeFileSync(modPath, `${core}\nexport { sequenceArrangementLayout, reorderSequenceSteps, sequenceStepForMotion, chooseSequenceArrangementMotion, toggleSequenceStepPreRoll, carryStepAuthoringFlags };\n`, "utf8");
+const { sequenceArrangementLayout, reorderSequenceSteps, sequenceStepForMotion, chooseSequenceArrangementMotion, toggleSequenceStepPreRoll, carryStepAuthoringFlags } = await import(pathToFileURL(modPath).href);
 
 console.log("=== Sequence arrangement timeline ===");
 
@@ -77,6 +77,36 @@ const replaced = chooseSequenceArrangementMotion(replaceSource, motion, 0, "repl
 eq("replace choice swaps command and duration", [replaced[0].cmd, replaced[0].durationMs], ["MOTION tidal-drift", 4800]);
 eq("replace choice preserves step metadata", [replaced[0].target, replaced[0].label, replaced[0].hold], ["2", "finale", true]);
 eq("invalid Motion choice is a no-op", chooseSequenceArrangementMotion(original, {}, 0, "add").map(step => step.cmd), ["A", "B", "C", "D"]);
+
+// --- servo-cjv: clicking a pre-roll block switches it off and back on ---
+const prSteps = [
+  { cmd: "MOTION a", durationMs: 1000, target: "all", label: "", hold: false },
+  { cmd: "MOTION b", durationMs: 2000, target: "all", label: "", hold: false },
+];
+const off = toggleSequenceStepPreRoll(prSteps, 1);
+eq("toggling marks the step as refusing its pre-roll", off[1].noPrep, true);
+eq("toggling leaves every other step alone", off[0].noPrep, undefined);
+eq("toggling does not mutate the source steps", prSteps[1].noPrep, undefined);
+// Cleared rather than set false, so a sequence that never opted out serializes
+// exactly as it did before this feature existed.
+eq("toggling back removes the field instead of storing false",
+   Object.prototype.hasOwnProperty.call(toggleSequenceStepPreRoll(off, 1)[1], "noPrep"), false);
+eq("out-of-range index is a no-op", toggleSequenceStepPreRoll(prSteps, 7).map(s => s.cmd), ["MOTION a", "MOTION b"]);
+eq("negative index is a no-op", toggleSequenceStepPreRoll(prSteps, -1).map(s => s.cmd), ["MOTION a", "MOTION b"]);
+
+// The // 07 step table has inputs for cmd/duration/target/label/hold/dc and
+// nothing for noPrep, so rebuilding a step from its row would delete the
+// opt-out. Editing a label must not silently resurrect a deleted pre-roll.
+eq("a rebuilt row keeps the pre-roll opt-out it came from",
+   carryStepAuthoringFlags({ cmd: "MOTION a", label: "edited" }, { cmd: "MOTION a", noPrep: true }).noPrep, true);
+eq("a rebuilt row without an opt-out gains no field",
+   Object.prototype.hasOwnProperty.call(carryStepAuthoringFlags({ cmd: "MOTION a" }, { cmd: "MOTION a" }), "noPrep"), false);
+eq("a missing prior step is harmless",
+   carryStepAuthoringFlags({ cmd: "MOTION a" }, undefined).cmd, "MOTION a");
+
+matches("pre-roll blocks carry a toggle target for the click handler", /data-arrange-prep="/);
+matches("disabled pre-roll ghost has its own style rule", /\.seq-arrange-block\.bridge\.disabled\s*\{/s);
+matches("a long refused glide is flagged as a jump", /\.seq-arrange-block\.bridge\.disabled\.warn\s*\{/s);
 
 matches("servo preview uses the Motion editor's amber color", /\.seq-arrange-preview-row polyline\s*\{[^}]*stroke:\s*var\(--amber\)/s);
 matches("DC preview uses the Motion editor's phosphor color", /\.seq-arrange-preview-row\.dc polyline\s*\{[^}]*stroke:\s*var\(--phosphor\)/s);

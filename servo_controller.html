@@ -1228,10 +1228,27 @@
     /* Auto-inserted at bake — not an authored step, so no drag/select, but keep
        pointer-events on so the title tooltip still works. */
   }
+  .seq-arrange-block.bridge[data-arrange-prep] { cursor: pointer; }
   .seq-arrange-block.bridge:hover { border-color: var(--amber); filter: brightness(1.08); }
   .seq-arrange-block.bridge .n { color: var(--amber); }
   .seq-arrange-block.bridge .cmdline { color: var(--amber); margin-top: 17px; }
   .seq-arrange-block.bridge .timing { color: var(--amber); }
+  /* A refused pre-roll (servo-cjv). Zero duration, so minBlockPx keeps it 30px
+     wide and clickable — switching one off must never make it unrecoverable. */
+  .seq-arrange-block.bridge.disabled {
+    border-color: var(--ink-mute);
+    border-left-color: var(--ink-mute);
+    background: none;
+    opacity: .5;
+  }
+  .seq-arrange-block.bridge.disabled:hover { border-color: var(--ink-dim); opacity: .8; }
+  .seq-arrange-block.bridge.disabled .n,
+  .seq-arrange-block.bridge.disabled .cmdline,
+  .seq-arrange-block.bridge.disabled .timing { color: var(--ink-mute); }
+  .seq-arrange-block.bridge.disabled .cmdline { text-decoration: line-through; }
+  /* Long refused glide = big jump. A 60% slam should not look like a 5% one. */
+  .seq-arrange-block.bridge.disabled.warn { border-color: var(--amber); opacity: .72; }
+  .seq-arrange-block.bridge.disabled.warn .n { color: var(--amber); }
   .seq-arrange-block .n { color: var(--amber); font: 800 9px/1 var(--label); letter-spacing: .22em; }
   .seq-arrange-block .cmdline { margin-top: 17px; font: 700 12px/1.25 var(--mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .seq-arrange-block .label { margin-top: 8px; color: var(--ink-dim); font: 500 10px/1.2 var(--mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -2355,7 +2372,7 @@
       </header>
       <main class="seq-arrange-stage">
         <div class="seq-arrange-instructions">
-          <span>Drag blocks to reorder · click a block to move the scrub position</span>
+          <span>Drag blocks to reorder · click a block to move the scrub position · click a PREP block to delete or restore that pre-roll</span>
           <span>Block width follows step duration</span>
         </div>
         <div id="seqArrangeScroll" class="seq-arrange-scroll">
@@ -2513,7 +2530,7 @@
     <span class="num">// 06</span>
     <span class="label">Motion</span>
     <span class="rule"></span>
-    <span class="hint">9-track cluster keyframes · servo % down (0=up, 100=down) · motor speed moved to Sequencer DC lanes · live scrub · ⌥-drag a shape · ⇧-drag to select (Del removes) · Clr clears a row · shared library</span>
+    <span class="hint">9-track cluster keyframes · servo % down (0=up, 100=down) · motor speed moved to Sequencer DC lanes · live scrub · values snap to 5 (⇧ for fine) · ⌥-drag a shape · ⇧-drag to select (Del removes) · Clr clears a row · shared library</span>
   </div>
 
   <div class="panel motion-editor">
@@ -4515,6 +4532,17 @@ function setMotionStatus(msg, color) {
   motionStatusEl.style.color = color ? `var(--${color})` : "var(--ink-dim)";
 }
 
+// === SNAP-CORE START ===
+// Its own marker block because SHAPE-CORE calls into it as well as the editor,
+// so both host suites can prepend it to whatever they extract (servo-3o6).
+
+// Keyframe values land on multiples of 5. This is alignment tooling, not
+// cosmetics: when one Motion's exit value equals the next one's entry value,
+// planInteriorBridge sees a delta of 0, falls under its 5% threshold, and
+// plans no pre-roll at all. Getting ends to meet by hand at single-percent
+// resolution is what made pre-rolls feel unavoidable.
+const MOTION_VALUE_SNAP = 5;
+
 function clampMotionValue(value, spec) {
   const n = Number.isFinite(value) ? value : 0;
   return Math.max(spec.min, Math.min(spec.max, n));
@@ -4526,8 +4554,25 @@ function snapMotionTime(ms, shiftKey) {
 }
 
 function snapMotionValue(value, shiftKey) {
-  return shiftKey ? Math.round(value * 10) / 10 : Math.round(value);
+  const n = Number.isFinite(value) ? value : 0;
+  return shiftKey ? Math.round(n * 10) / 10
+                  : Math.round(n / MOTION_VALUE_SNAP) * MOTION_VALUE_SNAP;
 }
+
+// Snap a value that a feasibility clamp produced. Those clamps report the
+// furthest a servo can actually reach in the time available, so rounding one
+// AWAY from where the move started would hand back travel the hardware cannot
+// make. The grid may only ever pull such a value back toward its anchor, and
+// never past it — feasibility outranks tidiness.
+function snapMotionValueToward(value, anchor, spec) {
+  const n = Number.isFinite(value) ? value : 0;
+  const from = Number.isFinite(anchor) ? anchor : n;
+  const step = MOTION_VALUE_SNAP;
+  const snapped = n >= from ? Math.floor(n / step) * step : Math.ceil(n / step) * step;
+  const held = n >= from ? Math.max(snapped, from) : Math.min(snapped, from);
+  return spec ? clampMotionValue(held, spec) : held;
+}
+// === SNAP-CORE END ===
 
 function motionTimeToPct(ms, durationMs) {
   return durationMs > 0 ? Math.max(0, Math.min(100, (ms / durationMs) * 100)) : 0;
@@ -4851,6 +4896,10 @@ function _clampSlew(points, msPerPct) {
     const prev = points[i - 1].value;
     if (points[i].value > prev + maxDv) points[i].value = prev + maxDv;
     else if (points[i].value < prev - maxDv) points[i].value = prev - maxDv;
+    // Servo-only path. The clamp above reports the furthest this point can be
+    // reached from the one before it, so the 5-grid may only pull it back
+    // toward `prev` — rounding outward would undo the clamp (servo-3o6).
+    points[i].value = snapMotionValueToward(points[i].value, prev);
   }
   return points;
 }
@@ -4871,7 +4920,7 @@ function _servoSquareTrapezoid(t0, t1, low, high, msPerPct) {
     pts.push({ atMs: t, value: low + ((t - upStart) / (upEnd - upStart)) * (high - low) });
   }
   pts.push({ atMs: upEnd, value: high }, { atMs: t1, value: high });
-  return _dedupeByAt(pts.map(p => ({ atMs: Math.round(p.atMs / 100) * 100, value: Math.round(p.value) })));
+  return _dedupeByAt(pts.map(p => ({ atMs: Math.round(p.atMs / 100) * 100, value: snapMotionValue(p.value, false) })));
 }
 
 // Generate keyframes for a shape painted into a box. spec = { kind, min, max }.
@@ -4898,7 +4947,10 @@ function generateShapeKeyframes({ shape, t0, t1, low, high, spec, msPerPct = 77,
   const ideal = _sampleShape(shape, t0, t1, low, high, rng);
   const mid = (low + high) / 2;
   const s = _feasibleAmplitudeScale(ideal, msPerPct);
-  const scaled = ideal.map(p => ({ atMs: p.atMs, value: Math.round(mid + (p.value - mid) * s) }));
+  // Servo values land on the 5-grid (servo-3o6) so a painted shape's endpoints
+  // can meet the next Motion's exactly; _clampSlew below keeps the last word on
+  // whether the snapped value is actually reachable.
+  const scaled = ideal.map(p => ({ atMs: p.atMs, value: snapMotionValue(mid + (p.value - mid) * s, false) }));
   return { keyframes: _clampSlew(scaled, msPerPct), reducedTo: s };
 }
 
@@ -4918,13 +4970,17 @@ function fitKeyframesToNeighbors(points, prev, next, msPerPct) {
   const forward = () => { let a = prev; for (const p of pts) { if (a) clampTo(p, a); a = p; } };
   const backward = () => { let a = next; for (let i = pts.length - 1; i >= 0; i--) { if (a) clampTo(pts[i], a); a = pts[i]; } };
   forward(); backward(); forward();
-  for (const p of pts) p.value = Math.round(p.value);
+  for (const p of pts) p.value = snapMotionValue(p.value, false);
   // Integer feasibility: iterate forward/backward clamps to a fixed point so
   // rounding (and the two-sided anchors) can't leave any red segment. Each pass
   // only pulls values toward reachability; converges since prev↔next are
   // mutually feasible.
-  const fwdInt = () => { let a = prev; for (const p of pts) { if (a) { const m = Math.floor(Math.abs(p.atMs - a.atMs) / msPerPct); p.value = Math.max(a.value - m, Math.min(a.value + m, p.value)); } a = p; } };
-  const bwdInt = () => { let a = next; for (let i = pts.length - 1; i >= 0; i--) { if (a) { const m = Math.floor(Math.abs(a.atMs - pts[i].atMs) / msPerPct); pts[i].value = Math.max(a.value - m, Math.min(a.value + m, pts[i].value)); } a = pts[i]; } };
+  //
+  // Snapping rides along inside the clamp rather than after it: both operations
+  // only ever pull a value toward its anchor, so the loop still converges and
+  // no pass can round a value back out past what the neighbour allows.
+  const fwdInt = () => { let a = prev; for (const p of pts) { if (a) { const m = Math.floor(Math.abs(p.atMs - a.atMs) / msPerPct); p.value = snapMotionValueToward(Math.max(a.value - m, Math.min(a.value + m, p.value)), a.value); } a = p; } };
+  const bwdInt = () => { let a = next; for (let i = pts.length - 1; i >= 0; i--) { if (a) { const m = Math.floor(Math.abs(a.atMs - pts[i].atMs) / msPerPct); pts[i].value = snapMotionValueToward(Math.max(a.value - m, Math.min(a.value + m, pts[i].value)), a.value); } a = pts[i]; } };
   for (let iter = 0; iter < pts.length + 2; iter++) { fwdInt(); bwdInt(); }
   return pts;
 }
@@ -5126,7 +5182,13 @@ function moveSelectedKeyframes(keyframes, indices, deltaMs, deltaValue, options 
   if (minDeltaValue > maxDeltaValue) {
     return { keyframes: source, selectedAtMs: selected.map(i => source[i].atMs), deltaMs: appliedDeltaMs, deltaValue: 0, clamped: appliedDeltaMs !== deltaMs, impossible: true };
   }
-  const appliedDeltaValue = Math.max(minDeltaValue, Math.min(maxDeltaValue, deltaValue));
+  let appliedDeltaValue = Math.max(minDeltaValue, Math.min(maxDeltaValue, deltaValue));
+  // The drag delta arrives on the 5-grid, but the feasibility clamp above can
+  // cut it to anything, which would slide the whole selection off-grid. Snap
+  // the SHIFT rather than the individual values so the selection keeps its
+  // internal shape, and snap it toward 0 so the clamp is never undone
+  // (servo-3o6).
+  if (isServo) appliedDeltaValue = snapMotionValueToward(appliedDeltaValue, 0);
 
   const movedByIndex = new Map();
   for (const idx of selected) {
@@ -6163,6 +6225,10 @@ function normalizeStep(step) {
     // "unchanged"; compactStepForDevice never emits this field, and
     // flattenDcLanes turns it into ROTATE chords before anything is baked.
     dc: readStepDcMap(step),
+    // Operator deleted the automatic pre-roll in front of this step (servo-cjv).
+    // Absent means "keep it", so sequences authored before this feature are
+    // unchanged and need no migration.
+    ...(step?.noPrep ? { noPrep: true } : {}),
     // Preserved so generated chords can report the authored row they own.
     ...(step?.authoredIndex != null ? { authoredIndex: step.authoredIndex } : {}),
     ...(step?.dcChord ? { dcChord: true } : {}),
@@ -6173,7 +6239,7 @@ function readSequenceFromDom() {
   const lib = sequenceLibrary();
   const existing = getCurrentSequence(lib);
   const rows = Array.from(seqStepsEl.querySelectorAll("tr[data-index]"));
-  const steps = rows.map(row => normalizeStep({
+  const steps = rows.map(row => normalizeStep(carryStepAuthoringFlags({
     cmd: row.querySelector("[data-field=cmd]").value,
     durationMs: row.querySelector("[data-field=durationMs]").value,
     target: row.querySelector("[data-field=target]").value,
@@ -6183,7 +6249,7 @@ function readSequenceFromDom() {
     // "unchanged" survives the round-trip and stays distinct from 0 (stop).
     dc: Object.fromEntries(DC_LANE_BOARD_IDS.map(boardId =>
       [boardId, row.querySelector(`[data-dc-board="${boardId}"]`)?.value ?? ""])),
-  })).filter(step => step.cmd);
+  }, (existing?.steps || [])[parseInt(row.dataset.index, 10)]))).filter(step => step.cmd);
   return { ...existing, steps: steps.length ? steps : [{ cmd: "STOP", durationMs: 1000, target: "all" }] };
 }
 
@@ -6270,6 +6336,30 @@ function chooseSequenceArrangementMotion(steps, motion, selectedIndex, mode = "a
   else copy.splice(copy.length ? selected + 1 : 0, 0, next);
   return copy;
 }
+
+// Switch the automatic pre-roll in front of one authored step on or off
+// (servo-cjv). Off deletes it outright: no PREP glide, no added time, the
+// Motion opens by snapping to its first keyframe.
+//
+// "On" is the absence of the flag rather than `noPrep:false`, so a sequence
+// that never opted out serializes byte-for-byte as it did before this existed.
+function toggleSequenceStepPreRoll(steps, index) {
+  const copy = Array.isArray(steps) ? steps.slice() : [];
+  const i = parseInt(index, 10);
+  if (!Number.isInteger(i) || i < 0 || i >= copy.length) return copy;
+  const { noPrep, ...rest } = copy[i] || {};
+  copy[i] = noPrep === true ? rest : { ...rest, noPrep: true };
+  return copy;
+}
+
+// The // 07 step table has inputs for cmd/duration/target/label/hold/dc and
+// nothing for noPrep, so rebuilding a step from its row would quietly delete
+// the opt-out. Editing an unrelated field must not resurrect a pre-roll the
+// operator deleted, so the flag is carried across from the step the row came
+// from rather than read out of the DOM.
+function carryStepAuthoringFlags(domStep, priorStep) {
+  return priorStep?.noPrep === true ? { ...domStep, noPrep: true } : domStep;
+}
 // === SEQ-ARRANGE-CORE END ===
 
 function renderSequenceArrangementPreview(motion, wrapperClass = "seq-arrange-preview") {
@@ -6327,7 +6417,7 @@ function renderSequenceArrangement() {
     seqId: seq.id, msPerPercent: SERVO_FEASIBILITY_MS_PER_PERCENT,
     minDeltaPercent: 5, floorMs: 800, restPercent: MOTION_SERVO_REST_PERCENT, maxSteps: SEQ_MAX_STEPS,
   });
-  const displaySteps = expandPreRollStepsForDisplay(bridged.steps);
+  const displaySteps = expandPreRollStepsForDisplay(bridged.steps, bridged.summary);
   const layout = sequenceArrangementLayout(displaySteps, zoom);
   const available = Math.max(0, (seqArrangeScrollEl.clientWidth || 0) - 36);
   const trackWidth = Math.max(layout.widthPx, available);
@@ -6336,12 +6426,13 @@ function renderSequenceArrangement() {
     : Math.max(0, Math.min(seqArrangeSelectedIndex, steps.length - 1));
   seqArrangeSelectedIndex = selected;
   seqArrangeTitleEl.textContent = seq.name || seq.id;
-  const preRollCount = bridged.summary.length;
+  const preRollOffCount = bridged.summary.filter(s => s.disabled === true).length;
+  const preRollCount = bridged.summary.length - preRollOffCount;
   // What actually reaches EEPROM is the flattened list, so the budget readout
   // has to count DC chords alongside the authored steps.
   const flattened = flattenDcLanes(bridged.steps, { loop: false, maxSteps: SEQ_MAX_STEPS });
   const chordCount = flattened.steps.length - bridged.steps.length;
-  seqArrangeMetaEl.textContent = `${steps.length} step${steps.length === 1 ? "" : "s"}${preRollCount > 0 ? ` · ${preRollCount} pre-roll${preRollCount === 1 ? "" : "s"}` : ""}${chordCount > 0 ? ` · ${chordCount} dc chord${chordCount === 1 ? "" : "s"}` : ""} · ${flattened.steps.length}/${SEQ_MAX_STEPS} firmware steps · total ${formatMs(layout.totalMs)} · id ${seq.id}`;
+  seqArrangeMetaEl.textContent = `${steps.length} step${steps.length === 1 ? "" : "s"}${preRollCount > 0 ? ` · ${preRollCount} pre-roll${preRollCount === 1 ? "" : "s"}` : ""}${preRollOffCount > 0 ? ` · ${preRollOffCount} off` : ""}${chordCount > 0 ? ` · ${chordCount} dc chord${chordCount === 1 ? "" : "s"}` : ""} · ${flattened.steps.length}/${SEQ_MAX_STEPS} firmware steps · total ${formatMs(layout.totalMs)} · id ${seq.id}`;
   if (bridged.error || flattened.error) {
     const produced = flattened.error ? flattened.error.produced : bridged.error.produced;
     seqArrangeWarnEl.textContent = `⚠ ${produced} firmware steps exceeds the ${SEQ_MAX_STEPS}-step budget — remove steps or DC changes`;
@@ -6364,9 +6455,27 @@ function renderSequenceArrangement() {
   const blocks = displaySteps.map((step, di) => {
     const geometry = layout.blocks[di];
     if (step.bridge === true) {
+      // A pre-roll belongs to the authored step it precedes, and `authored` is
+      // that step's index right now (it has not been consumed yet). That index
+      // is what the click handler flips noPrep on.
+      const ownerIndex = authored;
+      const toggleAttr = seqPlayer.active ? "" : ` data-arrange-prep="${ownerIndex}"`;
+      if (step.disabled === true) {
+        // prepareMs is maxDelta × msPerPercent, so the glide you gave up IS the
+        // size of the jump you get instead. Past ~1.5s (roughly a 20% traverse)
+        // that lands hard enough to warrant a visible warning.
+        const wouldBe = Math.max(0, parseInt(step.wouldBeMs, 10) || 0);
+        const warn = wouldBe >= 1500 ? " warn" : "";
+        return `<article class="seq-arrange-block bridge zero disabled${warn}" style="width:${geometry.widthPx.toFixed(2)}px"${toggleAttr}
+            title="Pre-roll off${wouldBe > 0 ? ` · would have glided ${formatMs(wouldBe)}` : ""} · servos jump to the start pose · click to restore">
+          <span class="n">OFF</span>
+          <div class="cmdline">↳ pre-roll off</div>
+          <div class="timing">skipped</div>
+        </article>`;
+      }
       const durLabel = geometry.durationMs > 0 ? formatMs(geometry.durationMs) : "instant";
-      return `<article class="seq-arrange-block bridge zero" style="width:${geometry.widthPx.toFixed(2)}px"
-          title="Automatic Motion pre-roll · ${durLabel} · encoded inside the following step at bake">
+      return `<article class="seq-arrange-block bridge zero" style="width:${geometry.widthPx.toFixed(2)}px"${toggleAttr}
+          title="Automatic Motion pre-roll · ${durLabel} · encoded inside the following step at bake · click to delete">
         <span class="n">PREP</span>
         <div class="cmdline">↳ pre-roll${geometry.durationMs > 0 ? ` ${geometry.durationMs}ms` : ""}</div>
         <div class="timing">${durLabel}</div>
@@ -7062,16 +7171,28 @@ function rewriteSequencePreRolls(steps, motions, opts) {
     }
 
     const prepareMs = planned ? Number(planned.durationMs ?? planned.motion?.durationMs) || 0 : 0;
-    if (prepareMs > 0) {
+    // `noPrep` is the operator refusing this pre-roll from the Arrange timeline
+    // (servo-cjv). It emits no PREP and buys no extra time, so the Motion opens
+    // by snapping to its first keyframe. The plan is still computed, and still
+    // reported, so Arrange can draw a restorable ghost and name the glide that
+    // was given up.
+    const refused = step.noPrep === true;
+    if (prepareMs > 0 && !refused) {
       outSteps.push({
         ...step,
         cmd: `MOTION ${motion.id} PREP ${prepareMs}`,
         durationMs: Math.max(0, parseInt(step.durationMs, 10) || 0) + prepareMs,
       });
-      summary.push({ kind, durationMs:prepareMs, channels:planned.channels || [], stepIndex });
+      summary.push({ kind, durationMs:prepareMs, channels:planned.channels || [], stepIndex, disabled:false });
     } else {
       outSteps.push(step);
+      if (prepareMs > 0) {
+        summary.push({ kind, durationMs:prepareMs, channels:planned.channels || [], stepIndex, disabled:true });
+      }
     }
+    // Runs for refused pre-rolls too. Skipping the glide does not skip the
+    // move: the servos still arrive at this Motion's exit pose, so the NEXT
+    // pre-roll must be planned from there or it comes out the wrong length.
     virt = Object.assign(virt || {}, bridgeServoPose(motion, "exit"));
   }
 
@@ -7084,11 +7205,26 @@ function rewriteSequencePreRolls(steps, motions, opts) {
 // Expand compact PREP commands back into display-only bridge blocks for the
 // Arrange timeline. The authored Sequence remains untouched and draggable
 // indices continue to refer only to its real steps.
-function expandPreRollStepsForDisplay(steps) {
+//
+// `summary` is the planner's own report. Refused pre-rolls leave no trace in
+// the steps, so their ghosts have to come from there — without them, switching
+// a pre-roll off would remove the only thing you could click to switch it back
+// on. rewriteSequencePreRolls emits exactly one step per authored step, so a
+// summary's stepIndex addresses this array directly.
+function expandPreRollStepsForDisplay(steps, summary) {
+  const ghosts = new Map();
+  for (const entry of (summary || [])) {
+    if (entry?.disabled === true) ghosts.set(entry.stepIndex, entry);
+  }
   const out = [];
-  for (const step of (steps || [])) {
+  (steps || []).forEach((step, stepIndex) => {
+    const ghost = ghosts.get(stepIndex);
+    if (ghost) {
+      out.push({ cmd:"", durationMs:0, target:"all", label:"↳ pre-roll off", hold:false,
+        bridge:true, disabled:true, wouldBeMs:Math.max(0, ghost.durationMs || 0) });
+    }
     const m = /^\s*MOTION\s+(\S+)\s+PREP\s+(\d+)\s*$/i.exec(String(step?.cmd || ""));
-    if (!m) { out.push(step); continue; }
+    if (!m) { out.push(step); return; }
     const prepareMs = Math.max(0, parseInt(m[2], 10) || 0);
     out.push({ cmd:"", durationMs:prepareMs, target:"all", label:"↳ pre-roll", hold:false, bridge:true });
     out.push({
@@ -7096,7 +7232,7 @@ function expandPreRollStepsForDisplay(steps) {
       cmd:`MOTION ${m[1]}`,
       durationMs:Math.max(0, (parseInt(step.durationMs, 10) || 0) - prepareMs),
     });
-  }
+  });
   return out;
 }
 // Layer 1: when creating a new motion, seed each servo track's first keyframe
@@ -7110,8 +7246,12 @@ function seedFirstKeyframesFromExit(prevMotion, newMotion) {
     const key = `${t.boardId}:servo:${t.channel}`;
     if (!(key in exit)) continue;
     if (!Array.isArray(t.keyframes)) t.keyframes = [];
-    if (t.keyframes.length && Number(t.keyframes[0].atMs) === 0) t.keyframes[0].value = exit[key];
-    else t.keyframes.unshift({ atMs:0, value:exit[key] });
+    // Snap the seed so a Motion authored before the 5-grid cannot seed an
+    // off-grid entry (servo-3o6). The drift is at most half a grid step, well
+    // under the 5% delta that would make planInteriorBridge add a pre-roll.
+    const seeded = snapMotionValue(exit[key], false);
+    if (t.keyframes.length && Number(t.keyframes[0].atMs) === 0) t.keyframes[0].value = seeded;
+    else t.keyframes.unshift({ atMs:0, value:seeded });
   }
   return newMotion;
 }
@@ -8326,6 +8466,22 @@ seqArrangeDialogEl.addEventListener("close", () => {
 });
 seqArrangeCanvasEl.addEventListener("click", e => {
   if (seqArrangeSuppressClick) return;
+  // Pre-roll blocks carry no data-arrange-index (they are not authored steps),
+  // so this branch has to come first and return — otherwise the selection
+  // handler below would never see them anyway, but the intent is clearer here.
+  const prep = e.target.closest("[data-arrange-prep]");
+  if (prep) {
+    const owner = parseInt(prep.dataset.arrangePrep, 10);
+    const seq = getCurrentSequence();
+    const wasOff = (seq.steps || [])[owner]?.noPrep === true;
+    seq.steps = toggleSequenceStepPreRoll(seq.steps, owner);
+    saveCurrentSequence(seq);
+    renderSequenceArrangement();
+    seqArrangeStatusEl.textContent = wasOff
+      ? `Pre-roll restored on step ${pad2(owner + 1)}`
+      : `Pre-roll deleted on step ${pad2(owner + 1)} · servos jump to its start pose`;
+    return;
+  }
   const block = e.target.closest("[data-arrange-index]");
   if (!block) return;
   const index = parseInt(block.dataset.arrangeIndex, 10) || 0;

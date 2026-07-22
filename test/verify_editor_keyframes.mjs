@@ -28,15 +28,24 @@ const e = html.indexOf(END, s + START.length);
 if (s < 0 || e <= s) { fail("EDITOR-CORE markers not found or out of order"); process.exit(1); }
 const core = html.slice(s + START.length, e);
 
+// The value-snapping helpers live in their own marker block because SHAPE-CORE
+// calls into them too (servo-3o6); both suites prepend it to what they extract.
+const SNAP_START = "// === SNAP-CORE START ===";
+const SNAP_END = "// === SNAP-CORE END ===";
+const ss = html.indexOf(SNAP_START);
+const se = html.indexOf(SNAP_END, ss + SNAP_START.length);
+if (ss < 0 || se <= ss) { fail("SNAP-CORE markers not found or out of order"); process.exit(1); }
+const snapCore = html.slice(ss + SNAP_START.length, se);
+
 const dir = mkdtempSync(join(tmpdir(), "editor-core-"));
 const modPath = join(dir, "core.mjs");
-writeFileSync(modPath, core + "\nexport { motionConnectionPoints, motionDragReadout, keyframesInMarquee, deleteKeyframeIndices, moveSelectedKeyframes };\n", "utf8");
+writeFileSync(modPath, snapCore + core + "\nexport { motionConnectionPoints, motionDragReadout, keyframesInMarquee, deleteKeyframeIndices, moveSelectedKeyframes, snapMotionValue, snapMotionValueToward };\n", "utf8");
 const mod = await import(pathToFileURL(modPath).href);
-for (const fn of ["motionConnectionPoints", "motionDragReadout", "keyframesInMarquee", "deleteKeyframeIndices", "moveSelectedKeyframes"]) {
-  if (typeof mod[fn] !== "function") fail(`EDITOR-CORE does not export ${fn}()`);
+for (const fn of ["motionConnectionPoints", "motionDragReadout", "keyframesInMarquee", "deleteKeyframeIndices", "moveSelectedKeyframes", "snapMotionValue", "snapMotionValueToward"]) {
+  if (typeof mod[fn] !== "function") fail(`core blocks do not export ${fn}()`);
 }
 if (failed) process.exit(1);
-const { motionConnectionPoints, motionDragReadout, keyframesInMarquee, deleteKeyframeIndices, moveSelectedKeyframes } = mod;
+const { motionConnectionPoints, motionDragReadout, keyframesInMarquee, deleteKeyframeIndices, moveSelectedKeyframes, snapMotionValue, snapMotionValueToward } = mod;
 
 console.log("=== Motion editor keyframe select/delete ===");
 
@@ -117,10 +126,13 @@ eq("original array not mutated", kfs.length, 4);
 {
   const servo = [{ atMs: 0, value: 0 }, { atMs: 1000, value: 10 }, { atMs: 2000, value: 20 }, { atMs: 3000, value: 20 }];
   const moved = moveSelectedKeyframes(servo, [1, 2], 0, 30, { durationMs: 3000, minValue: 0, maxValue: 100, kind: "servo", msPerPct: 77 });
-  eq("servo move clamps value to feasible boundary", moved.keyframes, [
+  // The feasible boundary here is +12; the 5-grid pulls the shift back to +10
+  // (servo-3o6). Snapping only ever rounds toward zero, so the result stays
+  // inside what the servo can reach — it just stops short of the limit.
+  eq("servo move clamps value to feasible boundary, then to the grid", moved.keyframes, [
     { atMs: 0, value: 0 },
-    { atMs: 1000, value: 12 },
-    { atMs: 2000, value: 22 },
+    { atMs: 1000, value: 10 },
+    { atMs: 2000, value: 20 },
     { atMs: 3000, value: 20 },
   ]);
   eq("servo move reports clamped value", moved.clamped, true);
@@ -161,6 +173,50 @@ eq("original array not mutated", kfs.length, 4);
   const moved = moveSelectedKeyframes(eased, [1], 200, 0, { durationMs: 3000, minValue: 0, maxValue: 100, kind: "dc" });
   eq("move preserves moved keyframe easing", moved.keyframes.find(k => k.atMs === 1200)?.easing, "ease-in");
   eq("move preserves untouched keyframe easing", moved.keyframes.find(k => k.atMs === 2000)?.easing, "s-curve");
+}
+
+// --- servo-3o6: keyframe values snap to a 5-grid -----------------------------
+// The point is alignment: one Motion's exit landing exactly on the next one's
+// entry drives the interior-bridge delta to 0, so no pre-roll is planned.
+{
+  const SERVO = { kind: "servo", min: 0, max: 100 };
+  eq("47 rounds down to the grid", snapMotionValue(47, false), 45);
+  eq("43 rounds up to the grid", snapMotionValue(43, false), 45);
+  eq("42.5 rounds up on the half", snapMotionValue(42.5, false), 45);
+  eq("2.4 collapses to 0", snapMotionValue(2.4, false), 0);
+  eq("98 rounds to the top of travel", snapMotionValue(98, false), 100);
+  eq("a value already on the grid is untouched", snapMotionValue(40, false), 40);
+  eq("Shift keeps the old fine mode", snapMotionValue(42.53, true), 42.5);
+
+  // Feasibility clamps report the furthest a servo can actually reach in the
+  // time available. Rounding that AWAY from where it started would hand back a
+  // move the hardware cannot make, so the grid only ever pulls it back.
+  eq("a clamp moving up rounds down toward its start",
+     snapMotionValueToward(42.3, 0, SERVO), 40);
+  eq("a clamp moving down rounds up toward its start",
+     snapMotionValueToward(57.7, 100, SERVO), 60);
+  eq("a reachable grid value is left alone",
+     snapMotionValueToward(45, 0, SERVO), 45);
+  // An off-grid anchor (legacy data) must not be overshot: feasibility wins.
+  eq("snapping never crosses the anchor it is pulling toward",
+     snapMotionValueToward(1, 4, SERVO), 4);
+  eq("no movement stays no movement",
+     snapMotionValueToward(30, 30, SERVO), 30);
+  eq("the result stays inside the track's travel limits",
+     snapMotionValueToward(-3, 0, SERVO), 0);
+
+  // Dragging a selection is the other way a boundary value gets set. The drag
+  // delta is already a grid multiple, but the feasibility clamp can cut it to
+  // anything — and a group drag that lands the last keyframe on 28 is exactly
+  // the off-grid exit that brings a pre-roll back.
+  const group = [
+    { atMs: 0, value: 0 }, { atMs: 4000, value: 40 }, { atMs: 8000, value: 40 },
+  ];
+  const dragged = moveSelectedKeyframes(group, [1, 2], 0, 50, {
+    durationMs: 8000, minValue: 0, maxValue: 100, kind: "servo", msPerPct: 77,
+  });
+  eq("a clamped group drag still lands every servo value on the grid",
+     dragged.keyframes.every(k => k.value % 5 === 0), true);
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

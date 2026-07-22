@@ -171,6 +171,27 @@ An ordered list of commands with explicit durations.
 | `dc` | object | no | Authoring-only per-board motor speeds — see [DC lanes](#dc-lanes). Stripped at bake time; never reaches the device. |
 | `label` | string | no | ≤64 chars. Composer's note. Never sent to firmware (stripped at bake time). |
 | `hold` | boolean | no | Composition-only. Stripped at bake time. |
+| `noPrep` | boolean | no | Authoring-only. `true` deletes the automatic Motion pre-roll in front of this step — see [Pre-rolls](#pre-rolls). Absent means "keep it". Stripped at bake time. |
+
+### Pre-rolls
+
+A step whose `cmd` is `MOTION <id>` normally gets an automatic pre-roll: the
+bake planner emits `MOTION <id> PREP <ms>` and extends `durationMs` by the same
+amount, so the firmware glides the servos to keyframe zero before the Motion
+starts. Nothing extra is stored — no bridge Motion, no dwell step.
+
+The glide is sized at 77ms per 1% of the largest servo move it has to cover,
+floored at 800ms. A servo already within 5% of its entry value is skipped, so a
+Motion whose entry pose matches the previous Motion's exit pose gets no pre-roll
+at all. Snapping keyframe values to multiples of 5 in the Motion editor exists to
+make that alignment reachable by hand.
+
+Setting `noPrep: true` refuses the pre-roll for one step: no `PREP`, no added
+duration, and the Motion opens by snapping to its first keyframe. Clicking the
+pre-roll block in the Arrange timeline toggles it; a refused pre-roll stays
+visible there as a zero-duration ghost so it can be restored. Refusing a pre-roll
+does not change where the servos end up, so the *following* step's pre-roll is
+still planned from this Motion's exit pose.
 
 ### DC lanes
 
