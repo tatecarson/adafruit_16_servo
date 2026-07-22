@@ -1236,6 +1236,9 @@
   .seq-arrange-block + .seq-arrange-block { border-left-color: var(--phosphor); }
   .seq-arrange-block:hover { border-color: var(--phosphor); filter: brightness(1.13); }
   .seq-arrange-block.selected { background: linear-gradient(145deg, rgba(255,182,39,.2), rgba(255,182,39,.055)); border-color: var(--amber); }
+  /* Telemetry "now playing" marker — visual only, never the selection. Reuses
+     the selected look so browser play (where playing === selected) is unchanged. */
+  .seq-arrange-block.playing { background: linear-gradient(145deg, rgba(255,182,39,.2), rgba(255,182,39,.055)); border-color: var(--amber); }
   .seq-arrange-block.dragging { opacity: .35; transform: translateY(6px); }
   .seq-arrange-block.drop-target { box-shadow: inset 4px 0 0 var(--amber); }
   .seq-arrange-block.zero { border-style: dashed; }
@@ -3823,6 +3826,11 @@ let libraryFileWriteFailed = false;
 // and Arrange timeline read it instead of seqPlayer directly, so the highlight
 // follows firmware-driven setlist/gallery playback too.
 let currentSeqHighlight = { highlightSeqId: null, highlightStep: null, source: "none", autoSwitch: false, jumpHintSeqId: null };
+// What the step table LAST PAINTED (recorded by renderSequencer itself, so it
+// stays honest no matter who triggered the render). updateSeqHighlight compares
+// the fresh decision against this — not against the previous decision — so a
+// repaint skipped mid-edit is retried after blur instead of going stale.
+let seqHighlightRendered = { seqId: null, step: null };
 
 // Reproduce the DEVICE bake flattening (rewriteSequencePreRolls then
 // flattenDcLanes) so a firmware step index maps to the right authored row.
@@ -3892,21 +3900,25 @@ function updateSeqHighlight() {
     viewSeqId: viewSeq ? viewSeq.id : null,
     isEditing: isSeqEditing(),
   });
-  // Re-render the step table only when the ROW highlight moved. The badge
-  // fields (source/jumpHintSeqId) must NOT enter this gate: a table rebuild
-  // (renderSequencer → seqStepsEl.innerHTML=) destroys the operator's focus
-  // (collapsing the edit guard one poll later) and reverts typed-but-unsaved
-  // cell values to the saved library. The badge renders independently below.
-  const changed = decision.highlightSeqId !== currentSeqHighlight.highlightSeqId
-    || decision.highlightStep !== currentSeqHighlight.highlightStep;
+  // Repaint the step table only when the decision disagrees with what the
+  // table LAST PAINTED (seqHighlightRendered, recorded by renderSequencer) —
+  // and never mid-edit or mid-drag: a rebuild (seqStepsEl.innerHTML=) destroys
+  // the operator's focus, reverts typed-but-unsaved cell values, and yanks a
+  // drag out from under the pointer. Comparing against the painted state (not
+  // the previous decision) means a repaint skipped here is simply retried on
+  // the next poll after blur/drag-end. The badge fields (source/jumpHintSeqId)
+  // stay out of this gate; the badge renders independently below.
+  const needsRender = decision.highlightSeqId !== seqHighlightRendered.seqId
+    || decision.highlightStep !== seqHighlightRendered.step;
+  const renderSafe = !isSeqEditing() && seqArrangePointer == null && seqDragIndex == null;
   currentSeqHighlight = decision;
   if (decision.autoSwitch && decision.highlightSeqId && viewSeq && decision.highlightSeqId !== viewSeq.id) {
     // switchToSequence re-renders via the existing path. If the id is missing
     // from the library (device runs a baked copy the browser deleted) it
     // no-ops, so fall back to the plain render — a stale row highlight must
     // not linger.
-    if (!switchToSequence(decision.highlightSeqId) && changed) renderSequenceHighlightOnly();
-  } else if (changed) {
+    if (!switchToSequence(decision.highlightSeqId) && needsRender && renderSafe) renderSequenceHighlightOnly();
+  } else if (needsRender && renderSafe) {
     renderSequenceHighlightOnly();
   }
   renderSeqFollowIndicator(decision, lib);
@@ -6557,7 +6569,9 @@ function readRunseqTelemetry(byBoard, leaderBoardId, nowMs, freshMs = 2500) {
   const r = chosen.runseq;
   return {
     id: String(r.id || ""),
-    firmwareStep: Math.max(0, parseInt(r.step, 10) || 0),
+    // No clamp: a negative reported step must reach mapFirmwareStepToAuthored's
+    // range guard, not be silently rewritten to a confident row-0 highlight.
+    firmwareStep: parseInt(r.step, 10) || 0,
     firmwareStepCount: Math.max(0, parseInt(r.steps, 10) || 0),
     loop: !!r.loop,
     stepMs: Math.max(0, parseInt(r.stepMs, 10) || 0),
@@ -6659,11 +6673,17 @@ function renderSequenceArrangement() {
   const layout = sequenceArrangementLayout(displaySteps, zoom);
   const available = Math.max(0, (seqArrangeScrollEl.clientWidth || 0) - 36);
   const trackWidth = Math.max(layout.widthPx, available);
-  const hi = highlightedAuthoredIndex(seq.id);
-  const selected = hi != null
-    ? Math.max(0, Math.min(hi, steps.length - 1))
+  // Selection and highlight are DISTINCT concepts. `selected` is what "Use
+  // Here"/"+ After" write to, so only browser playback (which locks arrange
+  // editing) may usurp it. Letting the telemetry highlight drive `selected`
+  // hijacked the user's clicks during device playback — every edit landed on
+  // the PLAYING step instead of the chosen one. Telemetry is visual-only:
+  // `playingIdx` just adds a `playing` class alongside the selection.
+  const selected = seqPlayer.active
+    ? Math.max(0, Math.min(activeAuthoredStepIndex(), steps.length - 1))
     : Math.max(0, Math.min(seqArrangeSelectedIndex, steps.length - 1));
   seqArrangeSelectedIndex = selected;
+  const playingIdx = highlightedAuthoredIndex(seq.id);
   seqArrangeTitleEl.textContent = seq.name || seq.id;
   const preRollOffCount = bridged.summary.filter(s => s.disabled === true).length;
   const preRollCount = bridged.summary.length - preRollOffCount;
@@ -6732,7 +6752,7 @@ function renderSequenceArrangement() {
     const motionId = seqStepMotionId(step.cmd);
     const motion = motionId ? libMotions.find(item => item.id === motionId) : null;
     const preview = motion ? renderSequenceArrangementPreview(motion) : "";
-    return `<article class="seq-arrange-block${index === selected ? " selected" : ""}${geometry.durationMs === 0 ? " zero" : ""}${motion ? " has-preview" : ""}"
+    return `<article class="seq-arrange-block${index === selected ? " selected" : ""}${index === playingIdx ? " playing" : ""}${geometry.durationMs === 0 ? " zero" : ""}${motion ? " has-preview" : ""}"
         data-arrange-index="${index}" style="width:${geometry.widthPx.toFixed(2)}px"
         title="Step ${index + 1} · ${escapeHtml(step.cmd)} · ${formatMs(geometry.durationMs)}">
       <span class="n">STEP ${pad2(index + 1)}</span>
@@ -6935,6 +6955,9 @@ function renderSequencer() {
     return row + previewRow;
   }).join("");
   renderSequenceArrangement();
+  // Record what this paint shows so updateSeqHighlight can compare the next
+  // decision against reality (see seqHighlightRendered's declaration).
+  seqHighlightRendered = { seqId: activeIdx != null ? seq.id : null, step: activeIdx };
 }
 
 function setSeqStatus(msg, color) {
@@ -8778,6 +8801,10 @@ seqStepsEl.addEventListener("dragover", e => {
   if (seqDragIndex == null) return;
   e.preventDefault();
 });
+// A cancelled drag (Esc / dropped outside the table) never reaches the drop
+// handler; without this, a stale seqDragIndex would permanently suppress the
+// telemetry-highlight repaints that gate on it. dragend fires either way.
+seqStepsEl.addEventListener("dragend", () => { seqDragIndex = null; });
 seqStepsEl.addEventListener("drop", e => {
   const row = e.target.closest("tr[data-index]");
   if (!row || seqDragIndex == null) return;

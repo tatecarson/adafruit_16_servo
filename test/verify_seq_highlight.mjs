@@ -61,6 +61,9 @@ eq("a null byBoard yields null",
 eq("string-valued step and steps are coerced to numbers",
    readRunseqTelemetry([{ boardId: 1, runseq: { active: true, id: "a", step: "2", steps: "5", loop: false, stepMs: 0 }, lastSeenMs: 100 }], 1, 100, 2500),
    { id: "a", firmwareStep: 2, firmwareStepCount: 5, loop: false, stepMs: 0 });
+eq("a negative reported step passes through so the mapper can reject it",
+   readRunseqTelemetry([{ boardId: 1, runseq: run("a", -2, 3), lastSeenMs: 100 }], 1, 100, 2500),
+   { id: "a", firmwareStep: -2, firmwareStepCount: 3, loop: false, stepMs: 0 });
 
 // mapFirmwareStepToAuthored(flatSteps, firmwareStep, firmwareStepCount)
 // A baked list where authored step 0 owns 2 firmware steps (chord+motion),
