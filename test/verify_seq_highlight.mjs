@@ -40,15 +40,27 @@ eq("prefers the leader board when it is active",
      { boardId: 2, runseq: run("b", 2, 5), lastSeenMs: 100 },
    ], 2, 100, 2500),
    { id: "b", firmwareStep: 2, firmwareStepCount: 5, loop: false, stepMs: 0 });
-eq("falls back to the lowest active board when the leader is idle",
+eq("falls back to the lowest active board when the leader is absent",
    readRunseqTelemetry([
      { boardId: 3, runseq: run("c", 0, 2), lastSeenMs: 100 },
+     { boardId: 2, runseq: run("b", 1, 4), lastSeenMs: 100 },
+   ], 1, 100, 2500),
+   { id: "b", firmwareStep: 1, firmwareStepCount: 4, loop: false, stepMs: 0 });
+eq("falls back to an active board when the leader is present but idle",
+   readRunseqTelemetry([
+     { boardId: 1, runseq: run("a", 0, 3, false), lastSeenMs: 100 },
      { boardId: 2, runseq: run("b", 1, 4), lastSeenMs: 100 },
    ], 1, 100, 2500),
    { id: "b", firmwareStep: 1, firmwareStepCount: 4, loop: false, stepMs: 0 });
 eq("a stale board is ignored even if active",
    readRunseqTelemetry([{ boardId: 1, runseq: run("a", 1, 3), lastSeenMs: 100 }], 1, 5000, 2500),
    null);
+eq("a null byBoard yields null",
+   readRunseqTelemetry(null, 1, 100),
+   null);
+eq("string-valued step and steps are coerced to numbers",
+   readRunseqTelemetry([{ boardId: 1, runseq: { active: true, id: "a", step: "2", steps: "5", loop: false, stepMs: 0 }, lastSeenMs: 100 }], 1, 100, 2500),
+   { id: "a", firmwareStep: 2, firmwareStepCount: 5, loop: false, stepMs: 0 });
 
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);
