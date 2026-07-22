@@ -111,5 +111,24 @@ matches("a long refused glide is flagged as a jump", /\.seq-arrange-block\.bridg
 matches("servo preview uses the Motion editor's amber color", /\.seq-arrange-preview-row polyline\s*\{[^}]*stroke:\s*var\(--amber\)/s);
 matches("DC preview uses the Motion editor's phosphor color", /\.seq-arrange-preview-row\.dc polyline\s*\{[^}]*stroke:\s*var\(--phosphor\)/s);
 
+// The lane gutter is written twice: once in CSS (--lane-gutter, which shifts
+// the ruler and track) and once in JS (SEQ_ARRANGE_LANE_GUTTER, which the
+// playhead adds to land on its block). They MUST be equal — if they drift, the
+// scrub line sits a few px off the block it marks, silently and with no error.
+// The playhead can't read the CSS var because it computes a pixel position, so
+// the duplication is unavoidable; this guard makes the two numbers fail the
+// build the instant they disagree.
+{
+  const cssMatch = /--lane-gutter:\s*(\d+)px/.exec(html);
+  const jsMatch = /SEQ_ARRANGE_LANE_GUTTER\s*=\s*(\d+)/.exec(html);
+  if (!cssMatch) fail("CSS --lane-gutter value not found");
+  else if (!jsMatch) fail("JS SEQ_ARRANGE_LANE_GUTTER value not found");
+  else if (cssMatch[1] !== jsMatch[1]) {
+    fail(`lane gutter mismatch: CSS --lane-gutter is ${cssMatch[1]}px but JS SEQ_ARRANGE_LANE_GUTTER is ${jsMatch[1]} — the playhead will drift from its block`);
+  } else {
+    ok(`lane gutter stays in sync across CSS and JS (both ${cssMatch[1]}px)`);
+  }
+}
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);
