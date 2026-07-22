@@ -25,7 +25,7 @@ const modulePath = join(dir, "core.mjs");
 writeFileSync(modulePath, `
 const SEQ_MAX_STEPS = 16;
 ${block("// === DC-LANE-CORE START ===", "// === DC-LANE-CORE END ===")}
-export { flattenDcLanes, clampDcLaneValue, readStepDcMap, DC_LANE_SPEED_LIMIT, DC_LANE_BOARD_IDS };
+export { flattenDcLanes, clampDcLaneValue, readStepDcMap, dcStateByDisplayBlock, DC_LANE_SPEED_LIMIT, DC_LANE_BOARD_IDS };
 `, "utf8");
 
 const core = await import(pathToFileURL(modulePath).href);
@@ -222,6 +222,94 @@ const chords = out => out.steps.filter(s => s.dcChord).map(s => `${s.cmd}@${s.ta
   const prepared = /inline bool startMotionPreparedFromStorage[\s\S]*?\n\}/.exec(motionEngine)[0];
   check(!/setMotorSpeedQuiet\(0\)/.test(prepared),
     "the Motion pre-roll leaves motor state alone (zeroing here wipes the DC chord)");
+}
+
+// --- servo-d5y: a chord must land on the Motion, not on the glide ------
+// rewriteSequencePreRolls folds the travel glide INSIDE the step
+// (MOTION x PREP n, durationMs d+n). A chord can only fire at a step
+// boundary, so without splitting it lands at the START of the glide and the
+// motor changes speed seconds before the Motion it was authored against.
+{
+  const out = core.flattenDcLanes([
+    step("MOTION rise", 6000, { 3: 20 }),
+    { ...step("MOTION ripple PREP 3465", 9465), dc: { 3: -30 } },
+  ], { loop: false });
+  const timeline = [];
+  let at = 0;
+  for (const s of out.steps) { timeline.push([at, s.cmd]); at += Math.max(0, s.durationMs | 0); }
+  check(JSON.stringify(timeline) === JSON.stringify([
+    [0, "ROTATE 20"],
+    [0, "MOTION rise"],
+    [6000, "MOTION ripple PREP 3465"],   // the glide, on its own clock
+    [9465, "ROTATE -30"],                 // fires exactly as Ripple opens
+    [9465, ""],                           // dwell holds Ripple's real length
+    [15465, "ROTATE 0"],                  // trailing park
+  ]), "a chord on a PREP step fires at the Motion start, not at the glide start");
+
+  const dwell = out.steps.find(s => s.cmd === "");
+  check(dwell.durationMs === 6000, "the dwell step carries the Motion's real duration");
+  check(dwell.target === "all", "the dwell step is cluster-wide so every board holds the clock");
+  check(!dwell.dcChord, "the dwell step is not mistaken for a chord");
+}
+
+// Splitting costs a firmware step, so it must only happen when it buys
+// something: no DC change on the step means the compact form is kept.
+{
+  const out = core.flattenDcLanes([
+    { ...step("MOTION ripple PREP 3465", 9465) },
+  ], { loop: false });
+  check(out.steps.length === 1, "a PREP step with no DC change is left compact");
+  check(out.steps[0].durationMs === 9465, "and keeps its combined duration");
+}
+
+// A DC change that restates the current speed emits no chord, so there is
+// nothing to re-time and no reason to spend a step splitting.
+{
+  const out = core.flattenDcLanes([
+    step("MOTION rise", 6000, { 3: 20 }),
+    { ...step("MOTION ripple PREP 3465", 9465), dc: { 3: 20 } },
+  ], { loop: false });
+  check(!out.steps.some(s => s.cmd === ""), "a redundant DC value does not split the step");
+}
+
+// The split must survive the step-budget check: it produces more steps, so
+// the overflow has to be reported rather than silently baked.
+{
+  const many = [];
+  for (let i = 0; i < 6; i++) many.push({ ...step(`MOTION m${i} PREP 800`, 1800), dc: { 3: i % 2 ? 10 : 20 } });
+  const out = core.flattenDcLanes(many, { loop: false, maxSteps: 16 });
+  check(out.error && out.error.code === "dc-step-budget",
+    "splitting counts against the firmware step budget");
+}
+
+// The Arrange lane and the bake must agree. This is the assertion that would
+// have caught servo-d5y: draw the change on the travel block while the chord
+// fires there too and both are "consistent" — but the Motion has not started.
+{
+  // What Arrange draws, given the display expansion of a glide + Motion.
+  const display = [
+    step("MOTION rise", 6000, { 3: 20 }),
+    { cmd: "", durationMs: 3465, target: "all", bridge: true },   // travel block
+    { ...step("MOTION ripple", 6000), dc: { 3: -30 } },
+  ];
+  const states = core.dcStateByDisplayBlock(display);
+  let at = 0; const drawn = [];
+  display.forEach((s, i) => { drawn.push([at, states[i][3]]); at += s.durationMs; });
+  check(JSON.stringify(drawn) === JSON.stringify([[0, 20], [6000, 20], [9465, -30]]),
+    "the lane holds the old speed across the glide and changes at the Motion");
+
+  // What the rig does, from the same authored steps.
+  const baked = core.flattenDcLanes([
+    step("MOTION rise", 6000, { 3: 20 }),
+    { ...step("MOTION ripple PREP 3465", 9465), dc: { 3: -30 } },
+  ], { loop: true });
+  let bt = 0; const fired = [];
+  for (const s of baked.steps) {
+    if (/^ROTATE/.test(s.cmd)) fired.push([bt, parseInt(s.cmd.split(" ")[1], 10)]);
+    bt += Math.max(0, s.durationMs | 0);
+  }
+  check(JSON.stringify(fired) === JSON.stringify([[0, 20], [9465, -30]]),
+    "and the baked chords fire at exactly those same times");
 }
 
 // --- DC is gone from the Motion editor ---------------------------------

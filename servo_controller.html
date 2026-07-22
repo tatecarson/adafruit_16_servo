@@ -1162,10 +1162,15 @@
       linear-gradient(90deg, rgba(75,227,193,.035) 1px, transparent 1px);
     background-size: 24px 24px;
   }
-  .seq-arrange-canvas { position: relative; min-width: 100%; min-height: 100%; padding: 54px 18px 74px; }
+  /* Every timeline row shares one x-axis. The DC lanes reserve a fixed left
+     gutter for their B*.DC labels (servo-i0v); the ruler and track carry the
+     SAME gutter as empty space so ticks, blocks, and motor cells all start at
+     the same x. Without it the labelled lanes sat one gutter-width to the right
+     of the Motions they annotate. */
+  .seq-arrange-canvas { position: relative; min-width: 100%; min-height: 100%; padding: 54px 18px 74px; --lane-gutter: 52px; }
   .seq-arrange-ruler {
     position: absolute;
-    inset: 0 18px auto;
+    top: 0; right: 18px; left: calc(18px + var(--lane-gutter));
     height: 38px;
     border-bottom: 1px solid var(--rule);
     color: var(--ink-mute);
@@ -1173,7 +1178,7 @@
   }
   .seq-arrange-tick { position: absolute; bottom: 7px; transform: translateX(-1px); white-space: nowrap; }
   .seq-arrange-tick::after { content: ""; position: absolute; left: 0; top: 15px; height: 9px; border-left: 1px solid var(--rule-hi); }
-  .seq-arrange-track { position: relative; display: flex; align-items: stretch; height: 152px; margin-top: 12px; }
+  .seq-arrange-track { position: relative; display: flex; align-items: stretch; height: 152px; margin-top: 12px; margin-left: var(--lane-gutter); }
   /* Parallel DC lanes (servo-i0v): one per board, sharing the step track's
      x-axis so motor state is legible against the servo work at every instant.
      Bars are step functions — a motor holds its speed until told otherwise. */
@@ -2372,7 +2377,7 @@
       </header>
       <main class="seq-arrange-stage">
         <div class="seq-arrange-instructions">
-          <span>Drag blocks to reorder · click a block to move the scrub position · click a PREP block to delete or restore that pre-roll</span>
+          <span>Drag blocks to reorder · click a block to move the scrub position · click a TRAVEL block to delete or restore that glide</span>
           <span>Block width follows step duration</span>
         </div>
         <div id="seqArrangeScroll" class="seq-arrange-scroll">
@@ -6300,6 +6305,11 @@ function formatMs(ms) {
 }
 
 // === SEQ-ARRANGE-CORE START ===
+// Left gutter reserved for the DC lanes' B*.DC labels. The ruler and track
+// carry the same gutter (CSS --lane-gutter), so the playhead — absolutely
+// positioned in the canvas — has to add it too or it drifts left of the block
+// it marks. Keep this in sync with the CSS value.
+const SEQ_ARRANGE_LANE_GUTTER = 52;
 // Pure arrangement helpers are kept extractable for host-side browser tests.
 function sequenceArrangementLayout(steps, pixelsPerSecond = 90, minBlockPx = 30) {
   const scale = Math.max(1, Number(pixelsPerSecond) || 90) / 1000;
@@ -6445,7 +6455,7 @@ function renderSequenceArrangement() {
   // has to count DC chords alongside the authored steps.
   const flattened = flattenDcLanes(bridged.steps, { loop: false, maxSteps: SEQ_MAX_STEPS });
   const chordCount = flattened.steps.length - bridged.steps.length;
-  seqArrangeMetaEl.textContent = `${steps.length} step${steps.length === 1 ? "" : "s"}${preRollCount > 0 ? ` · ${preRollCount} pre-roll${preRollCount === 1 ? "" : "s"}` : ""}${preRollOffCount > 0 ? ` · ${preRollOffCount} off` : ""}${chordCount > 0 ? ` · ${chordCount} dc chord${chordCount === 1 ? "" : "s"}` : ""} · ${flattened.steps.length}/${SEQ_MAX_STEPS} firmware steps · total ${formatMs(layout.totalMs)} · id ${seq.id}`;
+  seqArrangeMetaEl.textContent = `${steps.length} step${steps.length === 1 ? "" : "s"}${preRollCount > 0 ? ` · ${preRollCount} travel glide${preRollCount === 1 ? "" : "s"}` : ""}${preRollOffCount > 0 ? ` · ${preRollOffCount} skipped` : ""}${chordCount > 0 ? ` · ${chordCount} dc chord${chordCount === 1 ? "" : "s"}` : ""} · ${flattened.steps.length}/${SEQ_MAX_STEPS} firmware steps · total ${formatMs(layout.totalMs)} · id ${seq.id}`;
   if (bridged.error || flattened.error) {
     const produced = flattened.error ? flattened.error.produced : bridged.error.produced;
     seqArrangeWarnEl.textContent = `⚠ ${produced} firmware steps exceeds the ${SEQ_MAX_STEPS}-step budget — remove steps or DC changes`;
@@ -6473,6 +6483,12 @@ function renderSequenceArrangement() {
       // is what the click handler flips noPrep on.
       const ownerIndex = authored;
       const toggleAttr = seqPlayer.active ? "" : ` data-arrange-prep="${ownerIndex}"`;
+      // What the block actually says. Without this it read "pre-roll 7700ms",
+      // which names a duration and explains nothing (servo-rvn).
+      const travel = describePreRollTravel(step.moves);
+      const detail = travel.rows.length
+        ? `\n${travel.rows.join("\n")}`
+        : "";
       if (step.disabled === true) {
         // prepareMs is maxDelta × msPerPercent, so the glide you gave up IS the
         // size of the jump you get instead. Past ~1.5s (roughly a 20% traverse)
@@ -6480,17 +6496,17 @@ function renderSequenceArrangement() {
         const wouldBe = Math.max(0, parseInt(step.wouldBeMs, 10) || 0);
         const warn = wouldBe >= 1500 ? " warn" : "";
         return `<article class="seq-arrange-block bridge zero disabled${warn}" style="width:${geometry.widthPx.toFixed(2)}px"${toggleAttr}
-            title="Pre-roll off${wouldBe > 0 ? ` · would have glided ${formatMs(wouldBe)}` : ""} · servos jump to the start pose · click to restore">
+            title="${escapeHtml(`Travel to start · SKIPPED\n${travel.headline}${wouldBe > 0 ? ` — would have taken ${formatMs(wouldBe)}` : ""}\nThese winches jump to the start pose at full speed instead.${detail}\n\nClick to restore.`)}">
           <span class="n">OFF</span>
-          <div class="cmdline">↳ pre-roll off</div>
-          <div class="timing">skipped</div>
+          <div class="cmdline">↳ travel skipped</div>
+          <div class="timing">${escapeHtml(travel.headline)}</div>
         </article>`;
       }
       const durLabel = geometry.durationMs > 0 ? formatMs(geometry.durationMs) : "instant";
       return `<article class="seq-arrange-block bridge zero" style="width:${geometry.widthPx.toFixed(2)}px"${toggleAttr}
-          title="Automatic Motion pre-roll · ${durLabel} · encoded inside the following step at bake · click to delete">
-        <span class="n">PREP</span>
-        <div class="cmdline">↳ pre-roll${geometry.durationMs > 0 ? ` ${geometry.durationMs}ms` : ""}</div>
+          title="${escapeHtml(`Travel to start · ${durLabel}\n${travel.headline}\nThe next Motion assumes the winches already sit at its first keyframe; this is them getting there.${detail}\n\nClick to delete this travel.`)}">
+        <span class="n">TRAVEL</span>
+        <div class="cmdline">↳ ${escapeHtml(travel.headline)}</div>
         <div class="timing">${durLabel}</div>
       </article>`;
     }
@@ -6514,7 +6530,7 @@ function renderSequenceArrangement() {
   const playheadLeft = authoredLeftPx[selected] ?? 0;
   const dcLanesHtml = renderDcLanes(displaySteps, layout, trackWidth);
   seqArrangeCanvasEl.innerHTML = `<div class="seq-arrange-ruler" style="width:${trackWidth.toFixed(2)}px">${ticks}</div>
-    <div class="seq-arrange-playhead" style="left:${(18 + playheadLeft).toFixed(2)}px"></div>
+    <div class="seq-arrange-playhead" style="left:${(18 + SEQ_ARRANGE_LANE_GUTTER + playheadLeft).toFixed(2)}px"></div>
     <div class="seq-arrange-track" style="width:${trackWidth.toFixed(2)}px">${blocks}</div>
     ${dcLanesHtml}`;
   seqArrangeStatusEl.textContent = seqPlayer.active
@@ -6524,39 +6540,6 @@ function renderSequenceArrangement() {
 }
 
 // Motor state in force over each display block, for the Arrange lanes.
-//
-// A pre-roll block inherits the DC values of the authored step it precedes,
-// because that is exactly what happens on the rig: the chord fires at the step
-// boundary, so the motor is already turning while the servos glide. Drawing it
-// this way is the whole point — the operator sees the overlap here instead of
-// discovering it on the hardware.
-function dcStateByDisplayBlock(displaySteps) {
-  const list = displaySteps || [];
-  const owners = list.map((step, i) => {
-    if (step?.bridge !== true) return step;
-    for (let j = i + 1; j < list.length; j++) if (list[j]?.bridge !== true) return list[j];
-    return null;
-  });
-  const current = new Map(DC_LANE_BOARD_IDS.map(boardId => [boardId, 0]));
-  const seen = new Set();
-  return list.map((step, i) => {
-    const owner = owners[i];
-    // A pre-roll and the step it belongs to share one owner; apply it once.
-    if (owner && !seen.has(owner)) {
-      seen.add(owner);
-      const dc = readStepDcMap(owner);
-      for (const boardId of DC_LANE_BOARD_IDS) {
-        if (boardId in dc) current.set(boardId, dc[boardId]);
-      }
-    }
-    // STOP fires at this block's start, so the block itself is already stopped.
-    if (isMotorStopCmd(step?.cmd)) {
-      for (const boardId of DC_LANE_BOARD_IDS) current.set(boardId, 0);
-    }
-    return Object.fromEntries(DC_LANE_BOARD_IDS.map(b => [b, current.get(b)]));
-  });
-}
-
 function renderDcLanes(displaySteps, layout, trackWidth) {
   const states = dcStateByDisplayBlock(displaySteps);
   const rows = DC_LANE_BOARD_IDS.map(boardId => {
@@ -7000,6 +6983,7 @@ function planInteriorBridge(fromPose, toPose, id, opts) {
 
   const tracks = [];
   const channels = [];
+  const moves = [];
   let maxDelta = 0;
   for (const key of Object.keys(toPose)) {
     const to = toPose[key];
@@ -7010,9 +6994,13 @@ function planInteriorBridge(fromPose, toPose, id, opts) {
     const parts = key.split(":");
     const boardId = Number(parts[0]);
     const channel = Number(parts[2]);
-    tracks.push({ kind:"servo", boardId, channel, label:`B${boardId}.S${channel}`,
+    const label = `B${boardId}.S${channel}`;
+    tracks.push({ kind:"servo", boardId, channel, label,
       keyframes:[{atMs:0, value:from}, {atMs:0, value:to}] });
     channels.push(key);
+    // Both endpoints, so the Arrange block can say what physically happens
+    // instead of only how long it takes (servo-rvn).
+    moves.push({ key, label, from, to });
     maxDelta = Math.max(maxDelta, delta);
   }
   if (!tracks.length) return null;
@@ -7020,7 +7008,7 @@ function planInteriorBridge(fromPose, toPose, id, opts) {
   for (const t of tracks) t.keyframes[1].atMs = durationMs;
   const motion = { id, name:"↳ bridge", scope:"cluster", tags:[], durationMs, tracks };
   const step = { cmd:`MOTION ${id}`, durationMs, target:"all", label:"↳ bridge", hold:false, bridge:true };
-  return { motion, step, channels };
+  return { motion, step, channels, moves };
 }
 // Cold start: the servos' real position is unknown, so no baked keyframe-0 value
 // is correct. DMOVE ramps from the servo's ACTUAL hardware position, so we emit a
@@ -7049,12 +7037,22 @@ function planColdStartBridge(toPose, opts) {
   // rest) or an immediate re-run (this sequence's own final pose). Taking the
   // max of the two can only lengthen the glide, so neither case is under-timed.
   let maxDelta = 0;
+  // Per channel, remember WHICH start won. The operator is charged for that
+  // distance, so that is the one the explanation has to name (servo-rvn) —
+  // reporting the rest pose when the glide was sized for a re-run would
+  // describe a move that isn't the one being paid for.
+  const sizedFrom = new Map();
   for (const key of keys) {
     const target = Number(toPose[key]);
     if (!Number.isFinite(target)) continue;
     let delta = Math.abs(restPercent - target);
+    let from = restPercent;
     const prior = rerunFromPose ? Number(rerunFromPose[key]) : NaN;
-    if (Number.isFinite(prior)) delta = Math.max(delta, Math.abs(prior - target));
+    if (Number.isFinite(prior) && Math.abs(prior - target) > delta) {
+      delta = Math.abs(prior - target);
+      from = prior;
+    }
+    sizedFrom.set(key, { from, delta });
     maxDelta = Math.max(maxDelta, delta);
   }
   // Already parked on the entry pose from every start we can foresee: the
@@ -7063,15 +7061,47 @@ function planColdStartBridge(toPose, opts) {
 
   const durationMs = Math.max(floorMs, Math.ceil(maxDelta * msPerPercent));
   const channels = [];
+  const moves = [];
   const steps = keys.map(key => {
     const parts = key.split(":");
+    const boardId = Number(parts[0]);
+    const channel = Number(parts[2]);
     channels.push(key);
-    return { cmd:`DMOVE ${Number(parts[2])} ${toPose[key]} ${durationMs}`,
-      durationMs:0, target:String(Number(parts[0])), label:"↳ bridge", hold:false, bridge:true };
+    // A cold start commands every channel (their true position is unknown), but
+    // only the ones actually travelling belong in the explanation.
+    const sized = sizedFrom.get(key);
+    if (sized && sized.delta >= minDeltaPercent) {
+      moves.push({ key, label:`B${boardId}.S${channel}`, from:sized.from, to:Number(toPose[key]) });
+    }
+    return { cmd:`DMOVE ${channel} ${toPose[key]} ${durationMs}`,
+      durationMs:0, target:String(boardId), label:"↳ bridge", hold:false, bridge:true };
   });
   steps.push({ cmd:"", durationMs, target:"all", label:"↳ bridge dwell", hold:false, bridge:true });
-  return { steps, durationMs, channels };
+  return { steps, durationMs, channels, moves };
 }
+// Turn a plan's per-channel moves into the plain language the Arrange block
+// shows (servo-rvn). The direction wording is the part that matters: on this
+// rig 0% is fully UP and 100% is fully down, so a RISING value is travel DOWN.
+// Naming it backwards would be worse than saying nothing at all.
+function describePreRollTravel(moves) {
+  const list = (moves || []).filter(m => m && Number.isFinite(m.from) && Number.isFinite(m.to) && m.from !== m.to);
+  const rows = list.map(m => `${m.label} ${m.from}% → ${m.to}%`);
+  if (!list.length) return { count:0, direction:null, headline:"nothing to move", rows };
+
+  const down = list.every(m => m.to > m.from);
+  const up = list.every(m => m.to < m.from);
+  const direction = down ? "down" : up ? "up" : null;
+
+  const targets = list.map(m => m.to);
+  const lo = Math.min(...targets);
+  const hi = Math.max(...targets);
+  const where = lo === hi ? `${lo}%` : `${lo}–${hi}%`;
+
+  const subject = list.length === 1 ? list[0].label : `${list.length} winches`;
+  const headline = `${subject} ${direction ? `${direction} ` : ""}to ${where}`;
+  return { count:list.length, direction, headline, rows };
+}
+
 function bridgeMotionIdFromCmd(cmd) {
   const m = /^\s*MOTION\s+(\S+)\s*$/i.exec(String(cmd || ""));
   return m ? m[1] : null;
@@ -7196,11 +7226,11 @@ function rewriteSequencePreRolls(steps, motions, opts) {
         cmd: `MOTION ${motion.id} PREP ${prepareMs}`,
         durationMs: Math.max(0, parseInt(step.durationMs, 10) || 0) + prepareMs,
       });
-      summary.push({ kind, durationMs:prepareMs, channels:planned.channels || [], stepIndex, disabled:false });
+      summary.push({ kind, durationMs:prepareMs, channels:planned.channels || [], moves:planned.moves || [], stepIndex, disabled:false });
     } else {
       outSteps.push(step);
       if (prepareMs > 0) {
-        summary.push({ kind, durationMs:prepareMs, channels:planned.channels || [], stepIndex, disabled:true });
+        summary.push({ kind, durationMs:prepareMs, channels:planned.channels || [], moves:planned.moves || [], stepIndex, disabled:true });
       }
     }
     // Runs for refused pre-rolls too. Skipping the glide does not skip the
@@ -7225,21 +7255,21 @@ function rewriteSequencePreRolls(steps, motions, opts) {
 // on. rewriteSequencePreRolls emits exactly one step per authored step, so a
 // summary's stepIndex addresses this array directly.
 function expandPreRollStepsForDisplay(steps, summary) {
-  const ghosts = new Map();
-  for (const entry of (summary || [])) {
-    if (entry?.disabled === true) ghosts.set(entry.stepIndex, entry);
-  }
+  const byStep = new Map();
+  for (const entry of (summary || [])) byStep.set(entry.stepIndex, entry);
   const out = [];
   (steps || []).forEach((step, stepIndex) => {
-    const ghost = ghosts.get(stepIndex);
-    if (ghost) {
+    const entry = byStep.get(stepIndex);
+    if (entry?.disabled === true) {
       out.push({ cmd:"", durationMs:0, target:"all", label:"↳ pre-roll off", hold:false,
-        bridge:true, disabled:true, wouldBeMs:Math.max(0, ghost.durationMs || 0) });
+        bridge:true, disabled:true, wouldBeMs:Math.max(0, entry.durationMs || 0),
+        moves:entry.moves || [] });
     }
     const m = /^\s*MOTION\s+(\S+)\s+PREP\s+(\d+)\s*$/i.exec(String(step?.cmd || ""));
     if (!m) { out.push(step); return; }
     const prepareMs = Math.max(0, parseInt(m[2], 10) || 0);
-    out.push({ cmd:"", durationMs:prepareMs, target:"all", label:"↳ pre-roll", hold:false, bridge:true });
+    out.push({ cmd:"", durationMs:prepareMs, target:"all", label:"↳ pre-roll", hold:false,
+      bridge:true, moves:entry?.moves || [] });
     out.push({
       ...step,
       cmd:`MOTION ${m[1]}`,
@@ -7326,6 +7356,34 @@ function validateLibraryReferences(lib) {
 // === SEQ-BRIDGE-CORE END ===
 
 // === DC-LANE-CORE START ===
+// Motor state in force over each display block, for the Arrange lanes.
+//
+// The change lands on the AUTHORED step, not on the travel glide in front of
+// it. That mirrors what flattenDcLanes now bakes (servo-d5y): a step carrying
+// both a glide and a DC change is split so the chord fires on the Motion's
+// first keyframe. Before that split the chord fired at the glide's start and
+// this function drew it there — honestly, but the rig was reversing the motor
+// seconds before the Motion it was authored against.
+function dcStateByDisplayBlock(displaySteps) {
+  const list = displaySteps || [];
+  const current = new Map(DC_LANE_BOARD_IDS.map(boardId => [boardId, 0]));
+  return list.map(step => {
+    // A travel block is not an authored step and carries no dc of its own, so
+    // it simply holds whatever was already turning.
+    if (step?.bridge !== true) {
+      const dc = readStepDcMap(step);
+      for (const boardId of DC_LANE_BOARD_IDS) {
+        if (boardId in dc) current.set(boardId, dc[boardId]);
+      }
+    }
+    // STOP fires at this block's start, so the block itself is already stopped.
+    if (isMotorStopCmd(step?.cmd)) {
+      for (const boardId of DC_LANE_BOARD_IDS) current.set(boardId, 0);
+    }
+    return Object.fromEntries(DC_LANE_BOARD_IDS.map(b => [b, current.get(b)]));
+  });
+}
+
 // Per-step DC lanes (servo-i0v). DC speed used to be keyframed inside Motions
 // alongside servo tracks. It now lives on the Sequence step as an optional
 // { boardId: speed } map, and this flattens that into the targeted
@@ -7411,11 +7469,36 @@ function flattenDcLanes(steps, options = {}) {
   for (const step of (steps || [])) {
     owner = step;
     const dc = readStepDcMap(step);
-    for (const boardId of DC_LANE_BOARD_IDS) {
-      if (!(boardId in dc)) continue;
-      if (!emitAll && current.get(boardId) === dc[boardId]) continue;
-      emit(boardId, dc[boardId]);
+    const pending = DC_LANE_BOARD_IDS.filter(boardId =>
+      (boardId in dc) && (emitAll || current.get(boardId) !== dc[boardId]));
+
+    // A travel glide lives INSIDE its step (`MOTION x PREP n`, duration d+n),
+    // but a chord can only fire at a step boundary — so an un-split step fires
+    // the motor change at the START of the glide, seconds before the Motion it
+    // was authored against (servo-d5y). Split the glide onto its own clock so
+    // the chord lands on the Motion's first keyframe instead:
+    //
+    //   MOTION x PREP n (n ms) · ROTATE v (0 ms) · dwell (d ms)
+    //
+    // Safe because an empty cmd fires nothing (sequenceFireCurrentStep skips
+    // it) and ROTATE does not cancel Motion playback, so the armed Motion runs
+    // straight through both boundaries. Costs one step, so only do it when a
+    // chord is actually waiting to be re-timed.
+    const prep = /^\s*(MOTION\s+\S+\s+PREP\s+(\d+))\s*$/i.exec(String(step?.cmd || ""));
+    if (prep && pending.length) {
+      const prepareMs = Math.max(0, parseInt(prep[2], 10) || 0);
+      const playMs = Math.max(0, (parseInt(step.durationMs, 10) || 0) - prepareMs);
+      const { dc: _prepAuthoringOnly, ...runnable } = step || {};
+      out.push({ ...runnable, durationMs: prepareMs });
+      atMs += prepareMs;
+      for (const boardId of pending) emit(boardId, dc[boardId]);
+      out.push({ cmd: "", durationMs: playMs, target: "all", label: "↳ motion", hold: false,
+        ...(step.authoredIndex != null ? { authoredIndex: step.authoredIndex } : {}) });
+      atMs += playMs;
+      continue;
     }
+
+    for (const boardId of pending) emit(boardId, dc[boardId]);
     const { dc: _authoringOnly, ...runnable } = step || {};
     out.push(runnable);
     // The step's own cmd fires at this same instant, so a STOP zeroes the
@@ -7642,7 +7725,13 @@ function buildBakeLibrary(lib) {
     // repeats simply re-fire the opening chords on each pass.
     const flat = flattenDcLanes(r.steps, { loop: false, maxSteps: SEQ_MAX_STEPS });
     sequences.push({ ...seq, steps: flat.steps });
-    for (const s of r.summary) summaries.push({ seqId: seq.id, seqName: seq.name || seq.id, ...s });
+    // Only glides that actually bake. A refused one (servo-cjv) is reported in
+    // the summary so Arrange can draw its ghost, but it adds no time and must
+    // not show up in the bake log's "+Xs" tally.
+    for (const s of r.summary) {
+      if (s.disabled === true) continue;
+      summaries.push({ seqId: seq.id, seqName: seq.name || seq.id, ...s });
+    }
     if (r.error) errors.push({ seqId: seq.id, seqName: seq.name || seq.id, ...r.error });
     if (flat.error) errors.push({ seqId: seq.id, seqName: seq.name || seq.id, ...flat.error });
   }
@@ -7819,14 +7908,16 @@ async function bakeToAllBoards(onlyIps = null, mode = onlyIps ? "targeted" : "al
     bakeLog(`bake blocked: ${formatBakeConformanceError(conformance.errors[0])}`, "alert");
     return;
   }
-  // Surface every compact pre-roll so the operator sees the added timing.
+  // Surface every compact pre-roll so the operator sees the added timing, and
+  // say what physically travels rather than only how many channels (servo-rvn).
   for (const s of bakeLib._bridgeSummaries) {
-    const kind = s.kind === "cold" ? "cold-start pre-roll" : "transition pre-roll";
-    bakeLog(`↳ ${kind} in "${s.seqName}": ${s.channels.length} servo(s), ${s.durationMs}ms`, "amber");
+    const kind = s.kind === "cold" ? "cold start" : "transition";
+    const travel = describePreRollTravel(s.moves);
+    bakeLog(`↳ travel to start (${kind}) in "${s.seqName}": ${travel.headline}, ${s.durationMs}ms`, "amber");
   }
   if (bakeLib._bridgeSummaries.length) {
     const added = bakeLib._bridgeSummaries.reduce((n, s) => n + s.durationMs, 0);
-    bakeLog(`${bakeLib._bridgeSummaries.length} pre-roll(s), +${(added / 1000).toFixed(1)}s · no extra steps`, "amber");
+    bakeLog(`${bakeLib._bridgeSummaries.length} travel-to-start glide(s), +${(added / 1000).toFixed(1)}s · no extra steps`, "amber");
   }
   const targetBoards = (onlyIps && onlyIps.length) ? onlyIps : boards;
   if (targetBoards.length === 0) { bakeLog("no boards configured", "alert"); return; }
@@ -8491,8 +8582,8 @@ seqArrangeCanvasEl.addEventListener("click", e => {
     saveCurrentSequence(seq);
     renderSequenceArrangement();
     seqArrangeStatusEl.textContent = wasOff
-      ? `Pre-roll restored on step ${pad2(owner + 1)}`
-      : `Pre-roll deleted on step ${pad2(owner + 1)} · servos jump to its start pose`;
+      ? `Travel to start restored on step ${pad2(owner + 1)}`
+      : `Travel to start deleted on step ${pad2(owner + 1)} · winches jump to its start pose`;
     return;
   }
   const block = e.target.closest("[data-arrange-index]");
