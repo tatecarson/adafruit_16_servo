@@ -3274,6 +3274,7 @@ async function pollOnce() {
       refreshBoardIdMap();   // stamps lastBoardIdRefreshAt on completion
     }
     render();
+    updateSeqHighlight();
   } finally {
     pollInFlight = false;
   }
@@ -3799,6 +3800,82 @@ let seqPlayer = {
 let seqRunSerial = 0;
 let libraryFileAvailable = false;
 let libraryFileWriteFailed = false;
+
+// Telemetry-driven highlight (servo-4rq). Recomputed each poll; the step table
+// and Arrange timeline read it instead of seqPlayer directly, so the highlight
+// follows firmware-driven setlist/gallery playback too.
+let currentSeqHighlight = { highlightSeqId: null, highlightStep: null, source: "none", autoSwitch: false, jumpHintSeqId: null };
+
+// Reproduce the DEVICE bake flattening (rewriteSequencePreRolls then
+// flattenDcLanes) so a firmware step index maps to the right authored row.
+// Live-play flattening is different (no pre-rolls) and must NOT be used here.
+function flattenSequenceForDevice(seq, motions) {
+  const authored = (seq.steps || []).map((s, i) => ({ ...normalizeStep(s), authoredIndex: i }));
+  const bridged = rewriteSequencePreRolls(authored, motions, {
+    seqId: seq.id, msPerPercent: SERVO_FEASIBILITY_MS_PER_PERCENT,
+    minDeltaPercent: 5, floorMs: 800, restPercent: MOTION_SERVO_REST_PERCENT, maxSteps: SEQ_MAX_STEPS,
+  });
+  return flattenDcLanes(bridged.steps, { loop: false, maxSteps: SEQ_MAX_STEPS }).steps;
+}
+
+// Stub until Task 5 (edit-guard detection).
+function isSeqEditing() { return false; }
+
+// The highlighted authored index for `seqId`, or null. seqPlayer still wins via
+// decideSeqHighlight, so browser-driven playback is unchanged.
+function highlightedAuthoredIndex(seqId) {
+  // Live player is authoritative and re-renders on its own cadence; consult it
+  // directly so the highlight never lags the poll interval during browser play.
+  if (seqPlayer.active) {
+    const viewSeq = getCurrentSequence();
+    return viewSeq && viewSeq.id === seqId ? activeAuthoredStepIndex() : null;
+  }
+  return currentSeqHighlight.highlightSeqId === seqId ? currentSeqHighlight.highlightStep : null;
+}
+
+// Recompute the highlight decision from the freshest telemetry. Runs once per
+// ~800ms poll; only re-renders when the visible highlight actually changed.
+function updateSeqHighlight() {
+  const lib = sequenceLibrary();
+  const viewSeq = getCurrentSequence(lib);
+  const byBoard = boards.map(ip => ({
+    boardId: boardIdByIp.get(ip),
+    runseq: (lastStatus.get(ip) || {}).runseq,
+    lastSeenMs: lastSeen.get(ip) || 0,
+  })).filter(b => Number.isInteger(b.boardId));
+  const leader = Math.max(1, Math.min(3, parseInt(lib.schedulerConfig?.leaderBoardId, 10) || 1));
+  const run = readRunseqTelemetry(byBoard, leader, Date.now());
+
+  let runseqStep = null;
+  if (run) {
+    const runSeq = (lib.sequences || []).find(s => s.id === run.id);
+    if (runSeq) {
+      const flat = flattenSequenceForDevice(runSeq, lib.motions || []);
+      runseqStep = mapFirmwareStepToAuthored(flat, run.firmwareStep, run.firmwareStepCount).authoredIndex;
+    }
+  }
+  const playerStep = seqPlayer.active ? activeAuthoredStepIndex() : null;
+  const decision = decideSeqHighlight({
+    seqPlayerActive: seqPlayer.active,
+    seqPlayerSeqId: viewSeq ? viewSeq.id : null,   // seqPlayer always plays the shown sequence
+    seqPlayerStep: Number.isInteger(playerStep) ? playerStep : null,  // enforce int-or-null on the player path too
+    runseqSeqId: run ? run.id : null,
+    runseqStep,
+    viewSeqId: viewSeq ? viewSeq.id : null,
+    isEditing: isSeqEditing(),
+  });
+  // Only re-render when the visible highlight actually changed — this runs
+  // every ~800ms poll and must not thrash the DOM.
+  const changed = decision.highlightSeqId !== currentSeqHighlight.highlightSeqId
+    || decision.highlightStep !== currentSeqHighlight.highlightStep;
+  currentSeqHighlight = decision;
+  if (changed) renderSequenceHighlightOnly();   // Task 5 adds autoSwitch + badge handling here
+}
+
+function renderSequenceHighlightOnly() {
+  renderSequencer();
+  if (seqArrangeDialogEl?.open) renderSequenceArrangement();
+}
 
 function bakeLog(msg, color) {
   const line = document.createElement("div");
@@ -6510,8 +6587,9 @@ function renderSequenceArrangement() {
   const layout = sequenceArrangementLayout(displaySteps, zoom);
   const available = Math.max(0, (seqArrangeScrollEl.clientWidth || 0) - 36);
   const trackWidth = Math.max(layout.widthPx, available);
-  const selected = seqPlayer.active
-    ? Math.max(0, Math.min(activeAuthoredStepIndex(), steps.length - 1))
+  const hi = highlightedAuthoredIndex(seq.id);
+  const selected = hi != null
+    ? Math.max(0, Math.min(hi, steps.length - 1))
     : Math.max(0, Math.min(seqArrangeSelectedIndex, steps.length - 1));
   seqArrangeSelectedIndex = selected;
   seqArrangeTitleEl.textContent = seq.name || seq.id;
@@ -6762,7 +6840,7 @@ function renderSequencer() {
 
   seqStepsEl.innerHTML = (seq.steps || []).map((raw, index) => {
     const step = normalizeStep(raw);
-    const active = seqPlayer.active && activeAuthoredStepIndex() === index;
+    const active = highlightedAuthoredIndex(seq.id) === index;
     const expanded = seqExpandedSteps.has(index);
     const row = `<tr data-index="${index}" draggable="true"${active ? ' class="active"' : ''}>
       <td class="seq-drag" title="Drag to reorder">=</td>
