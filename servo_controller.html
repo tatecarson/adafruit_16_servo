@@ -986,6 +986,22 @@
     font: 600 10px/1 var(--mono);
     margin-left: auto;
   }
+  /* Playback-follow badge: "following playback" (phosphor) when the view
+     auto-tracks telemetry, or a clickable amber jump hint when editing
+     blocked the auto-switch (servo-4rq). */
+  .seq-follow {
+    font: 700 10px/1 var(--mono);
+    letter-spacing: .08em;
+    padding: 4px 8px;
+    border: 1px solid var(--ink-mute);
+    color: var(--ink-mute);
+    border-radius: 2px;
+    white-space: nowrap;
+    justify-self: start;
+  }
+  .seq-follow.following { border-color: var(--phosphor); color: var(--phosphor); }
+  .seq-follow.jump { border-color: var(--amber); color: var(--amber); cursor: pointer; }
+  .seq-follow.jump:hover { filter: brightness(1.2); }
   .seq-table-wrap {
     margin-top: 14px;
     overflow-x: auto;
@@ -2292,6 +2308,7 @@
       <select id="seqSelect" title="Sequence"></select>
       <input id="seqName" type="text" placeholder="sequence name" autocomplete="off" spellcheck="false">
       <code id="seqIdLabel" class="motion-id" title="Sequence id — the auto-generated internal key used by RUN and Setlist entries. Edit the name; the id stays fixed."></code>
+      <span id="seqFollowBadge" class="seq-follow" hidden></span>
       <div class="seq-actions">
         <button class="cmd compact" id="seqNew">New</button>
         <button class="cmd compact" id="seqDuplicate">Duplicate</button>
@@ -3817,8 +3834,12 @@ function flattenSequenceForDevice(seq, motions) {
   return flattenDcLanes(bridged.steps, { loop: false, maxSteps: SEQ_MAX_STEPS }).steps;
 }
 
-// Stub until Task 5 (edit-guard detection).
-function isSeqEditing() { return false; }
+// True while the operator is mid-edit, so auto-follow must not yank the view.
+function isSeqEditing() {
+  if (seqDirty) return true;
+  const el = document.activeElement;
+  return !!(el && seqStepsEl && seqStepsEl.contains(el));
+}
 
 // The highlighted authored index for `seqId`, or null. seqPlayer still wins via
 // decideSeqHighlight, so browser-driven playback is unchanged.
@@ -3866,13 +3887,36 @@ function updateSeqHighlight() {
     viewSeqId: viewSeq ? viewSeq.id : null,
     isEditing: isSeqEditing(),
   });
-  // Only re-render when the visible highlight actually changed — this runs
-  // every ~800ms poll and must not thrash the DOM.
-  // Task 5: add jumpHintSeqId/autoSwitch to this comparison when the badge renders.
+  // Re-render only when something visible changed — this runs every ~800ms
+  // poll and must not thrash the DOM.
   const changed = decision.highlightSeqId !== currentSeqHighlight.highlightSeqId
-    || decision.highlightStep !== currentSeqHighlight.highlightStep;
+    || decision.highlightStep !== currentSeqHighlight.highlightStep
+    || decision.jumpHintSeqId !== currentSeqHighlight.jumpHintSeqId
+    || decision.source !== currentSeqHighlight.source;
   currentSeqHighlight = decision;
-  if (changed) renderSequenceHighlightOnly();   // Task 5 adds autoSwitch + badge handling here
+  if (decision.autoSwitch && decision.highlightSeqId && viewSeq && decision.highlightSeqId !== viewSeq.id) {
+    switchToSequence(decision.highlightSeqId);   // re-renders via the existing path
+  } else if (changed) {
+    renderSequenceHighlightOnly();
+  }
+  renderSeqFollowIndicator(decision);
+}
+
+// The header pill that explains why the view moved ("following playback") or
+// offers the jump when an edit blocked the auto-switch (servo-4rq).
+function renderSeqFollowIndicator(d) {
+  const el = document.getElementById("seqFollowBadge");
+  if (!el) return;
+  if (d.source === "telemetry" && d.highlightSeqId && !d.jumpHintSeqId) {
+    el.hidden = false; el.className = "seq-follow following"; el.textContent = "● following playback";
+    el.onclick = null;
+  } else if (d.jumpHintSeqId) {
+    el.hidden = false; el.className = "seq-follow jump";
+    el.textContent = `${d.jumpHintSeqId} playing → follow`;
+    el.onclick = () => switchToSequence(d.jumpHintSeqId);
+  } else {
+    el.hidden = true; el.onclick = null;
+  }
 }
 
 function renderSequenceHighlightOnly() {
@@ -8534,12 +8578,21 @@ bakeBudgetEl.addEventListener("click", (e) => {
   else if (kind === "setlist") renderSetlist();
 });
 
-seqSelectEl.addEventListener("change", () => {
+// Single switch path for the <select>, telemetry auto-follow, and the jump
+// badge. Mirrors the manual handler exactly: pending edits are saved first,
+// so clicking the badge is as safe as using the select (servo-4rq).
+function switchToSequence(id) {
+  const lib = sequenceLibrary();
+  if (!(lib.sequences || []).some(s => s.id === id)) return;
   if (seqDirty) saveCurrentSequence(readSequenceFromDom());
-  currentSeqId = seqSelectEl.value;
+  currentSeqId = id;
   seqDirty = false;
   seqExpandedSteps.clear();   // step indices belong to the previous sequence
   renderSequencer();
+}
+
+seqSelectEl.addEventListener("change", () => {
+  switchToSequence(seqSelectEl.value);
 });
 
 function commitSequenceName() {
