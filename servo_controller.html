@@ -3274,7 +3274,7 @@ async function pollOnce() {
       refreshBoardIdMap();   // stamps lastBoardIdRefreshAt on completion
     }
     render();
-    updateSeqHighlight();
+    try { updateSeqHighlight(); } catch (e) { console.warn("seq highlight", e); }
   } finally {
     pollInFlight = false;
   }
@@ -3809,12 +3809,11 @@ let currentSeqHighlight = { highlightSeqId: null, highlightStep: null, source: "
 // Reproduce the DEVICE bake flattening (rewriteSequencePreRolls then
 // flattenDcLanes) so a firmware step index maps to the right authored row.
 // Live-play flattening is different (no pre-rolls) and must NOT be used here.
+// Correctness contract: the step COUNT here must equal buildBakeLibrary's
+// output for the same sequence, or mapFirmwareStepToAuthored reports unreliable.
 function flattenSequenceForDevice(seq, motions) {
   const authored = (seq.steps || []).map((s, i) => ({ ...normalizeStep(s), authoredIndex: i }));
-  const bridged = rewriteSequencePreRolls(authored, motions, {
-    seqId: seq.id, msPerPercent: SERVO_FEASIBILITY_MS_PER_PERCENT,
-    minDeltaPercent: 5, floorMs: 800, restPercent: MOTION_SERVO_REST_PERCENT, maxSteps: SEQ_MAX_STEPS,
-  });
+  const bridged = rewriteSequencePreRolls(authored, motions, seqPrerollOpts(seq.id));
   return flattenDcLanes(bridged.steps, { loop: false, maxSteps: SEQ_MAX_STEPS }).steps;
 }
 
@@ -3830,6 +3829,9 @@ function highlightedAuthoredIndex(seqId) {
     const viewSeq = getCurrentSequence();
     return viewSeq && viewSeq.id === seqId ? activeAuthoredStepIndex() : null;
   }
+  // Player stopped but the poll hasn't recomputed yet (or auto-poll is off):
+  // a lingering source:"player" decision would freeze the last played row.
+  if (currentSeqHighlight.source === "player") return null;
   return currentSeqHighlight.highlightSeqId === seqId ? currentSeqHighlight.highlightStep : null;
 }
 
@@ -3866,6 +3868,7 @@ function updateSeqHighlight() {
   });
   // Only re-render when the visible highlight actually changed — this runs
   // every ~800ms poll and must not thrash the DOM.
+  // Task 5: add jumpHintSeqId/autoSwitch to this comparison when the badge renders.
   const changed = decision.highlightSeqId !== currentSeqHighlight.highlightSeqId
     || decision.highlightStep !== currentSeqHighlight.highlightStep;
   currentSeqHighlight = decision;
@@ -3873,8 +3876,9 @@ function updateSeqHighlight() {
 }
 
 function renderSequenceHighlightOnly() {
+  // renderSequencer already cascades to renderSequenceArrangement (which
+  // self-guards on the dialog being open), so one call covers both surfaces.
   renderSequencer();
-  if (seqArrangeDialogEl?.open) renderSequenceArrangement();
 }
 
 function bakeLog(msg, color) {
@@ -6579,10 +6583,7 @@ function renderSequenceArrangement() {
   // those PREP durations into non-editable timeline blocks so operators still
   // see every automatic transition. The raw `seq.steps` are never mutated.
   const libMotions = (lib.motions) || [];
-  const bridged = rewriteSequencePreRolls(steps, libMotions, {
-    seqId: seq.id, msPerPercent: SERVO_FEASIBILITY_MS_PER_PERCENT,
-    minDeltaPercent: 5, floorMs: 800, restPercent: MOTION_SERVO_REST_PERCENT, maxSteps: SEQ_MAX_STEPS,
-  });
+  const bridged = rewriteSequencePreRolls(steps, libMotions, seqPrerollOpts(seq.id));
   const displaySteps = expandPreRollStepsForDisplay(bridged.steps, bridged.summary);
   const layout = sequenceArrangementLayout(displaySteps, zoom);
   const available = Math.max(0, (seqArrangeScrollEl.clientWidth || 0) - 36);
@@ -6838,9 +6839,12 @@ function renderSequencer() {
   seqScrubEl.value = Math.min(parseInt(seqScrubEl.value, 10) || 0, parseInt(seqScrubEl.max, 10) || 0);
   seqScrubLabelEl.textContent = `${pad2((parseInt(seqScrubEl.value, 10) || 0) + 1)} / ${pad2((seq.steps || []).length)}`;
 
+  // Hoisted: highlightedAuthoredIndex re-reads the library when seqPlayer is
+  // active, so calling it per row would JSON.parse N times per render.
+  const activeIdx = highlightedAuthoredIndex(seq.id);
   seqStepsEl.innerHTML = (seq.steps || []).map((raw, index) => {
     const step = normalizeStep(raw);
-    const active = highlightedAuthoredIndex(seq.id) === index;
+    const active = activeIdx === index;
     const expanded = seqExpandedSteps.has(index);
     const row = `<tr data-index="${index}" draggable="true"${active ? ' class="active"' : ''}>
       <td class="seq-drag" title="Drag to reorder">=</td>
@@ -6919,6 +6923,9 @@ function stopSequencePlayback(sendStop = false) {
   }
   setSeqStatus("idle");
   renderSequencer();
+  // Clear a source:"player" highlight immediately instead of waiting for the
+  // next poll (which may never come with auto-poll off).
+  updateSeqHighlight();
 }
 
 async function playSequenceFrom(index = 0, dryRun = false) {
@@ -7689,6 +7696,15 @@ function dcLaneSegments(lane, totalMs) {
 // === DC-LANE-CORE END ===
 
 // === BAKE-PAYLOAD-CORE START ===
+// The one canonical pre-roll planner config. buildBakeLibrary (what reaches
+// EEPROM), renderSequenceArrangement (what the timeline shows), and
+// flattenSequenceForDevice (what the highlight maps against) must all agree.
+// Lives inside this extracted block because buildBakeLibrary needs it in the
+// host-test module too.
+function seqPrerollOpts(seqId) {
+  return { seqId, msPerPercent: SERVO_FEASIBILITY_MS_PER_PERCENT, minDeltaPercent: 5, floorMs: 800, restPercent: MOTION_SERVO_REST_PERCENT, maxSteps: SEQ_MAX_STEPS };
+}
+
 function bakeStorageTier(byteCount) {
   const bytes = Math.max(0, Number(byteCount) || 0);
   if (bytes > STORAGE_PAYLOAD_MAX) {
@@ -7857,12 +7873,7 @@ function buildBakeLibrary(lib) {
   const summaries = [];
   const errors = [];
   for (const seq of (lib.sequences || [])) {
-    const r = rewriteSequencePreRolls(seq.steps || [], lib.motions || [], {
-      seqId: seq.id,
-      msPerPercent: SERVO_FEASIBILITY_MS_PER_PERCENT,
-      minDeltaPercent: 5, floorMs: 800, restPercent: MOTION_SERVO_REST_PERCENT,
-      maxSteps: SEQ_MAX_STEPS,
-    });
+    const r = rewriteSequencePreRolls(seq.steps || [], lib.motions || [], seqPrerollOpts(seq.id));
     // DC lanes flatten AFTER pre-roll rewriting so a chord lands on the same
     // step the operator authored it against. Always baked as non-looping: the
     // trailing park is the safe end state, and `RUN <id> LOOP` / setlist
