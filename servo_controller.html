@@ -6430,20 +6430,21 @@ function mapFirmwareStepToAuthored(flatSteps, firmwareStep, firmwareStepCount) {
 // sequence on screen; otherwise auto-switch to it unless the operator is editing,
 // in which case surface a jump badge and leave the view put. `null` inputs
 // (nothing running) clear the highlight.
-function decideSeqHighlight(x) {
-  if (x.seqPlayerActive) {
-    return { highlightSeqId: x.seqPlayerSeqId, highlightStep: x.seqPlayerStep,
+function decideSeqHighlight({ seqPlayerActive, seqPlayerSeqId, seqPlayerStep,
+                              runseqSeqId, runseqStep, viewSeqId, isEditing }) {
+  if (seqPlayerActive) {
+    return { highlightSeqId: seqPlayerSeqId, highlightStep: seqPlayerStep,
              source: "player", autoSwitch: false, jumpHintSeqId: null };
   }
-  const runId = x.runseqSeqId || null;
+  const runId = runseqSeqId || null;
   if (!runId) {
     return { highlightSeqId: null, highlightStep: null, source: "none", autoSwitch: false, jumpHintSeqId: null };
   }
-  const step = Number.isInteger(x.runseqStep) ? x.runseqStep : null;
-  if (runId === x.viewSeqId) {
+  const step = Number.isInteger(runseqStep) ? runseqStep : null;
+  if (runId === viewSeqId) {
     return { highlightSeqId: runId, highlightStep: step, source: "telemetry", autoSwitch: false, jumpHintSeqId: null };
   }
-  if (x.isEditing) {
+  if (isEditing) {
     return { highlightSeqId: null, highlightStep: null, source: "telemetry", autoSwitch: false, jumpHintSeqId: runId };
   }
   return { highlightSeqId: runId, highlightStep: step, source: "telemetry", autoSwitch: true, jumpHintSeqId: null };

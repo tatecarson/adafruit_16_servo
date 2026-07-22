@@ -112,5 +112,9 @@ eq("nothing running clears everything",
    D({ seqPlayerActive: false, runseqSeqId: null, runseqStep: null, viewSeqId: "a", isEditing: false }),
    { highlightSeqId: null, highlightStep: null, source: "none", autoSwitch: false, jumpHintSeqId: null });
 
+eq("editing the running sequence still highlights in place",
+   D({ seqPlayerActive: false, runseqSeqId: "a", runseqStep: 1, viewSeqId: "a", isEditing: true }),
+   { highlightSeqId: "a", highlightStep: 1, source: "telemetry", autoSwitch: false, jumpHintSeqId: null });
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);
