@@ -6411,6 +6411,19 @@ function readRunseqTelemetry(byBoard, leaderBoardId, nowMs, freshMs = 2500) {
     stepMs: Math.max(0, parseInt(r.stepMs, 10) || 0),
   };
 }
+// Fold a flattened firmware step index back to the authored row it belongs to.
+// flatSteps is the device's baked step list (rewriteSequencePreRolls then
+// flattenDcLanes), each step optionally carrying authoredIndex. If the browser's
+// reproduced count disagrees with what the device reports, the library was
+// edited since that bake and the per-step mapping would lie — report unreliable
+// so the caller degrades to a sequence-level highlight.
+function mapFirmwareStepToAuthored(flatSteps, firmwareStep, firmwareStepCount) {
+  const list = Array.isArray(flatSteps) ? flatSteps : [];
+  if (list.length !== firmwareStepCount) return { authoredIndex: null, reliable: false };
+  if (firmwareStep < 0 || firmwareStep >= list.length) return { authoredIndex: null, reliable: false };
+  const ai = list[firmwareStep] && list[firmwareStep].authoredIndex;
+  return { authoredIndex: Number.isInteger(ai) ? ai : null, reliable: true };
+}
 // === SEQ-HIGHLIGHT-CORE END ===
 
 function renderSequenceArrangementPreview(motion, wrapperClass = "seq-arrange-preview") {

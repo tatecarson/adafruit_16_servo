@@ -22,8 +22,8 @@ if (s < 0 || e <= s) { fail("SEQ-HIGHLIGHT-CORE markers not found"); process.exi
 const dir = mkdtempSync(join(tmpdir(), "seq-highlight-core-"));
 const modPath = join(dir, "core.mjs");
 writeFileSync(modPath, html.slice(s + START.length, e) +
-  "\nexport { readRunseqTelemetry };\n", "utf8");
-const { readRunseqTelemetry } = await import(pathToFileURL(modPath).href);
+  "\nexport { readRunseqTelemetry, mapFirmwareStepToAuthored };\n", "utf8");
+const { readRunseqTelemetry, mapFirmwareStepToAuthored } = await import(pathToFileURL(modPath).href);
 
 console.log("=== Sequencer telemetry highlight ===");
 
@@ -61,6 +61,23 @@ eq("a null byBoard yields null",
 eq("string-valued step and steps are coerced to numbers",
    readRunseqTelemetry([{ boardId: 1, runseq: { active: true, id: "a", step: "2", steps: "5", loop: false, stepMs: 0 }, lastSeenMs: 100 }], 1, 100, 2500),
    { id: "a", firmwareStep: 2, firmwareStepCount: 5, loop: false, stepMs: 0 });
+
+// mapFirmwareStepToAuthored(flatSteps, firmwareStep, firmwareStepCount)
+// A baked list where authored step 0 owns 2 firmware steps (chord+motion),
+// authored step 1 owns 1.
+const flat = [
+  { authoredIndex: 0 }, { authoredIndex: 0 }, { authoredIndex: 1 },
+];
+eq("maps a firmware step to its authored owner",
+   mapFirmwareStepToAuthored(flat, 1, 3), { authoredIndex: 0, reliable: true });
+eq("maps the last firmware step",
+   mapFirmwareStepToAuthored(flat, 2, 3), { authoredIndex: 1, reliable: true });
+eq("count mismatch (edited since bake) is unreliable, no row",
+   mapFirmwareStepToAuthored(flat, 1, 6), { authoredIndex: null, reliable: false });
+eq("out-of-range firmware step is unreliable",
+   mapFirmwareStepToAuthored(flat, 9, 3), { authoredIndex: null, reliable: false });
+eq("a step with no authoredIndex yields null but stays reliable",
+   mapFirmwareStepToAuthored([{}, { authoredIndex: 0 }], 0, 2), { authoredIndex: null, reliable: true });
 
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);
