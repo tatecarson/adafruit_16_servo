@@ -2461,14 +2461,14 @@
 
     <div class="seq-tools">
       <div class="seq-transport">
-        <button class="cmd baked" id="slPlay" title="Runs this setlist on the boards — dispatches RUN <sequence> commands the firmware plays on-device. Not browser-streamed.">▶ Play</button>
+        <button class="cmd baked" id="slPlay" title="Runs this setlist on the boards — sends RUN <sequence> to the leader per entry; the firmware plays each sequence on-device from the last bake. Requires every entry to be baked. Not browser-streamed.">▶ Play</button>
         <button class="cmd compact" id="slPause" disabled>Pause</button>
         <button class="cmd compact alert" id="slStop" disabled>Stop</button>
         <label style="display:inline-flex; gap:6px; align-items:center; color:var(--ink-dim); font:700 9px/1 var(--label); text-transform:uppercase; letter-spacing:.22em">
           <input id="slLoop" type="checkbox"> Loop
         </label>
         <button class="cmd compact amber" id="slSave">Save</button>
-        <button class="cmd compact" id="slDryRun">Dry Run</button>
+        <button class="cmd compact" id="slDryRun" title="Walks the authored steps on browser timers without sending anything — preview timing and order, no boards required.">Dry Run</button>
         <button class="cmd compact" id="slSimulate" title="Fast-forward one hour of this setlist in the browser to preview what would play — no device, no motion. Catches repetition, unbalanced play counts, and dead air before you bake.">Simulate hour</button>
       </div>
     </div>
@@ -6622,6 +6622,50 @@ function decideSeqHighlight({ seqPlayerActive, seqPlayerSeqId, seqPlayerStep,
 }
 // === SEQ-HIGHLIGHT-CORE END ===
 
+// === SETLIST-RUN-CORE START ===
+// Pure helpers for the firmware-run setlist player (servo-17r). Play walks the
+// resolved entry order and dispatches RUN <seqId> to the leader per entry; the
+// firmware plays each sequence on-device from its baked library and followers
+// mirror the RUN/STOP. No DOM here — tested by test/verify_setlist_run.mjs.
+
+// Gate Play against the last bake. entries are normalized setlist entries;
+// bakedSeqIds is the sequence-id list from the leader's bake snapshot (null =
+// no bake recorded from this browser); editedSinceBake means the library
+// diverged from that snapshot. Blocking: not-baked, missing-seq. stale-bake
+// only warns — ids still resolve on-device, the content is just older.
+function assessSetlistRunReadiness(entries, bakedSeqIds, editedSinceBake) {
+  if (bakedSeqIds == null) return { ok: false, status: "not-baked", missingSeqIds: [] };
+  const baked = new Set(bakedSeqIds);
+  const missing = [];
+  for (const e of entries || []) {
+    if (e && e.seqId && !baked.has(e.seqId) && !missing.includes(e.seqId)) missing.push(e.seqId);
+  }
+  if (missing.length) return { ok: false, status: "missing-seq", missingSeqIds: missing };
+  if (editedSinceBake) return { ok: true, status: "stale-bake", missingSeqIds: [] };
+  return { ok: true, status: "ok", missingSeqIds: [] };
+}
+
+// Decide how the entry walker reacts to the freshest runseq telemetry after
+// sending RUN <expectedSeqId>. sawExpectedRun = the walker already observed
+// its run active; telemetryFresh = at least one board reported recently, so a
+// null run is evidence of "ended" rather than mere silence. fallbackMs is the
+// entry's estimated on-device duration (plus margin) so a sleeping tab or a
+// dropped board can't stall the show forever.
+//   "wait"           keep watching
+//   "ended"          run went active, then inactive — entry finished
+//   "fallback-ended" telemetry can't confirm, but the entry must be over
+//   "no-start"       fresh telemetry never saw the run — RUN likely rejected
+//   "superseded"     a different run id is active — another operator took over
+function decideEntryWatch({ run, expectedSeqId, sawExpectedRun, telemetryFresh,
+                            sinceSentMs, startTimeoutMs, fallbackMs }) {
+  if (run && run.id !== expectedSeqId) return "superseded";
+  if (run) return "wait"; // our run is live — trust telemetry over any estimate
+  if (!telemetryFresh) return sinceSentMs >= fallbackMs ? "fallback-ended" : "wait";
+  if (sawExpectedRun) return "ended";
+  return sinceSentMs >= startTimeoutMs ? "no-start" : "wait";
+}
+// === SETLIST-RUN-CORE END ===
+
 function renderSequenceArrangementPreview(motion, wrapperClass = "seq-arrange-preview") {
   const strips = motionPreviewStrips(motion, MOTION_TRACK_SPECS).slice(0, 4);
   if (!strips.length) return `<div class="${wrapperClass}"><span class="seq-arrange-preview-empty">no animated tracks</span></div>`;
@@ -9024,6 +9068,18 @@ let setlistPlayer = {
   dryRun: false,
   logCount: 0,
   broadcastIp: null,
+  // Firmware-run walker fields (servo-17r). mode "device" = Play dispatches
+  // RUN <seqId> per entry and the firmware plays on-device; mode "stream" =
+  // Dry Run's browser-local step streamer (sends nothing).
+  mode: "stream",
+  phase: "run",          // "run" (watching a dispatched entry) | "gap"
+  expectedSeqId: null,
+  sawExpectedRun: false,
+  entrySentAt: 0,
+  fallbackMs: 0,
+  gapRemainingMs: 0,
+  lastTickAt: 0,
+  leaderIp: null,
 };
 
 function uniqueSetlistId(lib, seed) {
@@ -9672,6 +9728,8 @@ function stopSetlistPlayback(sendStop = false) {
     active: false, paused: false, entryIndex: 0, stepIndex: 0, resolvedOrder: [],
     timer: null, remainingMs: 0, stepStartedAt: 0, runId: setlistRunSerial,
     runStartedAt: 0, dryRun: false, logCount: setlistPlayer.logCount, broadcastIp: null,
+    mode: "stream", phase: "run", expectedSeqId: null, sawExpectedRun: false,
+    entrySentAt: 0, fallbackMs: 0, gapRemainingMs: 0, lastTickAt: 0, leaderIp: null,
   };
   slPlayEl.disabled = false;
   slPauseEl.disabled = true;
@@ -9687,6 +9745,10 @@ function stopSetlistPlayback(sendStop = false) {
   renderSetlist();
 }
 
+// Browser-local step streamer. Since servo-17r this is the DRY RUN path only —
+// real playback goes through playSetlistOnDevice (RUN <seqId> per entry, the
+// firmware plays on-device). Keep dispatchSetlistStep/runSetlistStep intact:
+// Dry Run walks the authored steps on browser timers without sending anything.
 async function playSetlist(dryRun = false) {
   const set = readSetlistFromDom();
   saveCurrentSetlist(set);
@@ -9703,6 +9765,8 @@ async function playSetlist(dryRun = false) {
     resolvedOrder: order, timer: null, remainingMs: 0, stepStartedAt: 0,
     runId, runStartedAt: performance.now(), dryRun,
     logCount: 0, broadcastIp: dryRun ? null : preferredBroadcastOrigin(),
+    mode: "stream", phase: "run", expectedSeqId: null, sawExpectedRun: false,
+    entrySentAt: 0, fallbackMs: 0, gapRemainingMs: 0, lastTickAt: 0, leaderIp: null,
   };
   slLogEl.innerHTML = "";
   const seedNote = (set.mode === "shuffle" && order.appliedSeed != null) ? ` · seed=${order.appliedSeed}` : "";
@@ -9777,8 +9841,277 @@ function scheduleNextSetlistTick(delayMs, runId = setlistPlayer.runId) {
   }, setlistPlayer.remainingMs);
 }
 
+// ---------- firmware-run setlist player (servo-17r) ----------
+// Play walks the resolved entry order and sends RUN <seqId> to the leader per
+// entry (followers mirror the RUN, servo-dos); each sequence plays on-device
+// from the baked EEPROM library. The walker advances by watching runseq
+// telemetry — entry ends when its run goes active then inactive — with a
+// duration-estimate fallback so dead telemetry can't stall the show. This
+// replaces the browser-streamed real-playback path, whose defects (no runseq
+// telemetry, DC lanes never flattened so motors stayed silent, show dies when
+// the tab sleeps) all came from streaming authored steps on browser timers.
+const SETLIST_RUN_TICK_MS = 500;
+const SETLIST_RUN_START_TIMEOUT_MS = 6000;
+const SETLIST_RUN_FALLBACK_MARGIN_MS = 5000;
+
+// The entry's on-device duration: the same flattening the bake performs, so
+// pre-roll glides and DC chord expansion are counted. Used only as the
+// fallback estimate when telemetry can't confirm the run ended.
+function estimateDeviceSeqDurationMs(seq, motions) {
+  let total = 0;
+  for (const st of flattenSequenceForDevice(seq, motions)) {
+    total += Math.max(0, parseInt(st.durationMs, 10) || 0);
+  }
+  return total;
+}
+
+function setlistLeaderBoardId(lib = sequenceLibrary()) {
+  return Math.max(1, Math.min(3, parseInt(lib.schedulerConfig?.leaderBoardId, 10) || 1));
+}
+
+async function playSetlistOnDevice() {
+  const set = readSetlistFromDom();
+  saveCurrentSetlist(set);
+  const lib = sequenceLibrary();
+  const order = resolveSetlistOrder(set, lib);
+  if (!order.length) {
+    setSetlistStatus("no playable entries", "alert");
+    return;
+  }
+  if (!boards.length) {
+    setSetlistStatus("no boards configured", "alert");
+    return;
+  }
+  const leaderBoardId = setlistLeaderBoardId(lib);
+  const leaderIp = ipForBoardId(leaderBoardId);
+
+  // Readiness gate: RUN resolves ids against the boards' baked library, so
+  // every entry must exist in the last bake this browser performed. Compare
+  // against the LEADER's snapshot — sequences bake identically to all boards.
+  let snap = null;
+  try { snap = JSON.parse(localStorage.getItem(LIB_SNAP_PREFIX + leaderIp) || "null"); } catch {}
+  const bakedSeqIds = snap ? (snap.sequences || []).map(sq => sq.id) : null;
+  let editedSinceBake = false;
+  if (snap) {
+    const d = diffBlob(snap, sliceForBoard(buildBakeLibrary(lib), leaderBoardId));
+    editedSinceBake = (d.added + d.changed + d.deleted) > 0;
+  }
+  const readiness = assessSetlistRunReadiness((set.entries || []).map(normalizeEntry), bakedSeqIds, editedSinceBake);
+  if (readiness.status === "not-baked") {
+    setSetlistStatus("no bake recorded — Bake to Boards first", "alert");
+    return;
+  }
+  if (readiness.status === "missing-seq") {
+    setSetlistStatus(`not in last bake: ${readiness.missingSeqIds.join(", ")} — re-bake`, "alert");
+    return;
+  }
+
+  if (setlistPlayer.timer) clearTimeout(setlistPlayer.timer);
+  const runId = ++setlistRunSerial;
+  setlistPlayer = {
+    active: true, paused: false, entryIndex: 0, stepIndex: 0,
+    resolvedOrder: order, timer: null, remainingMs: 0, stepStartedAt: 0,
+    runId, runStartedAt: performance.now(), dryRun: false,
+    logCount: 0, broadcastIp: null,
+    mode: "device", phase: "run", expectedSeqId: null, sawExpectedRun: false,
+    entrySentAt: 0, fallbackMs: 0, gapRemainingMs: 0, lastTickAt: 0, leaderIp,
+  };
+  slLogEl.innerHTML = "";
+  const seedNote = (set.mode === "shuffle" && order.appliedSeed != null) ? ` · seed=${order.appliedSeed}` : "";
+  setlistLog(`run ${runId} start · on-device · ${order.length} entries · mode=${set.mode}${seedNote}`, "ok");
+  setlistLog(`leader board ${leaderBoardId}${leaderIp ? ` · ${leaderIp}` : " · ip unknown, will broadcast"}`, "ok");
+  if (readiness.status === "stale-bake") {
+    setlistLog("library edited since bake — boards play the older baked content; re-bake to update", "warn");
+  }
+  slPlayEl.disabled = true;
+  slPauseEl.disabled = false;
+  slStopEl.disabled = false;
+  await sendSetlistEntry(runId);
+}
+
+// Dispatch RUN for the current entry, or wrap/finish when the order is spent.
+async function sendSetlistEntry(runId) {
+  if (!setlistPlayer.active || setlistPlayer.runId !== runId) return;
+  let entry = setlistPlayer.resolvedOrder[setlistPlayer.entryIndex];
+  if (!entry) {
+    if (slLoopEl.checked) {
+      // Re-resolve on wrap so shuffle reshuffles each pass (same as Dry Run).
+      const set = sequenceLibrary().setlists.find(sl => sl.id === currentSetlistId);
+      if (set) {
+        const next = resolveSetlistOrder(set, sequenceLibrary());
+        if (!next.length) {
+          setlistLog("loop · nothing left to play", "bad");
+          stopSetlistPlayback(false);
+          return;
+        }
+        setlistPlayer.resolvedOrder = next;
+        const seedNote = (set.mode === "shuffle" && next.appliedSeed != null) ? ` · seed=${next.appliedSeed}` : "";
+        setlistLog(`loop · restarting${seedNote}`, "ok");
+      } else {
+        setlistLog(`loop · restarting`, "ok");
+      }
+      setlistPlayer.entryIndex = 0;
+      entry = setlistPlayer.resolvedOrder[0];
+      if (!entry) { stopSetlistPlayback(false); return; }
+    } else {
+      setlistLog(`run ${runId} complete`, "ok");
+      stopSetlistPlayback(false);
+      return;
+    }
+  }
+  const seq = entry.__seq;
+  setlistPlayer.phase = "run";
+  setlistPlayer.expectedSeqId = seq.id;
+  setlistPlayer.sawExpectedRun = false;
+  setlistPlayer.entrySentAt = Date.now();
+  setlistPlayer.lastTickAt = Date.now();
+  setlistPlayer.fallbackMs = estimateDeviceSeqDurationMs(seq, sequenceLibrary().motions || []) + SETLIST_RUN_FALLBACK_MARGIN_MS;
+  setlistLog(`entry ${pad2(setlistPlayer.entryIndex + 1)}/${pad2(setlistPlayer.resolvedOrder.length)} · ${seq.name || seq.id} · RUN ${seq.id}`, "amber");
+  setSetlistStatus(`entry ${pad2(setlistPlayer.entryIndex + 1)}/${pad2(setlistPlayer.resolvedOrder.length)} · ${seq.name || seq.id} · on-device`, "amber");
+  renderSetlist();
+  // Start the watcher BEFORE dispatching: a fetch to an unreachable board can
+  // hang for tens of seconds, and the fallback timer must keep counting
+  // through that — otherwise a dead leader wedges the show on this entry.
+  scheduleDeviceSetlistTick(runId);
+  dispatchSetlistRun(runId, seq.id);
+}
+
+// Fire RUN <seqId> at the rig: the leader first (followers mirror it), then
+// the other boards in freshest-seen order. Runs DETACHED from the walker — it
+// only logs the outcome and kicks a poll; the tick chain owns all advancement.
+// Each await re-checks that the walker still wants this exact dispatch
+// (entrySentAt pins the slot, so a repeat of the same sequence can't be
+// double-started by a late retry) before trying another board.
+async function dispatchSetlistRun(runId, seqId) {
+  const sentAt = setlistPlayer.entrySentAt;
+  const wants = () => setlistPlayer.active && setlistPlayer.runId === runId
+    && setlistPlayer.expectedSeqId === seqId && setlistPlayer.entrySentAt === sentAt;
+  let sentTo = null;
+  if (setlistPlayer.leaderIp) {
+    if (await sendCommand(setlistPlayer.leaderIp, `RUN ${seqId}`)) sentTo = setlistPlayer.leaderIp;
+    if (!wants()) return;
+  }
+  if (!sentTo) {
+    const rest = boards.slice().sort((a, b) => (lastSeen.get(b) || 0) - (lastSeen.get(a) || 0))
+      .filter(ip => ip !== setlistPlayer.leaderIp);
+    for (const ip of rest) {
+      if (await sendCommand(ip, `RUN ${seqId}`)) { sentTo = ip; break; }
+      if (!wants()) return;
+    }
+    if (sentTo) setlistLog(`leader unreachable · sent via ${sentTo}`, "warn");
+  }
+  if (!wants()) return;
+  if (!sentTo) {
+    // Leave advancement to the watcher: no-start (fresh telemetry) or the
+    // fallback timer moves past this entry instead of wedging the show.
+    setlistLog(`RUN ${seqId} failed — no board accepted`, "bad");
+    return;
+  }
+  setTimeout(pollOnce, 200);
+}
+
+function scheduleDeviceSetlistTick(runId, delayMs = SETLIST_RUN_TICK_MS) {
+  setlistPlayer.timer = setTimeout(() => deviceSetlistTick(runId), delayMs);
+}
+
+function deviceSetlistTick(runId) {
+  if (!setlistPlayer.active || setlistPlayer.runId !== runId || setlistPlayer.mode !== "device") return;
+  const now = Date.now();
+  const delta = Math.max(0, now - (setlistPlayer.lastTickAt || now));
+  setlistPlayer.lastTickAt = now;
+
+  if (setlistPlayer.phase === "gap") {
+    if (!setlistPlayer.paused) {
+      setlistPlayer.gapRemainingMs -= delta;
+      if (setlistPlayer.gapRemainingMs <= 0) {
+        sendSetlistEntry(runId);
+        return;
+      }
+      setSetlistStatus(`gap ${formatMs(setlistPlayer.gapRemainingMs)}`, "amber");
+    }
+    scheduleDeviceSetlistTick(runId);
+    return;
+  }
+
+  const lib = sequenceLibrary();
+  const byBoard = boards.map(ip => ({
+    boardId: boardIdByIp.get(ip),
+    runseq: (lastStatus.get(ip) || {}).runseq,
+    lastSeenMs: lastSeen.get(ip) || 0,
+  })).filter(b => Number.isInteger(b.boardId));
+  const telemetryFresh = boards.some(ip => now - (lastSeen.get(ip) || 0) <= 2500);
+  const run = readRunseqTelemetry(byBoard, setlistLeaderBoardId(lib), now);
+  if (run && run.id === setlistPlayer.expectedSeqId) setlistPlayer.sawExpectedRun = true;
+
+  const action = decideEntryWatch({
+    run,
+    expectedSeqId: setlistPlayer.expectedSeqId,
+    sawExpectedRun: setlistPlayer.sawExpectedRun,
+    telemetryFresh,
+    sinceSentMs: now - setlistPlayer.entrySentAt,
+    startTimeoutMs: SETLIST_RUN_START_TIMEOUT_MS,
+    fallbackMs: setlistPlayer.fallbackMs,
+  });
+
+  // Someone else's RUN preempts ours even while paused — stop the walker but
+  // do NOT send STOP: the other run is presumably wanted.
+  if (action === "superseded") {
+    setlistLog(`another run took over (${run.id}) — stopping setlist`, "warn");
+    stopSetlistPlayback(false);
+    return;
+  }
+  // Paused: the current sequence finishes on-device; the walker holds here
+  // and acts on whatever the telemetry says once resumed.
+  if (setlistPlayer.paused) {
+    scheduleDeviceSetlistTick(runId);
+    return;
+  }
+  if (action === "wait") {
+    if (run && setlistPlayer.sawExpectedRun) {
+      const entry = setlistPlayer.resolvedOrder[setlistPlayer.entryIndex];
+      const name = entry?.__seq?.name || setlistPlayer.expectedSeqId;
+      setSetlistStatus(`entry ${pad2(setlistPlayer.entryIndex + 1)}/${pad2(setlistPlayer.resolvedOrder.length)} · ${name} · step ${pad2(run.firmwareStep + 1)}/${pad2(run.firmwareStepCount)}`, "amber");
+    }
+    scheduleDeviceSetlistTick(runId);
+    return;
+  }
+  if (action === "no-start") {
+    setlistLog(`RUN ${setlistPlayer.expectedSeqId} never started — skipping (not in the boards' bake?)`, "bad");
+  } else if (action === "fallback-ended") {
+    setlistLog(`telemetry silent — advancing on duration estimate`, "warn");
+  } else {
+    setlistLog(`entry ${pad2(setlistPlayer.entryIndex + 1)} complete`, "ok");
+  }
+  advanceDeviceSetlistEntry(runId);
+}
+
+function advanceDeviceSetlistEntry(runId) {
+  const entry = setlistPlayer.resolvedOrder[setlistPlayer.entryIndex];
+  setlistPlayer.entryIndex++;
+  if (entry && entry.gapMs > 0 && setlistPlayer.entryIndex < setlistPlayer.resolvedOrder.length) {
+    setlistPlayer.phase = "gap";
+    setlistPlayer.gapRemainingMs = entry.gapMs;
+    setSetlistStatus(`gap ${formatMs(entry.gapMs)}`, "amber");
+    setlistLog(`gap ${formatMs(entry.gapMs)}`, "warn");
+    scheduleDeviceSetlistTick(runId);
+    return;
+  }
+  sendSetlistEntry(runId);
+}
+
 function pauseOrResumeSetlist() {
   if (!setlistPlayer.active) return;
+  // Device mode: the firmware finishes the current sequence (there is no
+  // on-device pause); the walker just stops advancing. The gap countdown and
+  // entry dispatch are both gated on `paused` inside deviceSetlistTick.
+  if (setlistPlayer.mode === "device") {
+    setlistPlayer.paused = !setlistPlayer.paused;
+    slPauseEl.textContent = setlistPlayer.paused ? "Resume" : "Pause";
+    setSetlistStatus(setlistPlayer.paused
+      ? "paused — current sequence finishes on-device, then holds"
+      : "resumed", "amber");
+    return;
+  }
   if (!setlistPlayer.paused) {
     if (setlistPlayer.timer) clearTimeout(setlistPlayer.timer);
     setlistPlayer.remainingMs = Math.max(0, setlistPlayer.remainingMs - (Date.now() - setlistPlayer.stepStartedAt));
@@ -9928,7 +10261,7 @@ $("#slSave").addEventListener("click", () => {
   saveCurrentSetlist(readSetlistFromDom());
   setSetlistStatus(`saved to ${libraryStorageLabel()}`, libraryFileWriteFailed ? "amber" : "phosphor");
 });
-slPlayEl.addEventListener("click", () => playSetlist(false));
+slPlayEl.addEventListener("click", () => playSetlistOnDevice());
 slPauseEl.addEventListener("click", pauseOrResumeSetlist);
 slStopEl.addEventListener("click", () => stopSetlistPlayback(true));
 slDryRunEl.addEventListener("click", () => playSetlist(true));

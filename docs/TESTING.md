@@ -1060,6 +1060,107 @@ other two boards have their motors installed:
 
 ---
 
+## Test 33: Setlist Play Runs On-Device (servo-17r)
+
+Setlist ▶ Play now sends `RUN <seqId>` to the leader per entry (followers
+mirror it) and advances by watching runseq telemetry; the browser no longer
+streams authored step commands for real playback. Dry Run keeps the
+browser-local streamer and sends nothing. Requires a rig with a current bake.
+No firmware change — the boards already support `RUN <id>`.
+
+**Setup:** 3 boards online, a setlist with 2–3 baked sequences (at least one
+with a DC motor lane), entry gaps of a few seconds, Loop unchecked.
+
+### 33a: Guards
+
+**Command:** clear this browser's bake snapshots (or use a browser that never
+baked), press ▶ Play.
+
+**Expected:**
+- Status shows `no bake recorded — Bake to Boards first`; nothing is sent.
+- After baking, delete one entry's sequence from the bake (or add an unbaked
+  sequence to the setlist) and Play again: status names the missing id
+  (`not in last bake: … — re-bake`); nothing is sent.
+- Edit any baked sequence without re-baking, then Play: the run STARTS and the
+  log warns `library edited since bake — boards play the older baked content`.
+
+**Result:**
+- [ ] Pass
+- [ ] Fail - describe:
+
+### 33b: Entry walk + telemetry advance
+
+**Command:** ▶ Play with a fresh bake.
+
+**Expected:**
+- Log shows `run N start · on-device`, the leader board/ip, then
+  `entry 01/NN · <name> · RUN <seqId>`.
+- The rig plays each sequence at full rate ON-DEVICE — DC motor lanes fire
+  (this was silently dropped in the old browser-streamed path).
+- The sequencer step highlight follows the running sequence (telemetry), and
+  the setlist entry row highlight tracks the current entry.
+- When a sequence ends, the log shows `entry NN complete`, the entry's gap
+  counts down, then the next RUN is sent. Status shows on-device step
+  progress (`step 03/12`) while running.
+- Serial Monitor on a follower shows the mirrored RUN arriving for each entry.
+
+**Result:**
+- [ ] Pass
+- [ ] Fail - describe:
+
+### 33c: Stop / Pause / Loop
+
+**Command:** during a run: Pause, Resume, Stop; then a run with Loop checked.
+
+**Expected:**
+- Pause: status `paused — current sequence finishes on-device, then holds`;
+  the current sequence completes on the rig, then nothing new is sent.
+- Resume: the walk continues from where it held (a frozen gap resumes with
+  its remaining time).
+- Stop: broadcasts STOP — the rig halts mid-sequence, status `idle`.
+- Loop checked: after the last entry the order re-resolves (shuffle
+  reshuffles) and the walk restarts; unchecked: `run N complete`.
+
+**Result:**
+- [ ] Pass
+- [ ] Fail - describe:
+
+### 33d: Resilience
+
+**Command:** during a run, briefly power off the leader board; separately,
+issue a manual `RUN <otherId>` from another browser/serial mid-run.
+
+**Expected:**
+- Leader loss: the walker holds through the silence and advances on the
+  duration-estimate fallback (`telemetry silent — advancing on duration
+  estimate`) instead of wedging; sends fall back to another board
+  (`leader unreachable · sent via <ip>`), which still mirrors cluster-wide.
+- Manual takeover: the walker logs `another run took over (<id>) — stopping
+  setlist` and stops WITHOUT sending STOP (the manual run keeps playing).
+- Background-tab survival: switch the dashboard tab to the background for a
+  couple of entries — the walk continues (timers are coarse 500ms ticks and
+  the firmware plays each sequence; a delayed tick only delays the next RUN,
+  never distorts playback).
+
+**Result:**
+- [ ] Pass
+- [ ] Fail - describe:
+
+### 33e: Dry Run unchanged
+
+**Command:** Dry Run.
+
+**Expected:**
+- Streams authored steps in the browser log with per-step timing; nothing is
+  sent to any board (Serial Monitor stays quiet); works with no bake and no
+  boards online.
+
+**Result:**
+- [ ] Pass
+- [ ] Fail - describe:
+
+---
+
 ## Host Regression Tests
 
 **2026-06-02 (servo-vna synchronized Motion start):**
@@ -1304,6 +1405,12 @@ checks, then use a temporary valid library whose largest per-board slice is betw
 - [ ] Hardware playback — not run because `arduino-cli board list` found no attached Arduino. When hardware is available: upload this firmware, bake a Motion whose DC track reaches +50 and −50, play it live and baked, and confirm telemetry never exceeds ±50. Also load a legacy bake containing ±100 and confirm firmware playback reports/outputs only ±50.
 
 ---
+
+**2026-07-23 (servo-17r Setlist Play runs on-device):**
+- [x] `node test/verify_setlist_run.mjs` — 18/18: readiness gate (not-baked / missing-seq block, stale-bake warns, duplicates deduped, empty entries deferred to the caller) and the entry watcher (waits for its RUN to appear, trusts live telemetry over the duration estimate, `ended` only on fresh see-then-gone, holds through telemetry loss until the fallback duration, `no-start` when fresh telemetry never saw the run, `superseded` on a foreign run id).
+- [x] `make -C test sim-verify` — every browser host suite passes with the new suite in the chain.
+- [x] In-app browser preview (boards offline): not-baked and missing-seq block with the right status; stale-bake warns and starts; the walker dispatches `RUN <seqId>`, schedules its watcher BEFORE the send (a hung fetch to a dead leader cannot wedge the show), advances on the duration-estimate fallback, honors entry gaps, freezes the gap countdown across Pause/Resume, and Stop resets transport + requests the STOP broadcast. Dry Run still streams browser-locally with zero sends. No console errors.
+- [ ] Hardware playback — Test 33 above (33a–33e): on-device playback incl. DC lanes, telemetry advance + follower mirror, Pause/Stop/Loop, leader-loss fallback, manual-RUN takeover, background-tab survival.
 
 ## Servo Calibration Notes
 
