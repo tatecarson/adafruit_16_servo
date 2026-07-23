@@ -1,329 +1,681 @@
 {
- "schemaVersion": 1,
- "motions": [
-  {
-   "id": "mt-rise01",
-   "name": "Rise",
-   "tags": [
-    "calm"
-   ],
-   "scope": "cluster",
-   "durationMs": 6000,
-   "tracks": [
+  "schemaVersion": 1,
+  "motions": [
     {
-     "kind": "servo",
-     "boardId": 3,
-     "channel": 0,
-     "label": "B3.S0",
-     "keyframes": [
-      {
-       "atMs": 0,
-       "value": 100
-      },
-      {
-       "atMs": 6000,
-       "value": 40
-      }
-     ]
+      "id": "mt-allup",
+      "name": "All Up (clear)",
+      "tags": [
+        "clear"
+      ],
+      "scope": "cluster",
+      "durationMs": 4000,
+      "tracks": [
+        {
+          "kind": "servo",
+          "boardId": 3,
+          "channel": 0,
+          "label": "B3.S0",
+          "keyframes": [
+            {
+              "atMs": 0,
+              "value": 20
+            }
+          ]
+        },
+        {
+          "kind": "servo",
+          "boardId": 3,
+          "channel": 1,
+          "label": "B3.S1",
+          "keyframes": [
+            {
+              "atMs": 0,
+              "value": 20
+            }
+          ]
+        },
+        {
+          "kind": "servo",
+          "boardId": 3,
+          "channel": 2,
+          "label": "B3.S2",
+          "keyframes": [
+            {
+              "atMs": 0,
+              "value": 20
+            }
+          ]
+        }
+      ]
     },
     {
-     "kind": "servo",
-     "boardId": 3,
-     "channel": 1,
-     "label": "B3.S1",
-     "keyframes": [
-      {
-       "atMs": 0,
-       "value": 100
-      },
-      {
-       "atMs": 6000,
-       "value": 43
-      }
-     ]
+      "id": "mt-low1",
+      "name": "Lower Arm 1",
+      "tags": [
+        "drag"
+      ],
+      "scope": "cluster",
+      "durationMs": 5000,
+      "tracks": [
+        {
+          "kind": "servo",
+          "boardId": 3,
+          "channel": 0,
+          "label": "B3.S0",
+          "keyframes": [
+            {
+              "atMs": 0,
+              "value": 20
+            },
+            {
+              "atMs": 5000,
+              "value": 100
+            }
+          ]
+        },
+        {
+          "kind": "servo",
+          "boardId": 3,
+          "channel": 1,
+          "label": "B3.S1",
+          "keyframes": [
+            {
+              "atMs": 0,
+              "value": 20
+            }
+          ]
+        },
+        {
+          "kind": "servo",
+          "boardId": 3,
+          "channel": 2,
+          "label": "B3.S2",
+          "keyframes": [
+            {
+              "atMs": 0,
+              "value": 20
+            }
+          ]
+        }
+      ]
     },
     {
-     "kind": "servo",
-     "boardId": 3,
-     "channel": 2,
-     "label": "B3.S2",
-     "keyframes": [
-      {
-       "atMs": 0,
-       "value": 100
-      },
-      {
-       "atMs": 6000,
-       "value": 46
-      }
-     ]
+      "id": "mt-stg2",
+      "name": "Lower Arm 2 \u00b7 1 held",
+      "tags": [
+        "drag"
+      ],
+      "scope": "cluster",
+      "durationMs": 5000,
+      "tracks": [
+        {
+          "kind": "servo",
+          "boardId": 3,
+          "channel": 0,
+          "label": "B3.S0",
+          "keyframes": [
+            {
+              "atMs": 0,
+              "value": 100
+            }
+          ]
+        },
+        {
+          "kind": "servo",
+          "boardId": 3,
+          "channel": 1,
+          "label": "B3.S1",
+          "keyframes": [
+            {
+              "atMs": 0,
+              "value": 20
+            },
+            {
+              "atMs": 5000,
+              "value": 100
+            }
+          ]
+        },
+        {
+          "kind": "servo",
+          "boardId": 3,
+          "channel": 2,
+          "label": "B3.S2",
+          "keyframes": [
+            {
+              "atMs": 0,
+              "value": 20
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "mt-stg3",
+      "name": "Lower Arm 3 \u00b7 1-2 held",
+      "tags": [
+        "drag"
+      ],
+      "scope": "cluster",
+      "durationMs": 5000,
+      "tracks": [
+        {
+          "kind": "servo",
+          "boardId": 3,
+          "channel": 0,
+          "label": "B3.S0",
+          "keyframes": [
+            {
+              "atMs": 0,
+              "value": 100
+            }
+          ]
+        },
+        {
+          "kind": "servo",
+          "boardId": 3,
+          "channel": 1,
+          "label": "B3.S1",
+          "keyframes": [
+            {
+              "atMs": 0,
+              "value": 100
+            }
+          ]
+        },
+        {
+          "kind": "servo",
+          "boardId": 3,
+          "channel": 2,
+          "label": "B3.S2",
+          "keyframes": [
+            {
+              "atMs": 0,
+              "value": 20
+            },
+            {
+              "atMs": 5000,
+              "value": 100
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "mt-low2",
+      "name": "Lower Arms 1+2",
+      "tags": [
+        "drag"
+      ],
+      "scope": "cluster",
+      "durationMs": 5000,
+      "tracks": [
+        {
+          "kind": "servo",
+          "boardId": 3,
+          "channel": 0,
+          "label": "B3.S0",
+          "keyframes": [
+            {
+              "atMs": 0,
+              "value": 20
+            },
+            {
+              "atMs": 5000,
+              "value": 100
+            }
+          ]
+        },
+        {
+          "kind": "servo",
+          "boardId": 3,
+          "channel": 1,
+          "label": "B3.S1",
+          "keyframes": [
+            {
+              "atMs": 0,
+              "value": 20
+            },
+            {
+              "atMs": 5000,
+              "value": 100
+            }
+          ]
+        },
+        {
+          "kind": "servo",
+          "boardId": 3,
+          "channel": 2,
+          "label": "B3.S2",
+          "keyframes": [
+            {
+              "atMs": 0,
+              "value": 20
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "mt-low3",
+      "name": "Lower All Three",
+      "tags": [
+        "drag"
+      ],
+      "scope": "cluster",
+      "durationMs": 6000,
+      "tracks": [
+        {
+          "kind": "servo",
+          "boardId": 3,
+          "channel": 0,
+          "label": "B3.S0",
+          "keyframes": [
+            {
+              "atMs": 0,
+              "value": 20
+            },
+            {
+              "atMs": 6000,
+              "value": 100
+            }
+          ]
+        },
+        {
+          "kind": "servo",
+          "boardId": 3,
+          "channel": 1,
+          "label": "B3.S1",
+          "keyframes": [
+            {
+              "atMs": 0,
+              "value": 20
+            },
+            {
+              "atMs": 6000,
+              "value": 100
+            }
+          ]
+        },
+        {
+          "kind": "servo",
+          "boardId": 3,
+          "channel": 2,
+          "label": "B3.S2",
+          "keyframes": [
+            {
+              "atMs": 0,
+              "value": 20
+            },
+            {
+              "atMs": 6000,
+              "value": 100
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "mt-stir",
+      "name": "All Down \u00b7 Stir",
+      "tags": [
+        "drag",
+        "agitated"
+      ],
+      "scope": "cluster",
+      "durationMs": 5000,
+      "tracks": [
+        {
+          "kind": "servo",
+          "boardId": 3,
+          "channel": 0,
+          "label": "B3.S0",
+          "keyframes": [
+            {
+              "atMs": 0,
+              "value": 100
+            },
+            {
+              "atMs": 2500,
+              "value": 88
+            },
+            {
+              "atMs": 5000,
+              "value": 100
+            }
+          ]
+        },
+        {
+          "kind": "servo",
+          "boardId": 3,
+          "channel": 1,
+          "label": "B3.S1",
+          "keyframes": [
+            {
+              "atMs": 0,
+              "value": 100
+            },
+            {
+              "atMs": 2500,
+              "value": 88
+            },
+            {
+              "atMs": 5000,
+              "value": 100
+            }
+          ]
+        },
+        {
+          "kind": "servo",
+          "boardId": 3,
+          "channel": 2,
+          "label": "B3.S2",
+          "keyframes": [
+            {
+              "atMs": 0,
+              "value": 100
+            },
+            {
+              "atMs": 2500,
+              "value": 88
+            },
+            {
+              "atMs": 5000,
+              "value": 100
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "mt-hwwg08",
+      "name": "Rise 30",
+      "tags": [],
+      "scope": "cluster",
+      "durationMs": 8000,
+      "tracks": [
+        {
+          "kind": "servo",
+          "boardId": 3,
+          "channel": 0,
+          "label": "B3.S0",
+          "keyframes": [
+            {
+              "atMs": 0,
+              "value": 100
+            },
+            {
+              "atMs": 8000,
+              "value": 70
+            }
+          ]
+        },
+        {
+          "kind": "servo",
+          "boardId": 3,
+          "channel": 1,
+          "label": "B3.S1",
+          "keyframes": [
+            {
+              "atMs": 0,
+              "value": 100
+            },
+            {
+              "atMs": 8000,
+              "value": 71
+            }
+          ]
+        },
+        {
+          "kind": "servo",
+          "boardId": 3,
+          "channel": 2,
+          "label": "B3.S2",
+          "keyframes": [
+            {
+              "atMs": 0,
+              "value": 100
+            },
+            {
+              "atMs": 8000,
+              "value": 67
+            }
+          ]
+        }
+      ]
     }
-   ]
-  },
-  {
-   "id": "mt-sett02",
-   "name": "Settle",
-   "tags": [
-    "calm"
-   ],
-   "scope": "cluster",
-   "durationMs": 4500,
-   "tracks": [
+  ],
+  "sequences": [
     {
-     "kind": "servo",
-     "boardId": 3,
-     "channel": 0,
-     "label": "B3.S0",
-     "keyframes": [
-      {
-       "atMs": 0,
-       "value": 40
-      },
-      {
-       "atMs": 4500,
-       "value": 96
-      }
-     ]
+      "id": "sq-nxy2a1",
+      "name": "Willow Rustle - Motions",
+      "tags": [],
+      "steps": [
+        {
+          "cmd": "MOTION mt-hwwg08",
+          "durationMs": 8000,
+          "target": "all",
+          "label": "",
+          "hold": false,
+          "dc": {
+            "3": 15
+          }
+        }
+      ]
     },
     {
-     "kind": "servo",
-     "boardId": 3,
-     "channel": 1,
-     "label": "B3.S1",
-     "keyframes": [
-      {
-       "atMs": 0,
-       "value": 43
-      },
-      {
-       "atMs": 4500,
-       "value": 98
-      }
-     ]
+      "id": "sq-wyf1tp",
+      "name": "Rotations",
+      "tags": [],
+      "steps": [
+        {
+          "cmd": "Rotate 15",
+          "durationMs": 8000,
+          "target": "all",
+          "label": "",
+          "hold": false,
+          "dc": {}
+        },
+        {
+          "cmd": "Rotate 10",
+          "durationMs": 8000,
+          "target": "all",
+          "label": "",
+          "hold": false,
+          "dc": {}
+        },
+        {
+          "cmd": "Rotate 15",
+          "durationMs": 8000,
+          "target": "all",
+          "label": "",
+          "hold": false,
+          "dc": {}
+        },
+        {
+          "cmd": "Rotate 5",
+          "durationMs": 8000,
+          "target": "all",
+          "label": "",
+          "hold": false,
+          "dc": {}
+        }
+      ]
     },
     {
-     "kind": "servo",
-     "boardId": 3,
-     "channel": 2,
-     "label": "B3.S2",
-     "keyframes": [
-      {
-       "atMs": 0,
-       "value": 46
-      },
-      {
-       "atMs": 4500,
-       "value": 100
-      }
-     ]
+      "id": "sq-drag01",
+      "name": "Contact Build \u00b7 Slow to Fast",
+      "tags": [
+        "slow",
+        "build"
+      ],
+      "steps": [
+        {
+          "cmd": "MOTION mt-allup",
+          "durationMs": 4000,
+          "target": "all",
+          "label": "clear \u00b7 slow spin",
+          "hold": false,
+          "dc": {
+            "3": 12
+          }
+        },
+        {
+          "cmd": "MOTION mt-low1",
+          "durationMs": 5000,
+          "target": "all",
+          "label": "arm 1 drags \u00b7 slow",
+          "hold": false,
+          "dc": {
+            "3": 12
+          }
+        },
+        {
+          "cmd": "MOTION mt-stg2",
+          "durationMs": 5000,
+          "target": "all",
+          "label": "arm 2 drags \u00b7 slow",
+          "hold": false,
+          "dc": {
+            "3": 12
+          }
+        },
+        {
+          "cmd": "MOTION mt-stg3",
+          "durationMs": 5000,
+          "target": "all",
+          "label": "arm 3 drags \u00b7 all down",
+          "hold": false,
+          "dc": {
+            "3": 12
+          }
+        },
+        {
+          "cmd": "MOTION mt-stir",
+          "durationMs": 7000,
+          "target": "all",
+          "label": "all dragging \u00b7 faster",
+          "hold": false,
+          "dc": {
+            "3": 32
+          }
+        }
+      ]
+    },
+    {
+      "id": "sq-bild01",
+      "name": "Lift & Answer \u00b7 Layers",
+      "tags": [
+        "layers",
+        "build"
+      ],
+      "steps": [
+        {
+          "cmd": "MOTION mt-allup",
+          "durationMs": 4000,
+          "target": "all",
+          "label": "clear \u00b7 slow",
+          "hold": false,
+          "dc": {
+            "3": 12
+          }
+        },
+        {
+          "cmd": "MOTION mt-low1",
+          "durationMs": 5000,
+          "target": "all",
+          "label": "arm 1 drags",
+          "hold": false,
+          "dc": {
+            "3": 14
+          }
+        },
+        {
+          "cmd": "MOTION mt-allup",
+          "durationMs": 4000,
+          "target": "all",
+          "label": "arm up \u00b7 quiet (spins on)",
+          "hold": false,
+          "dc": {
+            "3": 14
+          }
+        },
+        {
+          "cmd": "MOTION mt-low2",
+          "durationMs": 5000,
+          "target": "all",
+          "label": "two arms drag \u00b7 quicker",
+          "hold": false,
+          "dc": {
+            "3": 22
+          }
+        },
+        {
+          "cmd": "MOTION mt-allup",
+          "durationMs": 4000,
+          "target": "all",
+          "label": "arms up \u00b7 quiet",
+          "hold": false,
+          "dc": {
+            "3": 18
+          }
+        },
+        {
+          "cmd": "MOTION mt-low3",
+          "durationMs": 6000,
+          "target": "all",
+          "label": "all three drag \u00b7 fast",
+          "hold": false,
+          "dc": {
+            "3": 30
+          }
+        }
+      ]
     }
-   ]
-  },
-  {
-   "id": "mt-ripp03",
-   "name": "Ripple",
-   "tags": [
-    "medium"
-   ],
-   "scope": "cluster",
-   "durationMs": 6000,
-   "tracks": [
+  ],
+  "setlists": [
     {
-     "kind": "servo",
-     "boardId": 3,
-     "channel": 0,
-     "label": "B3.S0",
-     "keyframes": [
-      {
-       "atMs": 0,
-       "value": 85
-      },
-      {
-       "atMs": 3000,
-       "value": 55
-      },
-      {
-       "atMs": 6000,
-       "value": 85
+      "id": "bench-test",
+      "name": "Bench Test",
+      "mode": "shuffle",
+      "entries": [
+        {
+          "seqId": "sq-nxy2a1",
+          "repeat": 1,
+          "gapMs": 2000,
+          "weight": 1
+        },
+        {
+          "seqId": "sq-wyf1tp",
+          "repeat": 1,
+          "gapMs": 3000,
+          "weight": 1
+        },
+        {
+          "seqId": "sq-drag01",
+          "repeat": 1,
+          "gapMs": 2000,
+          "weight": 1
+        },
+        {
+          "seqId": "sq-bild01",
+          "repeat": 1,
+          "gapMs": 2000,
+          "weight": 1
+        }
+      ],
+      "shuffleRules": {
+        "avoidSameTag": false,
+        "minGapEntries": 0,
+        "moodArc": "random",
+        "seed": 0
       }
-     ]
-    },
-    {
-     "kind": "servo",
-     "boardId": 3,
-     "channel": 1,
-     "label": "B3.S1",
-     "keyframes": [
-      {
-       "atMs": 0,
-       "value": 88
-      },
-      {
-       "atMs": 3000,
-       "value": 59
-      },
-      {
-       "atMs": 6000,
-       "value": 88
-      }
-     ]
-    },
-    {
-     "kind": "servo",
-     "boardId": 3,
-     "channel": 2,
-     "label": "B3.S2",
-     "keyframes": [
-      {
-       "atMs": 0,
-       "value": 91
-      },
-      {
-       "atMs": 3000,
-       "value": 63
-      },
-      {
-       "atMs": 6000,
-       "value": 91
-      }
-     ]
     }
-   ]
+  ],
+  "activeSetlistId": "bench-test",
+  "schedulerConfig": {
+    "leaderBoardId": 3,
+    "graceMs": 10000,
+    "tagEnergy": []
   }
- ],
- "sequences": [
-  {
-   "id": "sq-warm01",
-   "name": "Warm Up",
-   "tags": [
-    "calm"
-   ],
-   "steps": [
-    {
-     "cmd": "MOTION mt-rise01",
-     "durationMs": 6000,
-     "target": "all",
-     "label": "rise \u00b7 motor 25",
-     "hold": false,
-     "dc": {
-      "3": 25
-     }
-    },
-    {
-     "cmd": "MOTION mt-sett02",
-     "durationMs": 4500,
-     "target": "all",
-     "label": "settle \u00b7 motor off",
-     "hold": false,
-     "dc": {
-      "3": 0
-     }
-    }
-   ]
-  },
-  {
-   "id": "sq-drift1",
-   "name": "Drift Cycle",
-   "tags": [
-    "calm"
-   ],
-   "steps": [
-    {
-     "cmd": "MOTION mt-rise01",
-     "durationMs": 6000,
-     "target": "all",
-     "label": "rise \u00b7 fwd 20",
-     "hold": false,
-     "dc": {
-      "3": 20
-     }
-    },
-    {
-     "cmd": "MOTION mt-ripp03",
-     "durationMs": 6000,
-     "target": "all",
-     "label": "ripple \u00b7 rev 30",
-     "hold": false,
-     "dc": {
-      "3": -30
-     }
-    },
-    {
-     "cmd": "MOTION mt-sett02",
-     "durationMs": 4500,
-     "target": "all",
-     "label": "settle \u00b7 motor off",
-     "hold": false,
-     "dc": {
-      "3": 0
-     }
-    }
-   ]
-  },
-  {
-   "id": "sq-pulse1",
-   "name": "Motor Pulse",
-   "tags": [
-    "medium"
-   ],
-   "steps": [
-    {
-     "cmd": "MOTION mt-ripp03",
-     "durationMs": 6000,
-     "target": "all",
-     "label": "ripple \u00b7 motor 40",
-     "hold": false,
-     "dc": {
-      "3": 40
-     }
-    },
-    {
-     "cmd": "STOP",
-     "durationMs": 2000,
-     "target": "all",
-     "label": "cut",
-     "hold": false
-    }
-   ]
-  }
- ],
- "setlists": [
-  {
-   "id": "bench-test",
-   "name": "Bench Test",
-   "mode": "ordered",
-   "entries": [
-    {
-     "seqId": "sq-warm01",
-     "repeat": 1,
-     "gapMs": 2000,
-     "weight": 1
-    },
-    {
-     "seqId": "sq-drift1",
-     "repeat": 1,
-     "gapMs": 3000,
-     "weight": 1
-    },
-    {
-     "seqId": "sq-pulse1",
-     "repeat": 1,
-     "gapMs": 2000,
-     "weight": 1
-    }
-   ],
-   "shuffleRules": {
-    "avoidSameTag": false,
-    "minGapEntries": 0,
-    "moodArc": "random",
-    "seed": 0
-   }
-  }
- ],
- "activeSetlistId": "bench-test",
- "schedulerConfig": {
-  "leaderBoardId": 3,
-  "graceMs": 10000,
-  "tagEnergy": []
- }
 }
