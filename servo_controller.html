@@ -321,90 +321,9 @@
 
   /* ---------- board strip ---------- */
 
-  .grid { display: grid; gap: 12px; }
 
-  .board {
-    display: grid;
-    /* identity / telemetry / instrument panel — sized for 3 servos + 1 DC. */
-    grid-template-columns: 200px 1fr 560px;
-    gap: 0;
-    background: var(--bg-elev);
-    border: 1px solid var(--rule-hi);
-    position: relative;
-  }
-  .board::before {
-    content: "";
-    position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
-    background: var(--ink-mute);
-    transition: background .2s;
-  }
-  .board[data-state="online"]::before { background: var(--phosphor); }
-  .board[data-state="offline"]::before { background: var(--alert); }
-  .board[data-state="ota"]::before { background: var(--amber); }
-  .board[data-state="offline"] .ident, .board[data-state="offline"] .telemetry, .board[data-state="offline"] .channels { opacity: 0.45; }
 
   /* — left identity column — */
-  .ident {
-    padding: 18px 22px;
-    border-right: 1px solid var(--rule);
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-  }
-  .ident .row1 { display: flex; align-items: baseline; gap: 12px; }
-  .ident .id {
-    font-family: var(--display);
-    font-size: 56px;
-    line-height: 0.85;
-    color: var(--ink);
-    letter-spacing: -0.02em;
-  }
-  .ident .id-label {
-    font-family: var(--label);
-    font-size: 8px;
-    text-transform: uppercase;
-    letter-spacing: 0.32em;
-    color: var(--ink-mute);
-    writing-mode: vertical-rl;
-    transform: rotate(180deg);
-  }
-  .ident .ip {
-    font-family: var(--mono);
-    font-size: 13px;
-    color: var(--ink);
-    letter-spacing: 0.02em;
-    font-weight: 500;
-    margin-top: 6px;
-  }
-  .ident .stamp {
-    font-family: var(--mono);
-    font-size: 10px;
-    color: var(--ink-dim);
-    display: flex;
-    justify-content: space-between;
-  }
-  .ident .stamp .k {
-    font-family: var(--label);
-    font-size: 8px;
-    text-transform: uppercase;
-    letter-spacing: 0.24em;
-    color: var(--ink-mute);
-    font-weight: 600;
-  }
-  .ident .dot {
-    display: inline-block; width: 8px; height: 8px;
-    background: var(--ink-mute);
-    border-radius: 50%;
-    margin-left: auto;
-    box-shadow: 0 0 0 0 currentColor;
-  }
-  .board[data-state="online"] .ident .dot {
-    background: var(--phosphor);
-    animation: heartbeat 1.6s ease-in-out infinite;
-    color: var(--phosphor);
-  }
-  .board[data-state="ota"] .ident .dot { background: var(--amber); animation: heartbeat 0.6s ease-in-out infinite; color: var(--amber); }
-  .board[data-state="offline"] .ident .dot { background: var(--alert); }
   @keyframes heartbeat {
     0%   { box-shadow: 0 0 0 0 currentColor; }
     70%  { box-shadow: 0 0 0 6px transparent; }
@@ -412,13 +331,77 @@
   }
 
   /* — middle telemetry column — */
-  .telemetry {
-    padding: 16px 20px;
-    border-right: 1px solid var(--rule);
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
+  /* ---------- slim board strip (servo-lqq) ---------- */
+  .board-strip { display: grid; gap: 6px; }
+  .board-row {
+    display: grid;
+    grid-template-columns: 72px 170px 150px 1fr;
+    gap: 14px;
+    align-items: center;
+    background: var(--bg-elev);
+    border: 1px solid var(--rule-hi);
+    border-left-width: 3px;
+    border-left-color: var(--ink-mute);
+    padding: 8px 14px;
   }
+  .board-row[data-state="online"]  { border-left-color: var(--phosphor); }
+  .board-row[data-state="offline"] { border-left-color: var(--alert); }
+  .board-row[data-state="ota"]     { border-left-color: var(--amber); }
+  .board-row[data-state="offline"] > * { opacity: 0.55; }
+  .board-row .br-id {
+    font: 300 22px/1 var(--display, var(--mono));
+    color: var(--ink);
+    display: inline-flex;
+    align-items: baseline;
+    gap: 8px;
+  }
+  .board-row .br-id-label {
+    font: 700 8px/1 var(--label);
+    text-transform: uppercase;
+    letter-spacing: 0.24em;
+    color: var(--ink-mute);
+  }
+  .board-row .br-ip {
+    font: 500 11px/1 var(--mono);
+    color: var(--ink-dim);
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .board-row .dot {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: var(--ink-mute);
+    display: inline-block;
+  }
+  .board-row[data-state="online"] .dot {
+    background: var(--phosphor);
+    animation: heartbeat 1.6s ease-in-out infinite;
+  }
+  .board-row[data-state="ota"] .dot { background: var(--amber); animation: heartbeat 0.6s ease-in-out infinite; }
+  .board-row[data-state="offline"] .dot { background: var(--alert); }
+  .board-row .br-up {
+    font: 500 10px/1 var(--mono);
+    color: var(--ink-dim);
+  }
+  .board-row .br-up .k {
+    font: 700 8px/1 var(--label);
+    text-transform: uppercase;
+    letter-spacing: 0.24em;
+    color: var(--ink-mute);
+    margin-right: 4px;
+  }
+  .board-row .br-lost {
+    font: 700 9px/1 var(--label);
+    text-transform: uppercase;
+    letter-spacing: 0.24em;
+    color: var(--alert);
+  }
+  .board-row .br-pills { justify-content: flex-end; }
+  @media (max-width: 720px) {
+    .board-row { grid-template-columns: 56px 1fr; }
+    .board-row .br-pills { justify-content: flex-start; }
+  }
+
   .pills { display: flex; gap: 6px; flex-wrap: wrap; }
   .pill {
     font-family: var(--label);
@@ -439,68 +422,7 @@
   .pill.alert { color: var(--alert);    border-color: var(--alert);    background: rgba(241,90,58,0.08); }
   .pill .v { font-family: var(--mono); letter-spacing: 0.02em; font-weight: 500; }
 
-  .progress {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-  }
-  .progress .head {
-    display: flex; justify-content: space-between;
-    font-family: var(--label);
-    font-size: 9px;
-    text-transform: uppercase;
-    letter-spacing: 0.22em;
-    color: var(--ink-mute);
-    font-weight: 600;
-  }
-  .progress .head .v { color: var(--ink); font-family: var(--mono); letter-spacing: 0; font-weight: 500; }
-  .progress .bar {
-    position: relative;
-    height: 6px;
-    background: var(--bg-deep);
-    border: 1px solid var(--rule);
-    overflow: hidden;
-  }
-  .progress .bar::before {
-    content: "";
-    position: absolute;
-    inset: 0;
-    background-image: repeating-linear-gradient(90deg,
-      transparent 0, transparent 23px,
-      var(--rule) 23px, var(--rule) 24px);
-  }
-  .progress .bar .fill {
-    position: absolute;
-    inset: 0 auto 0 0;
-    background: var(--phosphor);
-    box-shadow: 0 0 8px var(--phosphor);
-  }
-  .progress.idle .head .v { color: var(--ink-mute); }
-  .progress.idle .bar .fill { display: none; }
 
-  .timescale {
-    display: flex;
-    align-items: baseline;
-    gap: 10px;
-    border-top: 1px dashed var(--rule);
-    padding-top: 12px;
-  }
-  .timescale .k {
-    font-family: var(--label);
-    font-size: 9px;
-    text-transform: uppercase;
-    letter-spacing: 0.24em;
-    color: var(--ink-mute);
-    font-weight: 600;
-  }
-  .timescale .v {
-    font-family: var(--display);
-    font-size: 24px;
-    line-height: 1;
-    color: var(--ink);
-    letter-spacing: 0.02em;
-  }
-  .timescale.warn .v { color: var(--amber); }
 
   /* ============================================================
      RIGHT COLUMN — actuator instrument panel
@@ -508,347 +430,23 @@
      Replaces the old 16-channel meter strip — only three servos
      and one DC motor are wired on this installation.
      ============================================================ */
-  .channels {
-    padding: 14px 18px 16px;
-    display: flex;
-    flex-direction: column;
-    gap: 14px;
-    background:
-      radial-gradient(ellipse at top right, rgba(255,182,39,0.025), transparent 60%);
-  }
-  .channels-head {
-    display: flex; justify-content: space-between; align-items: baseline;
-    gap: 12px;
-  }
-  .channels-head .label {
-    font-family: var(--label);
-    font-size: 9px;
-    text-transform: uppercase;
-    letter-spacing: 0.32em;
-    color: var(--ink-mute);
-    font-weight: 600;
-  }
-  .channels-head .scale {
-    font-family: var(--mono);
-    font-size: 9px;
-    color: var(--ink-mute);
-    letter-spacing: 0.06em;
-  }
 
   /* "Now playing" MOTION strip — prominent when active, ghost when idle. */
-  .nowplaying {
-    display: grid;
-    grid-template-columns: auto 1fr auto;
-    align-items: center;
-    gap: 12px;
-    padding: 8px 12px;
-    border: 1px solid var(--rule);
-    background: var(--bg-deep);
-    position: relative;
-    transition: border-color .25s, background .25s;
-  }
-  .nowplaying.on {
-    border-color: var(--phosphor);
-    background: linear-gradient(90deg, rgba(75,227,193,0.08), rgba(75,227,193,0.01));
-  }
-  .nowplaying .k {
-    font-family: var(--label);
-    font-size: 9px;
-    text-transform: uppercase;
-    letter-spacing: 0.28em;
-    color: var(--ink-mute);
-    font-weight: 700;
-  }
-  .nowplaying.on .k { color: var(--phosphor); }
-  .nowplaying .id {
-    font-family: var(--display);
-    font-size: 16px;
-    color: var(--ink);
-    letter-spacing: 0.03em;
-    text-transform: lowercase;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-  .nowplaying.idle .id { color: var(--ink-mute); }
-  .nowplaying .progress-mini {
-    width: 96px; height: 4px;
-    background: rgba(0,0,0,0.4);
-    border: 1px solid var(--rule);
-    position: relative;
-    overflow: hidden;
-  }
-  .nowplaying .progress-mini .fill {
-    position: absolute; inset: 0 auto 0 0;
-    background: var(--phosphor);
-    box-shadow: 0 0 6px var(--phosphor);
-    transition: width .25s linear;
-  }
-  .nowplaying.idle .progress-mini .fill { display: none; }
 
   /* Instrument tile grid: 3 servos + DC, equal width. */
-  .instruments {
-    display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    gap: 10px;
-  }
-  .instrument {
-    position: relative;
-    border: 1px solid var(--rule);
-    background:
-      linear-gradient(to bottom, rgba(255,255,255,0.012), transparent 30%),
-      var(--bg-deep);
-    padding: 12px 12px 14px;
-    display: grid;
-    grid-template-rows: auto 1fr auto;
-    gap: 10px;
-    min-height: 168px;
-    overflow: hidden;
-    transition: border-color .2s;
-  }
-  .instrument::before {
-    /* corner tick — matches panel notch language */
-    content: ""; position: absolute; top: -1px; left: -1px;
-    width: 6px; height: 6px;
-    border-top: 1px solid var(--ink-mute);
-    border-left: 1px solid var(--ink-mute);
-    transition: border-color .2s;
-  }
-  .instrument.moving { border-color: var(--amber); }
-  .instrument.moving::before { border-color: var(--amber); }
-  .instrument.fwd { border-color: var(--phosphor); }
-  .instrument.fwd::before { border-color: var(--phosphor); }
-  .instrument.rev { border-color: var(--alert); }
-  .instrument.rev::before { border-color: var(--alert); }
 
   /* tile header — channel kind + index + status word */
-  .ins-head {
-    display: flex; align-items: baseline; justify-content: space-between;
-    border-bottom: 1px dashed var(--rule);
-    padding-bottom: 6px;
-  }
-  .ins-head .kind {
-    font-family: var(--label);
-    font-size: 8px;
-    text-transform: uppercase;
-    letter-spacing: 0.28em;
-    color: var(--ink-mute);
-    font-weight: 700;
-  }
-  .ins-head .num {
-    font-family: var(--display);
-    font-size: 14px;
-    color: var(--ink);
-    letter-spacing: 0.02em;
-    line-height: 1;
-  }
-  .ins-head .state {
-    font-family: var(--label);
-    font-size: 8px;
-    text-transform: uppercase;
-    letter-spacing: 0.24em;
-    color: var(--ink-mute);
-    font-weight: 700;
-  }
-  .instrument.moving .ins-head .state { color: var(--amber); }
-  .instrument.fwd .ins-head .state { color: var(--phosphor); }
-  .instrument.rev .ins-head .state { color: var(--alert); }
 
   /* SERVO BODY — big pulse readout + small gauge */
-  .ins-body {
-    display: grid;
-    grid-template-columns: 1fr 28px;
-    gap: 10px;
-    align-items: stretch;
-    min-height: 0;
-  }
-  .ins-readout {
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    gap: 4px;
-    overflow: hidden;
-  }
-  .ins-readout .big {
-    font-family: var(--display);
-    font-size: 30px;
-    line-height: 0.9;
-    color: var(--ink);
-    letter-spacing: -0.01em;
-    font-variant-numeric: tabular-nums;
-  }
-  .instrument.moving .ins-readout .big { color: var(--amber); }
-  .ins-readout .unit {
-    font-family: var(--label);
-    font-size: 8px;
-    text-transform: uppercase;
-    letter-spacing: 0.32em;
-    color: var(--ink-mute);
-    font-weight: 600;
-    margin-top: -2px;
-  }
-  .ins-readout .second {
-    font-family: var(--mono);
-    font-size: 10px;
-    color: var(--ink-dim);
-    letter-spacing: 0.02em;
-    margin-top: 6px;
-    display: flex;
-    justify-content: space-between;
-    gap: 8px;
-  }
-  .ins-readout .second .k {
-    font-family: var(--label);
-    font-size: 8px;
-    text-transform: uppercase;
-    letter-spacing: 0.24em;
-    color: var(--ink-mute);
-    font-weight: 600;
-  }
 
   /* Vertical pulse gauge — same scale as old meter (PULSE 150..600) */
-  .ins-gauge {
-    position: relative;
-    width: 28px;
-    background: rgba(0,0,0,0.35);
-    border: 1px solid var(--rule);
-    background-image:
-      linear-gradient(to bottom,
-        transparent 0%, transparent 24%, var(--rule) 24%, var(--rule) calc(24% + 1px),
-        transparent calc(24% + 1px), transparent 49%, var(--rule) 49%, var(--rule) calc(49% + 1px),
-        transparent calc(49% + 1px), transparent 74%, var(--rule) 74%, var(--rule) calc(74% + 1px),
-        transparent calc(74% + 1px));
-  }
-  .ins-gauge .bar {
-    position: absolute; left: 1px; right: 1px; bottom: 1px;
-    background: var(--ink-dim);
-    transition: height .25s cubic-bezier(.4,.6,.2,1), background .2s;
-    min-height: 1px;
-  }
-  .instrument.moving .ins-gauge .bar { background: var(--amber); box-shadow: 0 0 8px var(--amber); }
-  .ins-gauge .ghost {
-    position: absolute; left: 1px; right: 1px; height: 1px;
-    background: var(--amber); opacity: 0.55;
-    transition: bottom .25s cubic-bezier(.4,.6,.2,1);
-  }
-  .ins-gauge .mid {
-    position: absolute; left: -3px; right: -3px; top: 50%;
-    height: 1px;
-    background: var(--rule-hi);
-    pointer-events: none;
-  }
 
   /* tile footer — micro range hint */
-  .ins-foot {
-    display: flex;
-    justify-content: space-between;
-    font-family: var(--mono);
-    font-size: 8px;
-    color: var(--ink-mute);
-    letter-spacing: 0.04em;
-    padding-top: 4px;
-    border-top: 1px dashed var(--rule);
-  }
-  .ins-foot .k {
-    font-family: var(--label);
-    text-transform: uppercase;
-    letter-spacing: 0.22em;
-    font-weight: 600;
-  }
 
   /* DC TILE — bipolar horizontal gauge replaces vertical body */
-  .instrument.dc .ins-body { grid-template-columns: 1fr; }
-  .ins-dc-readout {
-    display: flex;
-    align-items: baseline;
-    justify-content: space-between;
-    gap: 8px;
-  }
-  .ins-dc-readout .big {
-    font-family: var(--display);
-    font-size: 30px;
-    line-height: 0.9;
-    color: var(--ink);
-    letter-spacing: -0.01em;
-    font-variant-numeric: tabular-nums;
-  }
-  .instrument.dc.fwd .ins-dc-readout .big { color: var(--phosphor); }
-  .instrument.dc.rev .ins-dc-readout .big { color: var(--alert); }
-  .ins-dc-readout .unit {
-    font-family: var(--label);
-    font-size: 8px;
-    text-transform: uppercase;
-    letter-spacing: 0.28em;
-    color: var(--ink-mute);
-    font-weight: 600;
-  }
   /* Bipolar horizontal gauge: zero centered, fills toward sign. */
-  .ins-bipolar {
-    position: relative;
-    height: 14px;
-    background: rgba(0,0,0,0.35);
-    border: 1px solid var(--rule);
-    margin: 4px 0 2px;
-  }
-  .ins-bipolar::before {
-    /* centerline tick */
-    content: ""; position: absolute; left: 50%; top: -3px; bottom: -3px;
-    width: 1px; background: var(--ink-mute);
-  }
-  .ins-bipolar .fill {
-    position: absolute; top: 1px; bottom: 1px;
-    transition: left .25s cubic-bezier(.4,.6,.2,1), width .25s cubic-bezier(.4,.6,.2,1), background .2s;
-  }
-  .instrument.dc.fwd .ins-bipolar .fill { background: var(--phosphor); box-shadow: 0 0 8px var(--phosphor); }
-  .instrument.dc.rev .ins-bipolar .fill { background: var(--alert); box-shadow: 0 0 8px var(--alert); }
-  .ins-bipolar-labels {
-    display: flex;
-    justify-content: space-between;
-    font-family: var(--label);
-    font-size: 8px;
-    text-transform: uppercase;
-    letter-spacing: 0.28em;
-    color: var(--ink-mute);
-    font-weight: 700;
-  }
-  .ins-bipolar-labels .mid { color: var(--ink-mute); }
 
   /* Command audit tail at bottom of right column */
-  .lastcmd {
-    display: grid;
-    grid-template-columns: auto 1fr auto;
-    align-items: center;
-    gap: 10px;
-    padding: 6px 10px;
-    border: 1px solid var(--rule);
-    background: var(--bg-deep);
-    font-family: var(--mono);
-    font-size: 10px;
-    color: var(--ink-dim);
-    letter-spacing: 0.02em;
-  }
-  .lastcmd .k {
-    font-family: var(--label);
-    font-size: 8px;
-    text-transform: uppercase;
-    letter-spacing: 0.28em;
-    color: var(--ink-mute);
-    font-weight: 700;
-  }
-  .lastcmd .cmd {
-    color: var(--amber);
-    font-family: var(--mono);
-    font-weight: 500;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .lastcmd .ts {
-    color: var(--ink-mute);
-    font-family: var(--mono);
-    font-size: 9px;
-  }
-  .lastcmd.idle .cmd { color: var(--ink-mute); font-style: italic; }
 
   /* — empty / loading states — */
   .placeholder {
@@ -862,7 +460,6 @@
   }
   .placeholder em { color: var(--amber); font-style: normal; }
 
-  .board.skeleton .id::before { content: "—"; color: var(--ink-mute); }
 
   /* ---------- footer ---------- */
 
@@ -2095,8 +1692,6 @@
 
   /* small screens */
   @media (max-width: 1100px) {
-    .board { grid-template-columns: 160px 1fr; }
-    .channels { grid-column: 1 / -1; border-top: 1px solid var(--rule); }
   }
   @media (max-width: 820px) {
     .masthead { grid-template-columns: 1fr; align-items: start; }
@@ -2252,7 +1847,7 @@
     <div id="slLog" class="seq-log"></div>
   </div>
 
-  <div id="boards" class="grid"></div>
+  <div id="boards" class="board-strip"></div>
 
   <!-- ============================================================
        MOTION EDITOR
@@ -2738,7 +2333,6 @@ const DEFAULT_BOARDS = ["192.168.8.138", "192.168.8.213", "192.168.8.198"];
 const LS_KEY = "servoCluster.boards";
 
 const PULSE_MIN = 150, PULSE_MAX = 600;
-const ZERO_PULSE_HEIGHT_PCT = 4; // empty-state floor so meters aren't visually empty
 const MOTOR_TEST_SAFE_UP_PCT = 80; // avoid binding winches at the absolute upper limit
 
 // ============================================================
@@ -2898,11 +2492,6 @@ function fmtUptime(ms) {
   const h = Math.floor(m / 60);
   return h + "h " + (m % 60).toString().padStart(2, "0") + "m";
 }
-function pulseToPct(p) {
-  if (p == null) return ZERO_PULSE_HEIGHT_PCT;
-  const v = (p - PULSE_MIN) / (PULSE_MAX - PULSE_MIN);
-  return Math.max(ZERO_PULSE_HEIGHT_PCT, Math.min(100, v * 100));
-}
 function pad2(n) { return String(n).padStart(2, "0"); }
 
 // ============================================================
@@ -2933,206 +2522,10 @@ function renderBoardList() {
 // pretend there are 13 nonexistent servos sitting at center pulse.
 const VISIBLE_SERVO_CHANNELS = 3;
 
-// Approximate degrees from pulse using the firmware's calibration window.
-// Servos can have per-channel calibration; for a quick degree readout in the
-// UI a 150..600 → 0..180 mapping is close enough to be useful at a glance.
-function pulseToDeg(p) {
-  if (p == null) return null;
-  const clamped = Math.max(PULSE_MIN, Math.min(PULSE_MAX, p));
-  return Math.round((clamped - PULSE_MIN) / (PULSE_MAX - PULSE_MIN) * 180);
-}
-
-function renderServoInstrument(s, idx) {
-  // Skeleton (no telemetry yet)
-  if (!s) {
-    return `<article class="instrument" data-ch="${idx}">
-      <header class="ins-head">
-        <span class="kind">Servo</span>
-        <span class="num">${pad2(idx)}</span>
-        <span class="state">—</span>
-      </header>
-      <div class="ins-body">
-        <div class="ins-readout">
-          <div class="big">—</div>
-          <div class="unit">µs · pulse</div>
-          <div class="second"><span class="k">θ</span><span>—°</span></div>
-        </div>
-        <div class="ins-gauge"><div class="mid"></div><div class="bar" style="height:${ZERO_PULSE_HEIGHT_PCT}%"></div></div>
-      </div>
-      <footer class="ins-foot">
-        <span class="k">range</span><span>150 ┄ 600 µs</span>
-      </footer>
-    </article>`;
-  }
-
-  const h = pulseToPct(s.pulse);
-  const t = pulseToPct(s.target);
-  const deg = pulseToDeg(s.pulse);
-  const targetDeg = pulseToDeg(s.target);
-  const cls = ["instrument"];
-  if (s.moving) cls.push("moving");
-  if (s.cont) cls.push("cont");
-  const stateWord = s.stopped ? "off" : s.moving ? "moving" : (s.cont ? "cont" : "hold");
-  const showGhost = Math.abs((s.target ?? s.pulse) - s.pulse) > 4;
-  const ghost = showGhost ? `<div class="ghost" style="bottom:${t}%"></div>` : "";
-
-  return `<article class="${cls.join(' ')}" data-ch="${idx}">
-    <header class="ins-head">
-      <span class="kind">Servo</span>
-      <span class="num">${pad2(idx)}</span>
-      <span class="state">${stateWord}</span>
-    </header>
-    <div class="ins-body">
-      <div class="ins-readout">
-        <div class="big">${s.pulse}</div>
-        <div class="unit">µs · pulse</div>
-        <div class="second">
-          <span><span class="k">θ</span> ${deg != null ? deg + '°' : '—'}</span>
-          ${showGhost ? `<span><span class="k">→</span> ${targetDeg}°</span>` : ''}
-        </div>
-      </div>
-      <div class="ins-gauge">
-        <div class="mid"></div>
-        ${ghost}
-        <div class="bar" style="height:${h}%"></div>
-      </div>
-    </div>
-    <footer class="ins-foot">
-      <span class="k">range</span><span>150 ┄ 600 µs</span>
-    </footer>
-  </article>`;
-}
-
-function renderDcInstrument(motor) {
-  // Skeleton
-  if (!motor) {
-    return `<article class="instrument dc">
-      <header class="ins-head">
-        <span class="kind">DC</span>
-        <span class="num">M0</span>
-        <span class="state">—</span>
-      </header>
-      <div class="ins-body">
-        <div class="ins-dc-readout">
-          <span class="big">—</span>
-          <span class="unit">% · speed</span>
-        </div>
-        <div class="ins-bipolar"><div class="fill" style="left:50%; width:0"></div></div>
-        <div class="ins-bipolar-labels"><span>← rev</span><span class="mid">0</span><span>fwd →</span></div>
-      </div>
-      <footer class="ins-foot">
-        <span class="k">range</span><span>−100 ┄ +100</span>
-      </footer>
-    </article>`;
-  }
-
-  const spd = motor.speed | 0;
-  const cls = ["instrument", "dc"];
-  if (spd > 0) cls.push("fwd");
-  else if (spd < 0) cls.push("rev");
-  const stateWord = spd === 0 ? "stop" : (spd > 0 ? "fwd" : "rev");
-  // Bipolar fill — width is |spd|% of half the bar (50%), positioned from center.
-  const halfPct = Math.min(100, Math.abs(spd)) / 2;
-  const left = spd >= 0 ? 50 : (50 - halfPct);
-  const width = halfPct;
-  const signed = (spd > 0 ? '+' : '') + spd;
-
-  return `<article class="${cls.join(' ')}">
-    <header class="ins-head">
-      <span class="kind">DC</span>
-      <span class="num">M0</span>
-      <span class="state">${stateWord}</span>
-    </header>
-    <div class="ins-body">
-      <div class="ins-dc-readout">
-        <span class="big">${signed}</span>
-        <span class="unit">% · speed</span>
-      </div>
-      <div class="ins-bipolar">
-        <div class="fill" style="left:${left}%; width:${width}%"></div>
-      </div>
-      <div class="ins-bipolar-labels"><span>← rev</span><span class="mid">0</span><span>fwd →</span></div>
-    </div>
-    <footer class="ins-foot">
-      <span class="k">commit</span><span>−100 ┄ +100</span>
-    </footer>
-  </article>`;
-}
-
-function renderNowPlaying(motion, seq) {
-  // Highlights baked MOTION first; falls back to legacy SEQ progress.
-  const motionActive = motion && motion.active;
-  const seqActive = seq && seq.active;
-  if (motionActive) {
-    const elapsed = motion.startedMs || 0;
-    const total = motion.durationMs || 0;
-    const pct = total > 0 ? Math.min(100, (elapsed / total) * 100) : 0;
-    return `<div class="nowplaying on">
-      <span class="k">Now ▶</span>
-      <span class="id">${escapeHtml(motion.id || '—')}</span>
-      <div class="progress-mini"><div class="fill" style="width:${pct}%"></div></div>
-    </div>`;
-  }
-  if (seqActive) {
-    return `<div class="nowplaying on">
-      <span class="k">Seq ▶</span>
-      <span class="id">sequence · ${seq.len} frames${seq.loop ? ' ↺' : ''}</span>
-      <div class="progress-mini"><div class="fill" style="width:30%"></div></div>
-    </div>`;
-  }
-  return `<div class="nowplaying idle">
-    <span class="k">idle</span>
-    <span class="id">no motion playing</span>
-    <div class="progress-mini"><div class="fill"></div></div>
-  </div>`;
-}
-
-function renderLastCmd(ip) {
-  const entry = lastCmd.get(ip);
-  if (!entry) {
-    return `<div class="lastcmd idle">
-      <span class="k">› last</span>
-      <span class="cmd">—</span>
-      <span class="ts">—</span>
-    </div>`;
-  }
-  const ageMs = Date.now() - entry.ts;
-  return `<div class="lastcmd">
-    <span class="k">› last</span>
-    <span class="cmd">${escapeHtml(entry.cmd)}</span>
-    <span class="ts">${fmtAge(ageMs)}</span>
-  </div>`;
-}
-
-function fmtAge(ms) {
-  if (ms < 1000) return "now";
-  const s = Math.floor(ms / 1000);
-  if (s < 60) return s + "s ago";
-  const m = Math.floor(s / 60);
-  if (m < 60) return m + "m ago";
-  const h = Math.floor(m / 60);
-  return h + "h ago";
-}
-
 function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, c => (
     { '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]
   ));
-}
-
-function renderInstruments(servos, motor, motion, seq, ip) {
-  const servoList = (servos || []).filter(s => s.i < VISIBLE_SERVO_CHANNELS);
-  const servoByCh = new Map(servoList.map(s => [s.i, s]));
-  const tiles = [];
-  for (let i = 0; i < VISIBLE_SERVO_CHANNELS; i++) {
-    tiles.push(renderServoInstrument(servoByCh.get(i) || null, i));
-  }
-  tiles.push(renderDcInstrument(motor || null));
-  return `
-    ${renderNowPlaying(motion, seq)}
-    <div class="instruments">${tiles.join("")}</div>
-    ${renderLastCmd(ip)}
-  `;
 }
 
 function renderPills(s) {
@@ -3164,52 +2557,27 @@ function renderPills(s) {
 
 // renderProgress (legacy Position/Speed sequence tape) removed in servo-voc.
 
-function renderBoardCard(ip, idx, status, online) {
-  const id = status?.node ?? "—";
+// Slim board row (servo-lqq): the operator question is "is the board on, and
+// what is it playing?" — id · ip · dot · uptime · status pills. The old
+// per-channel instrument graphics were deleted; the Motor Test drawer is the
+// place to watch/poke individual channels.
+function renderBoardRow(ip, idx, status, online) {
   const idStr = (status?.node != null) ? pad2(status.node) : "—";
   const ipShort = status?.ip ?? ip;
-  const uptime = status ? fmtUptime(status.uptimeMs) : "offline";
   const ageS = lastSeen.has(ip) ? Math.round((Date.now() - lastSeen.get(ip)) / 1000) : null;
   let dataState = "offline";
   if (online) dataState = status?.otaInProgress ? "ota" : "online";
 
-  // Legacy timescale telemetry removed in servo-voc.
-
-  const instruments = renderInstruments(
-    status?.servos, status?.motor, status?.motion, status?.sequence, ip
-  );
-
-  const offlineNote = !online
-    ? `<div style="color: var(--alert); font-family: var(--label); font-size: 10px; text-transform: uppercase; letter-spacing: 0.24em; font-weight:600;">Signal lost ${ageS != null ? '· ' + ageS + 's' : ''}</div>`
-    : "";
+  const health = online
+    ? `<span class="br-up"><span class="k">up</span> ${fmtUptime(status.uptimeMs)}</span>`
+    : `<span class="br-lost">signal lost${ageS != null ? ` · ${ageS}s` : ""}</span>`;
 
   return `
-    <article class="board" data-state="${dataState}">
-      <span class="panel-corner-bl"></span><span class="panel-corner-br"></span>
-
-      <section class="ident">
-        <div class="row1">
-          <div class="id">${idStr}</div>
-          <div class="id-label">node</div>
-        </div>
-        <div class="ip">${ipShort}<span class="dot"></span></div>
-        <div class="stamp"><span class="k">uptime</span><span>${uptime}</span></div>
-        <div class="stamp"><span class="k">slot</span><span>0${idx + 1} / 03</span></div>
-        ${offlineNote}
-      </section>
-
-      <section class="telemetry">
-        ${ status ? `<div class="pills">${renderPills(status)}</div>` : `<div class="pills"><span class="pill alert">NO SIGNAL</span></div>` }
-        <!-- Legacy Position/Speed sequence progress + timescale removed (servo-voc). -->
-      </section>
-
-      <section class="channels">
-        <div class="channels-head">
-          <span class="label">Actuators · 3 servo · 1 dc</span>
-          <span class="scale">pulse 150 ┄ 600 µs · dc ±100</span>
-        </div>
-        ${instruments}
-      </section>
+    <article class="board-row" data-state="${dataState}">
+      <span class="br-id">${idStr}<span class="br-id-label">node</span></span>
+      <span class="br-ip">${ipShort}<span class="dot"></span></span>
+      ${health}
+      <span class="br-pills pills">${status ? renderPills(status) : `<span class="pill alert">NO SIGNAL</span>`}</span>
     </article>`;
 }
 
@@ -3228,7 +2596,7 @@ function render() {
     // that took close to the timeout slipped past and the card flickered
     // offline even while the header still counted the board as online.
     const online = status && (Date.now() - lastTs < OFFLINE_AFTER_MS);
-    return renderBoardCard(ip, i, online ? status : status, !!online);
+    return renderBoardRow(ip, i, online ? status : status, !!online);
   });
   boardsEl.innerHTML = cards.join("");
 
