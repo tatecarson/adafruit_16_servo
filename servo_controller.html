@@ -986,6 +986,22 @@
     font: 600 10px/1 var(--mono);
     margin-left: auto;
   }
+  /* Playback-follow badge: "following playback" (phosphor) when the view
+     auto-tracks telemetry, or a clickable amber jump hint when editing
+     blocked the auto-switch (servo-4rq). */
+  .seq-follow {
+    font: 700 10px/1 var(--mono);
+    letter-spacing: .08em;
+    padding: 4px 8px;
+    border: 1px solid var(--ink-mute);
+    color: var(--ink-mute);
+    border-radius: 2px;
+    white-space: nowrap;
+    justify-self: start;
+  }
+  .seq-follow.following { border-color: var(--phosphor); color: var(--phosphor); }
+  .seq-follow.jump { border-color: var(--amber); color: var(--amber); cursor: pointer; }
+  .seq-follow.jump:hover { filter: brightness(1.2); }
   .seq-table-wrap {
     margin-top: 14px;
     overflow-x: auto;
@@ -1220,6 +1236,9 @@
   .seq-arrange-block + .seq-arrange-block { border-left-color: var(--phosphor); }
   .seq-arrange-block:hover { border-color: var(--phosphor); filter: brightness(1.13); }
   .seq-arrange-block.selected { background: linear-gradient(145deg, rgba(255,182,39,.2), rgba(255,182,39,.055)); border-color: var(--amber); }
+  /* Telemetry "now playing" marker — visual only, never the selection. Reuses
+     the selected look so browser play (where playing === selected) is unchanged. */
+  .seq-arrange-block.playing { background: linear-gradient(145deg, rgba(255,182,39,.2), rgba(255,182,39,.055)); border-color: var(--amber); }
   .seq-arrange-block.dragging { opacity: .35; transform: translateY(6px); }
   .seq-arrange-block.drop-target { box-shadow: inset 4px 0 0 var(--amber); }
   .seq-arrange-block.zero { border-style: dashed; }
@@ -2292,6 +2311,7 @@
       <select id="seqSelect" title="Sequence"></select>
       <input id="seqName" type="text" placeholder="sequence name" autocomplete="off" spellcheck="false">
       <code id="seqIdLabel" class="motion-id" title="Sequence id — the auto-generated internal key used by RUN and Setlist entries. Edit the name; the id stays fixed."></code>
+      <span id="seqFollowBadge" class="seq-follow" hidden></span>
       <div class="seq-actions">
         <button class="cmd compact" id="seqNew">New</button>
         <button class="cmd compact" id="seqDuplicate">Duplicate</button>
@@ -3274,6 +3294,7 @@ async function pollOnce() {
       refreshBoardIdMap();   // stamps lastBoardIdRefreshAt on completion
     }
     render();
+    try { updateSeqHighlight(); } catch (e) { console.warn("seq highlight", e); }
   } finally {
     pollInFlight = false;
   }
@@ -3746,6 +3767,7 @@ const libraryStorageStatusEl = $("#libraryStorageStatus");
 const seqSelectEl     = $("#seqSelect");
 const seqNameEl       = $("#seqName");
 const seqIdLabelEl    = $("#seqIdLabel");
+const seqFollowBadgeEl = $("#seqFollowBadge");
 const seqTagsEl       = $("#seqTags");
 const seqTagInputEl   = $("#seqTagInput");
 const seqTotalEl      = $("#seqTotal");
@@ -3799,6 +3821,153 @@ let seqPlayer = {
 let seqRunSerial = 0;
 let libraryFileAvailable = false;
 let libraryFileWriteFailed = false;
+
+// Telemetry-driven highlight (servo-4rq). Recomputed each poll; the step table
+// and Arrange timeline read it instead of seqPlayer directly, so the highlight
+// follows firmware-driven setlist/gallery playback too.
+let currentSeqHighlight = { highlightSeqId: null, highlightStep: null, source: "none", autoSwitch: false, jumpHintSeqId: null };
+// What the step table LAST PAINTED (recorded by renderSequencer itself, so it
+// stays honest no matter who triggered the render). updateSeqHighlight compares
+// the fresh decision against this — not against the previous decision — so a
+// repaint skipped mid-edit is retried after blur instead of going stale.
+let seqHighlightRendered = { seqId: null, step: null };
+
+// Reproduce the DEVICE bake flattening (rewriteSequencePreRolls then
+// flattenDcLanes) so a firmware step index maps to the right authored row.
+// Live-play flattening is different (no pre-rolls) and must NOT be used here.
+// Correctness contract: the step COUNT here must equal buildBakeLibrary's
+// output for the same sequence, or mapFirmwareStepToAuthored reports unreliable.
+function flattenSequenceForDevice(seq, motions) {
+  const authored = (seq.steps || []).map((s, i) => ({ ...normalizeStep(s), authoredIndex: i }));
+  const bridged = rewriteSequencePreRolls(authored, motions, seqPrerollOpts(seq.id));
+  return flattenDcLanes(bridged.steps, { loop: false, maxSteps: SEQ_MAX_STEPS }).steps;
+}
+
+// True while the operator is mid-edit, so auto-follow must not yank the view.
+function isSeqEditing() {
+  if (seqDirty) return true;
+  const el = document.activeElement;
+  // Mid-rename counts: an auto-switch would make the later blur-commit stamp
+  // sequence A's name onto sequence B. (seqSelectEl is deliberately excluded —
+  // its focus lingers after a manual pick and would suppress auto-follow.)
+  if (el === seqNameEl) return true;
+  return !!(el && seqStepsEl && seqStepsEl.contains(el));
+}
+
+// The highlighted authored index for `seqId`, or null. seqPlayer still wins via
+// decideSeqHighlight, so browser-driven playback is unchanged.
+function highlightedAuthoredIndex(seqId) {
+  // Live player is authoritative and re-renders on its own cadence; consult it
+  // directly so the highlight never lags the poll interval during browser play.
+  if (seqPlayer.active) {
+    const viewSeq = getCurrentSequence();
+    return viewSeq && viewSeq.id === seqId ? activeAuthoredStepIndex() : null;
+  }
+  // Player stopped but the poll hasn't recomputed yet (or auto-poll is off):
+  // a lingering source:"player" decision would freeze the last played row.
+  if (currentSeqHighlight.source === "player") return null;
+  return currentSeqHighlight.highlightSeqId === seqId ? currentSeqHighlight.highlightStep : null;
+}
+
+// Recompute the highlight decision from the freshest telemetry. Runs once per
+// ~800ms poll; only re-renders when the visible highlight actually changed.
+function updateSeqHighlight() {
+  const lib = sequenceLibrary();
+  const viewSeq = getCurrentSequence(lib);
+  const byBoard = boards.map(ip => ({
+    boardId: boardIdByIp.get(ip),
+    runseq: (lastStatus.get(ip) || {}).runseq,
+    lastSeenMs: lastSeen.get(ip) || 0,
+  })).filter(b => Number.isInteger(b.boardId));
+  const leader = Math.max(1, Math.min(3, parseInt(lib.schedulerConfig?.leaderBoardId, 10) || 1));
+  const run = readRunseqTelemetry(byBoard, leader, Date.now());
+
+  let runseqStep = null;
+  if (run) {
+    const runSeq = (lib.sequences || []).find(s => s.id === run.id);
+    if (runSeq) {
+      const flat = flattenSequenceForDevice(runSeq, lib.motions || []);
+      runseqStep = mapFirmwareStepToAuthored(flat, run.firmwareStep, run.firmwareStepCount).authoredIndex;
+    }
+  }
+  const playerStep = seqPlayer.active ? activeAuthoredStepIndex() : null;
+  const decision = decideSeqHighlight({
+    seqPlayerActive: seqPlayer.active,
+    seqPlayerSeqId: viewSeq ? viewSeq.id : null,   // seqPlayer always plays the shown sequence
+    seqPlayerStep: Number.isInteger(playerStep) ? playerStep : null,  // enforce int-or-null on the player path too
+    runseqSeqId: run ? run.id : null,
+    runseqStep,
+    viewSeqId: viewSeq ? viewSeq.id : null,
+    isEditing: isSeqEditing(),
+  });
+  // Repaint the step table only when the decision disagrees with what the
+  // table LAST PAINTED (seqHighlightRendered, recorded by renderSequencer) —
+  // and never mid-edit or mid-drag: a rebuild (seqStepsEl.innerHTML=) destroys
+  // the operator's focus, reverts typed-but-unsaved cell values, and yanks a
+  // drag out from under the pointer. Comparing against the painted state (not
+  // the previous decision) means a repaint skipped here is simply retried on
+  // the next poll after blur/drag-end. The badge fields (source/jumpHintSeqId)
+  // stay out of this gate; the badge renders independently below.
+  // needsRender compares the PAINTABLE PROJECTION of the decision (what
+  // renderSequencer would actually record for the current view), not the raw
+  // decision — so degraded states (count mismatch → null step, run id not in
+  // the library) converge with the tracker instead of repainting every poll.
+  const expectedStep = viewSeq && decision.highlightSeqId === viewSeq.id ? decision.highlightStep : null;
+  const needsRender = (expectedStep != null ? viewSeq.id : null) !== seqHighlightRendered.seqId
+    || expectedStep !== seqHighlightRendered.step;
+  const renderSafe = !isSeqEditing() && seqArrangePointer == null && seqDragIndex == null;
+  currentSeqHighlight = decision;
+  if (decision.autoSwitch && decision.highlightSeqId && viewSeq && decision.highlightSeqId !== viewSeq.id) {
+    // switchToSequence re-renders via the existing path. If the id is missing
+    // from the library (device runs a baked copy the browser deleted) it
+    // no-ops, so fall back to the plain render — a stale row highlight must
+    // not linger.
+    if (!switchToSequence(decision.highlightSeqId) && needsRender && renderSafe) renderSequenceHighlightOnly();
+  } else if (needsRender && renderSafe) {
+    renderSequenceHighlightOnly();
+  }
+  renderSeqFollowIndicator(decision, lib);
+}
+
+// The header pill that explains why the view moved ("following playback") or
+// offers the jump when an edit blocked the auto-switch (servo-4rq).
+function renderSeqFollowIndicator(d, lib = sequenceLibrary()) {
+  const el = seqFollowBadgeEl;
+  if (!el) return;
+  // Compute the desired state first; this runs every poll, so skip the DOM
+  // writes when nothing changed.
+  let hidden = true, cls = "seq-follow", text = "", jumpId = null;
+  if (d.source === "telemetry" && d.highlightSeqId && !d.jumpHintSeqId) {
+    hidden = false;
+    if ((lib.sequences || []).some(s => s.id === d.highlightSeqId)) {
+      cls = "seq-follow following"; text = "● following playback";
+    } else {
+      // Device-only run: nothing to follow or jump to, so say so (muted base
+      // style) instead of claiming to follow.
+      text = `${d.highlightSeqId} playing · not in library`;
+    }
+  } else if (d.jumpHintSeqId) {
+    hidden = false;
+    if ((lib.sequences || []).some(s => s.id === d.jumpHintSeqId)) {
+      cls = "seq-follow jump";
+      text = `${d.jumpHintSeqId} playing → follow`;
+      jumpId = d.jumpHintSeqId;
+    } else {
+      // Same degradation as the following branch: a device-only run has
+      // nothing to jump to, so don't offer a click that would no-op.
+      text = `${d.jumpHintSeqId} playing · not in library`;
+    }
+  }
+  if (el.hidden === hidden && el.className === cls && el.textContent === text) return;
+  el.hidden = hidden; el.className = cls; el.textContent = text;
+  el.onclick = jumpId ? () => switchToSequence(jumpId) : null;
+}
+
+function renderSequenceHighlightOnly() {
+  // renderSequencer already cascades to renderSequenceArrangement (which
+  // self-guards on the dialog being open), so one call covers both surfaces.
+  renderSequencer();
+}
 
 function bakeLog(msg, color) {
   const line = document.createElement("div");
@@ -6385,6 +6554,74 @@ function carryStepAuthoringFlags(domStep, priorStep) {
 }
 // === SEQ-ARRANGE-CORE END ===
 
+// === SEQ-HIGHLIGHT-CORE START ===
+// Pure helpers that drive the sequencer's current-step highlight from device
+// telemetry (servo-4rq), so it lights up during firmware-driven setlist/gallery
+// playback and not only during browser-driven seqPlayer playback. No DOM here.
+
+// Pick the authoritative board's runseq from a per-board snapshot. Prefer the
+// setlist leader; otherwise the lowest-numbered active board (cluster members
+// mirror the leader, so any active board reports the same run). A board whose
+// last poll is older than freshMs is treated as not running, so a disconnected
+// board cannot freeze a stale highlight. Returns a normalized run or null.
+function readRunseqTelemetry(byBoard, leaderBoardId, nowMs, freshMs = 2500) {
+  const live = (byBoard || [])
+    .filter(b => b && b.runseq && b.runseq.active === true &&
+                 Number.isFinite(b.lastSeenMs) && (nowMs - b.lastSeenMs) <= freshMs)
+    .sort((a, b) => a.boardId - b.boardId);
+  if (!live.length) return null;
+  const chosen = live.find(b => b.boardId === leaderBoardId) || live[0];
+  const r = chosen.runseq;
+  return {
+    id: String(r.id || ""),
+    // No clamp: a negative reported step must reach mapFirmwareStepToAuthored's
+    // range guard, not be silently rewritten to a confident row-0 highlight.
+    firmwareStep: parseInt(r.step, 10) || 0,
+    firmwareStepCount: Math.max(0, parseInt(r.steps, 10) || 0),
+    loop: !!r.loop,
+    stepMs: Math.max(0, parseInt(r.stepMs, 10) || 0),
+  };
+}
+// Fold a flattened firmware step index back to the authored row it belongs to.
+// flatSteps is the device's baked step list (rewriteSequencePreRolls then
+// flattenDcLanes), each step optionally carrying authoredIndex. If the browser's
+// reproduced count disagrees with what the device reports, the library was
+// edited since that bake and the per-step mapping would lie — report unreliable
+// so the caller degrades to a sequence-level highlight.
+function mapFirmwareStepToAuthored(flatSteps, firmwareStep, firmwareStepCount) {
+  const list = Array.isArray(flatSteps) ? flatSteps : [];
+  if (list.length !== firmwareStepCount) return { authoredIndex: null, reliable: false };
+  if (firmwareStep < 0 || firmwareStep >= list.length) return { authoredIndex: null, reliable: false };
+  const ai = list[firmwareStep] && list[firmwareStep].authoredIndex;
+  return { authoredIndex: Number.isInteger(ai) ? ai : null, reliable: true };
+}
+// Resolve which source drives the highlight and whether the view should follow
+// playback. An active seqPlayer wins — it is exact and lag-free. Telemetry fills
+// the gap only when seqPlayer is idle: highlight in place when the run is the
+// sequence on screen; otherwise auto-switch to it unless the operator is editing,
+// in which case surface a jump badge and leave the view put. `null` inputs
+// (nothing running) clear the highlight.
+function decideSeqHighlight({ seqPlayerActive, seqPlayerSeqId, seqPlayerStep,
+                              runseqSeqId, runseqStep, viewSeqId, isEditing }) {
+  if (seqPlayerActive) {
+    return { highlightSeqId: seqPlayerSeqId, highlightStep: seqPlayerStep,
+             source: "player", autoSwitch: false, jumpHintSeqId: null };
+  }
+  const runId = runseqSeqId || null;
+  if (!runId) {
+    return { highlightSeqId: null, highlightStep: null, source: "none", autoSwitch: false, jumpHintSeqId: null };
+  }
+  const step = Number.isInteger(runseqStep) ? runseqStep : null;
+  if (runId === viewSeqId) {
+    return { highlightSeqId: runId, highlightStep: step, source: "telemetry", autoSwitch: false, jumpHintSeqId: null };
+  }
+  if (isEditing) {
+    return { highlightSeqId: null, highlightStep: null, source: "telemetry", autoSwitch: false, jumpHintSeqId: runId };
+  }
+  return { highlightSeqId: runId, highlightStep: step, source: "telemetry", autoSwitch: true, jumpHintSeqId: null };
+}
+// === SEQ-HIGHLIGHT-CORE END ===
+
 function renderSequenceArrangementPreview(motion, wrapperClass = "seq-arrange-preview") {
   const strips = motionPreviewStrips(motion, MOTION_TRACK_SPECS).slice(0, 4);
   if (!strips.length) return `<div class="${wrapperClass}"><span class="seq-arrange-preview-empty">no animated tracks</span></div>`;
@@ -6436,18 +6673,22 @@ function renderSequenceArrangement() {
   // those PREP durations into non-editable timeline blocks so operators still
   // see every automatic transition. The raw `seq.steps` are never mutated.
   const libMotions = (lib.motions) || [];
-  const bridged = rewriteSequencePreRolls(steps, libMotions, {
-    seqId: seq.id, msPerPercent: SERVO_FEASIBILITY_MS_PER_PERCENT,
-    minDeltaPercent: 5, floorMs: 800, restPercent: MOTION_SERVO_REST_PERCENT, maxSteps: SEQ_MAX_STEPS,
-  });
+  const bridged = rewriteSequencePreRolls(steps, libMotions, seqPrerollOpts(seq.id));
   const displaySteps = expandPreRollStepsForDisplay(bridged.steps, bridged.summary);
   const layout = sequenceArrangementLayout(displaySteps, zoom);
   const available = Math.max(0, (seqArrangeScrollEl.clientWidth || 0) - 36);
   const trackWidth = Math.max(layout.widthPx, available);
+  // Selection and highlight are DISTINCT concepts. `selected` is what "Use
+  // Here"/"+ After" write to, so only browser playback (which locks arrange
+  // editing) may usurp it. Letting the telemetry highlight drive `selected`
+  // hijacked the user's clicks during device playback — every edit landed on
+  // the PLAYING step instead of the chosen one. Telemetry is visual-only:
+  // `playingIdx` just adds a `playing` class alongside the selection.
   const selected = seqPlayer.active
     ? Math.max(0, Math.min(activeAuthoredStepIndex(), steps.length - 1))
     : Math.max(0, Math.min(seqArrangeSelectedIndex, steps.length - 1));
   seqArrangeSelectedIndex = selected;
+  const playingIdx = highlightedAuthoredIndex(seq.id);
   seqArrangeTitleEl.textContent = seq.name || seq.id;
   const preRollOffCount = bridged.summary.filter(s => s.disabled === true).length;
   const preRollCount = bridged.summary.length - preRollOffCount;
@@ -6516,7 +6757,7 @@ function renderSequenceArrangement() {
     const motionId = seqStepMotionId(step.cmd);
     const motion = motionId ? libMotions.find(item => item.id === motionId) : null;
     const preview = motion ? renderSequenceArrangementPreview(motion) : "";
-    return `<article class="seq-arrange-block${index === selected ? " selected" : ""}${geometry.durationMs === 0 ? " zero" : ""}${motion ? " has-preview" : ""}"
+    return `<article class="seq-arrange-block${index === selected ? " selected" : ""}${index === playingIdx ? " playing" : ""}${geometry.durationMs === 0 ? " zero" : ""}${motion ? " has-preview" : ""}"
         data-arrange-index="${index}" style="width:${geometry.widthPx.toFixed(2)}px"
         title="Step ${index + 1} · ${escapeHtml(step.cmd)} · ${formatMs(geometry.durationMs)}">
       <span class="n">STEP ${pad2(index + 1)}</span>
@@ -6694,9 +6935,12 @@ function renderSequencer() {
   seqScrubEl.value = Math.min(parseInt(seqScrubEl.value, 10) || 0, parseInt(seqScrubEl.max, 10) || 0);
   seqScrubLabelEl.textContent = `${pad2((parseInt(seqScrubEl.value, 10) || 0) + 1)} / ${pad2((seq.steps || []).length)}`;
 
+  // Hoisted: highlightedAuthoredIndex re-reads the library when seqPlayer is
+  // active, so calling it per row would JSON.parse N times per render.
+  const activeIdx = highlightedAuthoredIndex(seq.id);
   seqStepsEl.innerHTML = (seq.steps || []).map((raw, index) => {
     const step = normalizeStep(raw);
-    const active = seqPlayer.active && activeAuthoredStepIndex() === index;
+    const active = activeIdx === index;
     const expanded = seqExpandedSteps.has(index);
     const row = `<tr data-index="${index}" draggable="true"${active ? ' class="active"' : ''}>
       <td class="seq-drag" title="Drag to reorder">=</td>
@@ -6716,6 +6960,9 @@ function renderSequencer() {
     return row + previewRow;
   }).join("");
   renderSequenceArrangement();
+  // Record what this paint shows so updateSeqHighlight can compare the next
+  // decision against reality (see seqHighlightRendered's declaration).
+  seqHighlightRendered = { seqId: activeIdx != null ? seq.id : null, step: activeIdx };
 }
 
 function setSeqStatus(msg, color) {
@@ -6775,6 +7022,9 @@ function stopSequencePlayback(sendStop = false) {
   }
   setSeqStatus("idle");
   renderSequencer();
+  // Clear a source:"player" highlight immediately instead of waiting for the
+  // next poll (which may never come with auto-poll off).
+  updateSeqHighlight();
 }
 
 async function playSequenceFrom(index = 0, dryRun = false) {
@@ -7545,6 +7795,15 @@ function dcLaneSegments(lane, totalMs) {
 // === DC-LANE-CORE END ===
 
 // === BAKE-PAYLOAD-CORE START ===
+// The one canonical pre-roll planner config. buildBakeLibrary (what reaches
+// EEPROM), renderSequenceArrangement (what the timeline shows), and
+// flattenSequenceForDevice (what the highlight maps against) must all agree.
+// Lives inside this extracted block because buildBakeLibrary needs it in the
+// host-test module too.
+function seqPrerollOpts(seqId) {
+  return { seqId, msPerPercent: SERVO_FEASIBILITY_MS_PER_PERCENT, minDeltaPercent: 5, floorMs: 800, restPercent: MOTION_SERVO_REST_PERCENT, maxSteps: SEQ_MAX_STEPS };
+}
+
 function bakeStorageTier(byteCount) {
   const bytes = Math.max(0, Number(byteCount) || 0);
   if (bytes > STORAGE_PAYLOAD_MAX) {
@@ -7713,12 +7972,7 @@ function buildBakeLibrary(lib) {
   const summaries = [];
   const errors = [];
   for (const seq of (lib.sequences || [])) {
-    const r = rewriteSequencePreRolls(seq.steps || [], lib.motions || [], {
-      seqId: seq.id,
-      msPerPercent: SERVO_FEASIBILITY_MS_PER_PERCENT,
-      minDeltaPercent: 5, floorMs: 800, restPercent: MOTION_SERVO_REST_PERCENT,
-      maxSteps: SEQ_MAX_STEPS,
-    });
+    const r = rewriteSequencePreRolls(seq.steps || [], lib.motions || [], seqPrerollOpts(seq.id));
     // DC lanes flatten AFTER pre-roll rewriting so a chord lands on the same
     // step the operator authored it against. Always baked as non-looping: the
     // trailing park is the safe end state, and `RUN <id> LOOP` / setlist
@@ -8379,12 +8633,24 @@ bakeBudgetEl.addEventListener("click", (e) => {
   else if (kind === "setlist") renderSetlist();
 });
 
-seqSelectEl.addEventListener("change", () => {
+// Single switch path for the <select>, telemetry auto-follow, and the jump
+// badge. Mirrors the manual handler exactly: pending edits are saved first,
+// so clicking the badge is as safe as using the select (servo-4rq).
+// Returns true when the switch happened, false when the id isn't in the
+// library (the caller may need to render anyway).
+function switchToSequence(id) {
+  const lib = sequenceLibrary();
+  if (!(lib.sequences || []).some(s => s.id === id)) return false;
   if (seqDirty) saveCurrentSequence(readSequenceFromDom());
-  currentSeqId = seqSelectEl.value;
+  currentSeqId = id;
   seqDirty = false;
   seqExpandedSteps.clear();   // step indices belong to the previous sequence
   renderSequencer();
+  return true;
+}
+
+seqSelectEl.addEventListener("change", () => {
+  switchToSequence(seqSelectEl.value);
 });
 
 function commitSequenceName() {
@@ -8540,6 +8806,10 @@ seqStepsEl.addEventListener("dragover", e => {
   if (seqDragIndex == null) return;
   e.preventDefault();
 });
+// A cancelled drag (Esc / dropped outside the table) never reaches the drop
+// handler; without this, a stale seqDragIndex would permanently suppress the
+// telemetry-highlight repaints that gate on it. dragend fires either way.
+seqStepsEl.addEventListener("dragend", () => { seqDragIndex = null; });
 seqStepsEl.addEventListener("drop", e => {
   const row = e.target.closest("tr[data-index]");
   if (!row || seqDragIndex == null) return;
