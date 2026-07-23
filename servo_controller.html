@@ -960,6 +960,21 @@
   .seq-tags {
     margin-top: 12px;
   }
+  /* The show-control transport (// 01) hosts the setlist chooser outside the
+     .seq-picker context, so give its select the same dark-input treatment. */
+  .show-transport select {
+    appearance: none;
+    -webkit-appearance: none;
+    background: var(--bg-deep);
+    color: var(--ink);
+    border: 1px solid var(--rule-hi);
+    font: 500 11px/1 var(--mono);
+    padding: 8px 10px;
+    outline: none;
+    min-width: 180px;
+    max-width: 280px;
+  }
+  .show-transport select:focus { border-color: var(--amber); }
   .seq-chip {
     display: inline-flex;
     align-items: center;
@@ -2183,21 +2198,40 @@
   </header>
 
   <!-- ============================================================
-       MASTER COMMAND BAR
+       SHOW CONTROL
+       Everything an operator needs to run a show without scrolling:
+       the setlist transport (moved from the Setlist editor — same element
+       ids, so the servo-17r device-walker wiring is untouched), slim board
+       status, and the master STOP + free terminal. The Setlist editor
+       further down edits whatever setlist is chosen here.
        ============================================================ -->
   <div class="sect">
     <span class="num">// 01</span>
-    <span class="label">Master Command</span>
+    <span class="label">Show Control</span>
     <span class="rule"></span>
-    <span class="hint">broadcast → first reachable board mirrors via udp</span>
+    <span class="hint">play runs on-device from the last bake · broadcast → first reachable board mirrors via udp</span>
   </div>
 
   <div class="panel cmdbar">
     <span class="panel-corner-bl"></span><span class="panel-corner-br"></span>
 
+    <div class="group">
+      <div class="gname">Setlist <span class="key">RUN</span></div>
+      <div class="btns show-transport">
+        <select id="slSelect" title="Setlist"></select>
+        <button class="cmd baked" id="slPlay" title="Runs this setlist on the boards — sends RUN <sequence> to the leader per entry; the firmware plays each sequence on-device from the last bake. Requires every entry to be baked. Not browser-streamed.">▶ Play</button>
+        <button class="cmd compact" id="slPause" disabled>Pause</button>
+        <button class="cmd compact alert" id="slStop" disabled>Stop</button>
+        <label style="display:inline-flex; gap:6px; align-items:center; color:var(--ink-dim); font:700 9px/1 var(--label); text-transform:uppercase; letter-spacing:.22em">
+          <input id="slLoop" type="checkbox"> Loop
+        </label>
+        <div id="slStatus" class="seq-status">idle</div>
+      </div>
+    </div>
+
     <!-- Legacy PLAY/SPLAY/RUN-n quick-play groups + TIMESCALE removed in
-         servo-voc. Schema-v1 playback lives in // 03–// 06; the free terminal
-         below sends any command. -->
+         servo-voc. Schema-v1 playback lives in the transport above and the
+         editor sections below; the free terminal sends any command. -->
     <div class="group">
       <div class="gname">Master</div>
       <div class="btns">
@@ -2214,91 +2248,76 @@
       <select id="freeTarget" title="Target board"></select>
       <button id="freeSend">Send</button>
     </div>
-  </div>
 
-  <!-- ============================================================
-       BOARD GRID
-       ============================================================ -->
-  <div class="sect">
-    <span class="num">// 02</span>
-    <span class="label">Board Telemetry</span>
-    <span class="rule"></span>
-    <span class="hint">live · pulse range 150–600</span>
+    <div id="slLog" class="seq-log"></div>
   </div>
 
   <div id="boards" class="grid"></div>
 
   <!-- ============================================================
-       SEQUENCER BAKE
+       MOTION EDITOR
        ============================================================ -->
   <div class="sect">
-    <span class="num">// 03</span>
-    <span class="label">Sequencer Bake</span>
+    <span class="num">// 02</span>
+    <span class="label">Motion</span>
     <span class="rule"></span>
-    <span class="hint">project library → POST /sequences · per-board slice · rollback</span>
+    <span class="hint">9-track cluster keyframes · servo % down (0=up, 100=down) · motor speed moved to Sequencer DC lanes · live scrub · values snap to 5 (⇧ for fine) · ⌥-drag a shape · ⇧-drag to select (Del removes) · Clr clears a row · shared library</span>
   </div>
 
-  <div class="panel cmdbar">
+  <div class="panel motion-editor">
     <span class="panel-corner-bl"></span><span class="panel-corner-br"></span>
 
-    <div class="group">
-      <div class="gname">Library <span class="key">LIB</span></div>
-      <div class="btns" style="align-items:center">
-        <span id="bakeLibSummary" style="font:500 11px/1.4 var(--mono); color:var(--ink-dim)">—</span>
+    <div class="motion-picker">
+      <select id="motionSelect" title="Motion"></select>
+      <input id="motionName" type="text" placeholder="motion name" autocomplete="off" spellcheck="false">
+      <code id="motionIdLabel" class="motion-id" title="Motion id — the auto-generated internal key used by MOTION and Sequence steps. Edit the name; the id stays fixed."></code>
+      <label class="motion-time" title="Total Motion duration">
+        <span>duration</span>
+        <input id="motionDuration" type="number" min="100" max="120000" step="100" value="8000">
+      </label>
+      <div class="motion-actions">
+        <button class="cmd compact" id="motionNew">New</button>
+        <button class="cmd compact" id="motionDuplicate">Duplicate</button>
+        <button class="cmd compact alert" id="motionDelete">Delete</button>
       </div>
     </div>
 
-    <div class="group">
-      <div class="gname">Storage <span class="key">FILE</span></div>
-      <div class="btns" style="align-items:center">
-        <span id="libraryStorageStatus" class="library-storage-status">checking storage...</span>
+    <div class="motion-toolbar">
+      <div class="motion-tags">
+        <div id="motionTags" class="seq-tags"></div>
+        <input id="motionTagInput" type="text" placeholder="add tag" autocomplete="off" spellcheck="false">
+        <button class="cmd compact" id="motionAddTag">Tag</button>
+      </div>
+      <div class="motion-transport">
+        <button class="cmd amber" id="motionPlay" title="Streams frames from THIS browser to the boards — live authoring preview. Not what the gallery runs; needs the browser open and is throughput-limited.">≋ Play Live</button>
+        <button class="cmd compact alert" id="motionStop" disabled>Stop</button>
+        <label style="display:inline-flex; gap:6px; align-items:center; color:var(--ink-dim); font:700 9px/1 var(--label); text-transform:uppercase; letter-spacing:.22em">
+          <input id="motionLoop" type="checkbox"> Loop
+        </label>
+        <button class="cmd compact baked" id="motionFire" title="Plays the BAKED motion on the boards (sends one MOTION command). Full-rate, cluster-synced — this is what the gallery actually runs. Re-bake to apply edits.">▶ Play (baked)</button>
+        <button class="cmd compact amber" id="motionSave">Save</button>
+        <label class="motion-time">
+          <span>playhead</span>
+          <input id="motionScrub" type="range" min="0" max="8000" step="100" value="0">
+          <output id="motionScrubLabel">0ms</output>
+        </label>
       </div>
     </div>
 
-    <div class="group">
-      <div class="gname">Import / Export</div>
-      <div class="btns" style="align-items:center">
-        <!-- color:transparent hides the native "No file selected" / filename
-             text next to the Browse button — bakeFileInfoEl below shows our
-             own label, which survives the bakeFileEl.value = "" reset. The
-             ::file-selector-button keeps its own color so Browse stays visible. -->
-        <input id="bakeFile" type="file" accept=".json,application/json" style="font:500 11px/1 var(--mono); color:transparent; width:90px">
-        <span id="bakeFileInfo" style="font:500 10px/1 var(--mono); color:var(--ink-mute)"></span>
-        <button class="cmd compact" id="bakeExport">Export</button>
-        <button class="cmd compact" id="bakeClear">Clear</button>
-        <button class="cmd compact" id="bakePull" title="Read the baked library back from every reachable board and rebuild the editor library (servo-7mn)">Pull from Boards</button>
-      </div>
+    <div class="motion-grid-wrap">
+      <div id="motionGrid" class="motion-grid"></div>
     </div>
 
-    <div class="group">
-      <div class="gname">Bake</div>
-      <div class="btns">
-        <button class="cmd amber" id="bakeAll" disabled>Bake to Boards</button>
-        <select class="bake-target" id="bakeTarget" title="Board to receive a single-board bake" aria-label="Single-board bake target"></select>
-        <button class="cmd baked" id="bakeOne" disabled title="Bake only the selected board; other configured boards are not contacted">Bake One</button>
-        <button class="cmd compact" id="bakeRetry" disabled title="Re-bake only the boards that failed/were unreachable in the last bake">Retry Failed</button>
-        <button class="cmd compact" id="bakeRestore">Restore Previous</button>
-      </div>
+    <div class="seq-tools">
+      <div id="motionStatus" class="motion-status">idle</div>
     </div>
-
-    <div class="group" style="flex-basis:100%">
-      <div class="gname">Baked on boards <span class="key">RUN</span></div>
-      <div id="bakedPanel" class="baked-panel"></div>
-    </div>
-
-    <div class="group" style="flex-basis:100%">
-      <button type="button" class="gname bb-toggle" id="bakeBudgetToggle" title="Show/hide per-board size + prune" aria-expanded="false" aria-controls="bakeBudget"><span id="bakeBudgetCaret">+</span> Bake budget <span class="key">FIT</span></button>
-      <div id="bakeBudget" class="bake-budget"></div>
-    </div>
-
-    <div id="bakeLog" style="padding:8px 0 0; font:500 11px/1.6 var(--mono); color:var(--ink-dim); max-height:200px; overflow-y:auto"></div>
   </div>
 
   <!-- ============================================================
        SEQUENCE EDITOR
        ============================================================ -->
   <div class="sect">
-    <span class="num">// 04</span>
+    <span class="num">// 03</span>
     <span class="label">Sequencer</span>
     <span class="rule"></span>
     <span class="hint">author · record terminal · shared library</span>
@@ -2426,7 +2445,7 @@
        SETLIST EDITOR
        ============================================================ -->
   <div class="sect">
-    <span class="num">// 05</span>
+    <span class="num">// 04</span>
     <span class="label">Setlist</span>
     <span class="rule"></span>
     <span class="hint">ordered or shuffle · sequence playlists for gallery autonomy</span>
@@ -2435,8 +2454,9 @@
   <div class="panel sequencer">
     <span class="panel-corner-bl"></span><span class="panel-corner-br"></span>
 
-    <div class="seq-picker">
-      <select id="slSelect" title="Setlist"></select>
+    <!-- The setlist chooser lives in // 01 Show Control; this section edits
+         whatever is selected there. -->
+    <div class="seq-picker" style="grid-template-columns: minmax(220px, 1fr) auto">
       <input id="slName" type="text" placeholder="setlist name" autocomplete="off" spellcheck="false">
       <div class="seq-actions">
         <button class="cmd compact" id="slNew">New</button>
@@ -2461,12 +2481,6 @@
 
     <div class="seq-tools">
       <div class="seq-transport">
-        <button class="cmd baked" id="slPlay" title="Runs this setlist on the boards — sends RUN <sequence> to the leader per entry; the firmware plays each sequence on-device from the last bake. Requires every entry to be baked. Not browser-streamed.">▶ Play</button>
-        <button class="cmd compact" id="slPause" disabled>Pause</button>
-        <button class="cmd compact alert" id="slStop" disabled>Stop</button>
-        <label style="display:inline-flex; gap:6px; align-items:center; color:var(--ink-dim); font:700 9px/1 var(--label); text-transform:uppercase; letter-spacing:.22em">
-          <input id="slLoop" type="checkbox"> Loop
-        </label>
         <button class="cmd compact amber" id="slSave">Save</button>
         <button class="cmd compact" id="slDryRun" title="Walks the authored steps on browser timers without sending anything — preview timing and order, no boards required.">Dry Run</button>
         <button class="cmd compact" id="slSimulate" title="Fast-forward one hour of this setlist in the browser to preview what would play — no device, no motion. Catches repetition, unbalanced play counts, and dead air before you bake.">Simulate hour</button>
@@ -2493,7 +2507,6 @@
 
     <div class="seq-tools">
       <button class="cmd compact" id="slAddEntry">Add Entry</button>
-      <div id="slStatus" class="seq-status">idle</div>
     </div>
 
     <div id="slShufflePanel" class="sl-rules" hidden>
@@ -2544,74 +2557,79 @@
       </div>
     </div>
 
-  <div id="slLog" class="seq-log"></div>
-
   </div>
 
   <!-- ============================================================
-       MOTION EDITOR
+       SEQUENCER BAKE
        ============================================================ -->
   <div class="sect">
-    <span class="num">// 06</span>
-    <span class="label">Motion</span>
+    <span class="num">// 05</span>
+    <span class="label">Sequencer Bake</span>
     <span class="rule"></span>
-    <span class="hint">9-track cluster keyframes · servo % down (0=up, 100=down) · motor speed moved to Sequencer DC lanes · live scrub · values snap to 5 (⇧ for fine) · ⌥-drag a shape · ⇧-drag to select (Del removes) · Clr clears a row · shared library</span>
+    <span class="hint">project library → POST /sequences · per-board slice · rollback</span>
   </div>
 
-  <div class="panel motion-editor">
+  <div class="panel cmdbar">
     <span class="panel-corner-bl"></span><span class="panel-corner-br"></span>
 
-    <div class="motion-picker">
-      <select id="motionSelect" title="Motion"></select>
-      <input id="motionName" type="text" placeholder="motion name" autocomplete="off" spellcheck="false">
-      <code id="motionIdLabel" class="motion-id" title="Motion id — the auto-generated internal key used by MOTION and Sequence steps. Edit the name; the id stays fixed."></code>
-      <label class="motion-time" title="Total Motion duration">
-        <span>duration</span>
-        <input id="motionDuration" type="number" min="100" max="120000" step="100" value="8000">
-      </label>
-      <div class="motion-actions">
-        <button class="cmd compact" id="motionNew">New</button>
-        <button class="cmd compact" id="motionDuplicate">Duplicate</button>
-        <button class="cmd compact alert" id="motionDelete">Delete</button>
+    <div class="group">
+      <div class="gname">Library <span class="key">LIB</span></div>
+      <div class="btns" style="align-items:center">
+        <span id="bakeLibSummary" style="font:500 11px/1.4 var(--mono); color:var(--ink-dim)">—</span>
       </div>
     </div>
 
-    <div class="motion-toolbar">
-      <div class="motion-tags">
-        <div id="motionTags" class="seq-tags"></div>
-        <input id="motionTagInput" type="text" placeholder="add tag" autocomplete="off" spellcheck="false">
-        <button class="cmd compact" id="motionAddTag">Tag</button>
-      </div>
-      <div class="motion-transport">
-        <button class="cmd amber" id="motionPlay" title="Streams frames from THIS browser to the boards — live authoring preview. Not what the gallery runs; needs the browser open and is throughput-limited.">≋ Play Live</button>
-        <button class="cmd compact alert" id="motionStop" disabled>Stop</button>
-        <label style="display:inline-flex; gap:6px; align-items:center; color:var(--ink-dim); font:700 9px/1 var(--label); text-transform:uppercase; letter-spacing:.22em">
-          <input id="motionLoop" type="checkbox"> Loop
-        </label>
-        <button class="cmd compact baked" id="motionFire" title="Plays the BAKED motion on the boards (sends one MOTION command). Full-rate, cluster-synced — this is what the gallery actually runs. Re-bake to apply edits.">▶ Play (baked)</button>
-        <button class="cmd compact amber" id="motionSave">Save</button>
-        <label class="motion-time">
-          <span>playhead</span>
-          <input id="motionScrub" type="range" min="0" max="8000" step="100" value="0">
-          <output id="motionScrubLabel">0ms</output>
-        </label>
+    <div class="group">
+      <div class="gname">Storage <span class="key">FILE</span></div>
+      <div class="btns" style="align-items:center">
+        <span id="libraryStorageStatus" class="library-storage-status">checking storage...</span>
       </div>
     </div>
 
-    <div class="motion-grid-wrap">
-      <div id="motionGrid" class="motion-grid"></div>
+    <div class="group">
+      <div class="gname">Import / Export</div>
+      <div class="btns" style="align-items:center">
+        <!-- color:transparent hides the native "No file selected" / filename
+             text next to the Browse button — bakeFileInfoEl below shows our
+             own label, which survives the bakeFileEl.value = "" reset. The
+             ::file-selector-button keeps its own color so Browse stays visible. -->
+        <input id="bakeFile" type="file" accept=".json,application/json" style="font:500 11px/1 var(--mono); color:transparent; width:90px">
+        <span id="bakeFileInfo" style="font:500 10px/1 var(--mono); color:var(--ink-mute)"></span>
+        <button class="cmd compact" id="bakeExport">Export</button>
+        <button class="cmd compact" id="bakeClear">Clear</button>
+        <button class="cmd compact" id="bakePull" title="Read the baked library back from every reachable board and rebuild the editor library (servo-7mn)">Pull from Boards</button>
+      </div>
     </div>
 
-    <div class="seq-tools">
-      <div id="motionStatus" class="motion-status">idle</div>
+    <div class="group">
+      <div class="gname">Bake</div>
+      <div class="btns">
+        <button class="cmd amber" id="bakeAll" disabled>Bake to Boards</button>
+        <select class="bake-target" id="bakeTarget" title="Board to receive a single-board bake" aria-label="Single-board bake target"></select>
+        <button class="cmd baked" id="bakeOne" disabled title="Bake only the selected board; other configured boards are not contacted">Bake One</button>
+        <button class="cmd compact" id="bakeRetry" disabled title="Re-bake only the boards that failed/were unreachable in the last bake">Retry Failed</button>
+        <button class="cmd compact" id="bakeRestore">Restore Previous</button>
+      </div>
     </div>
+
+    <div class="group" style="flex-basis:100%">
+      <div class="gname">Baked on boards <span class="key">RUN</span></div>
+      <div id="bakedPanel" class="baked-panel"></div>
+    </div>
+
+    <div class="group" style="flex-basis:100%">
+      <button type="button" class="gname bb-toggle" id="bakeBudgetToggle" title="Show/hide per-board size + prune" aria-expanded="false" aria-controls="bakeBudget"><span id="bakeBudgetCaret">+</span> Bake budget <span class="key">FIT</span></button>
+      <div id="bakeBudget" class="bake-budget"></div>
+    </div>
+
+    <div id="bakeLog" style="padding:8px 0 0; font:500 11px/1.6 var(--mono); color:var(--ink-dim); max-height:200px; overflow-y:auto"></div>
   </div>
 
   <!-- ============================================================
        OTA FIRMWARE UPLOAD
        ============================================================ -->
   <div class="sect">
-    <span class="num">// 07</span>
+    <span class="num">// 06</span>
     <span class="label">Firmware Upload</span>
     <span class="rule"></span>
     <span class="hint">browser OTA · select compiled .bin</span>
@@ -2821,7 +2839,7 @@ async function refreshBoardIdMap() {
     // Only re-render the editor sections when the boardId↔IP mapping actually
     // changed. pollOnce() calls this every ~800ms; re-rendering unconditionally
     // rebuilt every <select>'s DOM and closed any dropdown the operator had
-    // open mid-selection (the target/cmd pickers in // 04–// 06).
+    // open mid-selection (the target/cmd pickers in // 02–// 04).
     let changed = next.size !== boardIdByIp.size;
     if (!changed) {
       for (const [ip, id] of next) {
@@ -6544,7 +6562,7 @@ function toggleSequenceStepPreRoll(steps, index) {
   return copy;
 }
 
-// The // 07 step table has inputs for cmd/duration/target/label/hold/dc and
+// The // 03 step table has inputs for cmd/duration/target/label/hold/dc and
 // nothing for noPrep, so rebuilding a step from its row would quietly delete
 // the opt-out. Editing an unrelated field must not resurrect a pre-roll the
 // operator deleted, so the flag is carried across from the step the row came
@@ -6693,7 +6711,7 @@ function formatSequencePreviewValue(value, unit, compact = false) {
 function renderSequenceArrangementMotionLibrary(lib) {
   const motions = lib.motions || [];
   if (!motions.length) {
-    seqArrangeMotionListEl.innerHTML = `<div class="seq-arrange-library-empty">No Motions in this library yet. Create one in // 06 Motion, then return here.</div>`;
+    seqArrangeMotionListEl.innerHTML = `<div class="seq-arrange-library-empty">No Motions in this library yet. Create one in // 02 Motion, then return here.</div>`;
     return;
   }
   seqArrangeMotionListEl.innerHTML = motions.map(motion => `<article class="seq-arrange-motion-card">
@@ -8643,7 +8661,7 @@ bakedPanelEl.addEventListener("click", async (e) => {
   btn.disabled = false;
 });
 
-// Collapsed by default to keep // 03 tidy; expand to see bars + prune (servo-gwa).
+// Collapsed by default to keep // 05 tidy; expand to see bars + prune (servo-gwa).
 $("#bakeBudgetToggle").addEventListener("click", () => {
   bakeBudgetExpanded = !bakeBudgetExpanded;
   $("#bakeBudgetToggle").setAttribute("aria-expanded", String(bakeBudgetExpanded));
