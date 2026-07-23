@@ -321,90 +321,9 @@
 
   /* ---------- board strip ---------- */
 
-  .grid { display: grid; gap: 12px; }
 
-  .board {
-    display: grid;
-    /* identity / telemetry / instrument panel — sized for 3 servos + 1 DC. */
-    grid-template-columns: 200px 1fr 560px;
-    gap: 0;
-    background: var(--bg-elev);
-    border: 1px solid var(--rule-hi);
-    position: relative;
-  }
-  .board::before {
-    content: "";
-    position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
-    background: var(--ink-mute);
-    transition: background .2s;
-  }
-  .board[data-state="online"]::before { background: var(--phosphor); }
-  .board[data-state="offline"]::before { background: var(--alert); }
-  .board[data-state="ota"]::before { background: var(--amber); }
-  .board[data-state="offline"] .ident, .board[data-state="offline"] .telemetry, .board[data-state="offline"] .channels { opacity: 0.45; }
 
   /* — left identity column — */
-  .ident {
-    padding: 18px 22px;
-    border-right: 1px solid var(--rule);
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-  }
-  .ident .row1 { display: flex; align-items: baseline; gap: 12px; }
-  .ident .id {
-    font-family: var(--display);
-    font-size: 56px;
-    line-height: 0.85;
-    color: var(--ink);
-    letter-spacing: -0.02em;
-  }
-  .ident .id-label {
-    font-family: var(--label);
-    font-size: 8px;
-    text-transform: uppercase;
-    letter-spacing: 0.32em;
-    color: var(--ink-mute);
-    writing-mode: vertical-rl;
-    transform: rotate(180deg);
-  }
-  .ident .ip {
-    font-family: var(--mono);
-    font-size: 13px;
-    color: var(--ink);
-    letter-spacing: 0.02em;
-    font-weight: 500;
-    margin-top: 6px;
-  }
-  .ident .stamp {
-    font-family: var(--mono);
-    font-size: 10px;
-    color: var(--ink-dim);
-    display: flex;
-    justify-content: space-between;
-  }
-  .ident .stamp .k {
-    font-family: var(--label);
-    font-size: 8px;
-    text-transform: uppercase;
-    letter-spacing: 0.24em;
-    color: var(--ink-mute);
-    font-weight: 600;
-  }
-  .ident .dot {
-    display: inline-block; width: 8px; height: 8px;
-    background: var(--ink-mute);
-    border-radius: 50%;
-    margin-left: auto;
-    box-shadow: 0 0 0 0 currentColor;
-  }
-  .board[data-state="online"] .ident .dot {
-    background: var(--phosphor);
-    animation: heartbeat 1.6s ease-in-out infinite;
-    color: var(--phosphor);
-  }
-  .board[data-state="ota"] .ident .dot { background: var(--amber); animation: heartbeat 0.6s ease-in-out infinite; color: var(--amber); }
-  .board[data-state="offline"] .ident .dot { background: var(--alert); }
   @keyframes heartbeat {
     0%   { box-shadow: 0 0 0 0 currentColor; }
     70%  { box-shadow: 0 0 0 6px transparent; }
@@ -412,13 +331,77 @@
   }
 
   /* — middle telemetry column — */
-  .telemetry {
-    padding: 16px 20px;
-    border-right: 1px solid var(--rule);
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
+  /* ---------- slim board strip (servo-lqq) ---------- */
+  .board-strip { display: grid; gap: 6px; }
+  .board-row {
+    display: grid;
+    grid-template-columns: 72px 170px 150px 1fr;
+    gap: 14px;
+    align-items: center;
+    background: var(--bg-elev);
+    border: 1px solid var(--rule-hi);
+    border-left-width: 3px;
+    border-left-color: var(--ink-mute);
+    padding: 8px 14px;
   }
+  .board-row[data-state="online"]  { border-left-color: var(--phosphor); }
+  .board-row[data-state="offline"] { border-left-color: var(--alert); }
+  .board-row[data-state="ota"]     { border-left-color: var(--amber); }
+  .board-row[data-state="offline"] > * { opacity: 0.55; }
+  .board-row .br-id {
+    font: 300 22px/1 var(--display, var(--mono));
+    color: var(--ink);
+    display: inline-flex;
+    align-items: baseline;
+    gap: 8px;
+  }
+  .board-row .br-id-label {
+    font: 700 8px/1 var(--label);
+    text-transform: uppercase;
+    letter-spacing: 0.24em;
+    color: var(--ink-mute);
+  }
+  .board-row .br-ip {
+    font: 500 11px/1 var(--mono);
+    color: var(--ink-dim);
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .board-row .dot {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: var(--ink-mute);
+    display: inline-block;
+  }
+  .board-row[data-state="online"] .dot {
+    background: var(--phosphor);
+    animation: heartbeat 1.6s ease-in-out infinite;
+  }
+  .board-row[data-state="ota"] .dot { background: var(--amber); animation: heartbeat 0.6s ease-in-out infinite; }
+  .board-row[data-state="offline"] .dot { background: var(--alert); }
+  .board-row .br-up {
+    font: 500 10px/1 var(--mono);
+    color: var(--ink-dim);
+  }
+  .board-row .br-up .k {
+    font: 700 8px/1 var(--label);
+    text-transform: uppercase;
+    letter-spacing: 0.24em;
+    color: var(--ink-mute);
+    margin-right: 4px;
+  }
+  .board-row .br-lost {
+    font: 700 9px/1 var(--label);
+    text-transform: uppercase;
+    letter-spacing: 0.24em;
+    color: var(--alert);
+  }
+  .board-row .br-pills { justify-content: flex-end; }
+  @media (max-width: 720px) {
+    .board-row { grid-template-columns: 56px 1fr; }
+    .board-row .br-pills { justify-content: flex-start; }
+  }
+
   .pills { display: flex; gap: 6px; flex-wrap: wrap; }
   .pill {
     font-family: var(--label);
@@ -439,68 +422,7 @@
   .pill.alert { color: var(--alert);    border-color: var(--alert);    background: rgba(241,90,58,0.08); }
   .pill .v { font-family: var(--mono); letter-spacing: 0.02em; font-weight: 500; }
 
-  .progress {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-  }
-  .progress .head {
-    display: flex; justify-content: space-between;
-    font-family: var(--label);
-    font-size: 9px;
-    text-transform: uppercase;
-    letter-spacing: 0.22em;
-    color: var(--ink-mute);
-    font-weight: 600;
-  }
-  .progress .head .v { color: var(--ink); font-family: var(--mono); letter-spacing: 0; font-weight: 500; }
-  .progress .bar {
-    position: relative;
-    height: 6px;
-    background: var(--bg-deep);
-    border: 1px solid var(--rule);
-    overflow: hidden;
-  }
-  .progress .bar::before {
-    content: "";
-    position: absolute;
-    inset: 0;
-    background-image: repeating-linear-gradient(90deg,
-      transparent 0, transparent 23px,
-      var(--rule) 23px, var(--rule) 24px);
-  }
-  .progress .bar .fill {
-    position: absolute;
-    inset: 0 auto 0 0;
-    background: var(--phosphor);
-    box-shadow: 0 0 8px var(--phosphor);
-  }
-  .progress.idle .head .v { color: var(--ink-mute); }
-  .progress.idle .bar .fill { display: none; }
 
-  .timescale {
-    display: flex;
-    align-items: baseline;
-    gap: 10px;
-    border-top: 1px dashed var(--rule);
-    padding-top: 12px;
-  }
-  .timescale .k {
-    font-family: var(--label);
-    font-size: 9px;
-    text-transform: uppercase;
-    letter-spacing: 0.24em;
-    color: var(--ink-mute);
-    font-weight: 600;
-  }
-  .timescale .v {
-    font-family: var(--display);
-    font-size: 24px;
-    line-height: 1;
-    color: var(--ink);
-    letter-spacing: 0.02em;
-  }
-  .timescale.warn .v { color: var(--amber); }
 
   /* ============================================================
      RIGHT COLUMN — actuator instrument panel
@@ -508,347 +430,23 @@
      Replaces the old 16-channel meter strip — only three servos
      and one DC motor are wired on this installation.
      ============================================================ */
-  .channels {
-    padding: 14px 18px 16px;
-    display: flex;
-    flex-direction: column;
-    gap: 14px;
-    background:
-      radial-gradient(ellipse at top right, rgba(255,182,39,0.025), transparent 60%);
-  }
-  .channels-head {
-    display: flex; justify-content: space-between; align-items: baseline;
-    gap: 12px;
-  }
-  .channels-head .label {
-    font-family: var(--label);
-    font-size: 9px;
-    text-transform: uppercase;
-    letter-spacing: 0.32em;
-    color: var(--ink-mute);
-    font-weight: 600;
-  }
-  .channels-head .scale {
-    font-family: var(--mono);
-    font-size: 9px;
-    color: var(--ink-mute);
-    letter-spacing: 0.06em;
-  }
 
   /* "Now playing" MOTION strip — prominent when active, ghost when idle. */
-  .nowplaying {
-    display: grid;
-    grid-template-columns: auto 1fr auto;
-    align-items: center;
-    gap: 12px;
-    padding: 8px 12px;
-    border: 1px solid var(--rule);
-    background: var(--bg-deep);
-    position: relative;
-    transition: border-color .25s, background .25s;
-  }
-  .nowplaying.on {
-    border-color: var(--phosphor);
-    background: linear-gradient(90deg, rgba(75,227,193,0.08), rgba(75,227,193,0.01));
-  }
-  .nowplaying .k {
-    font-family: var(--label);
-    font-size: 9px;
-    text-transform: uppercase;
-    letter-spacing: 0.28em;
-    color: var(--ink-mute);
-    font-weight: 700;
-  }
-  .nowplaying.on .k { color: var(--phosphor); }
-  .nowplaying .id {
-    font-family: var(--display);
-    font-size: 16px;
-    color: var(--ink);
-    letter-spacing: 0.03em;
-    text-transform: lowercase;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-  .nowplaying.idle .id { color: var(--ink-mute); }
-  .nowplaying .progress-mini {
-    width: 96px; height: 4px;
-    background: rgba(0,0,0,0.4);
-    border: 1px solid var(--rule);
-    position: relative;
-    overflow: hidden;
-  }
-  .nowplaying .progress-mini .fill {
-    position: absolute; inset: 0 auto 0 0;
-    background: var(--phosphor);
-    box-shadow: 0 0 6px var(--phosphor);
-    transition: width .25s linear;
-  }
-  .nowplaying.idle .progress-mini .fill { display: none; }
 
   /* Instrument tile grid: 3 servos + DC, equal width. */
-  .instruments {
-    display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    gap: 10px;
-  }
-  .instrument {
-    position: relative;
-    border: 1px solid var(--rule);
-    background:
-      linear-gradient(to bottom, rgba(255,255,255,0.012), transparent 30%),
-      var(--bg-deep);
-    padding: 12px 12px 14px;
-    display: grid;
-    grid-template-rows: auto 1fr auto;
-    gap: 10px;
-    min-height: 168px;
-    overflow: hidden;
-    transition: border-color .2s;
-  }
-  .instrument::before {
-    /* corner tick — matches panel notch language */
-    content: ""; position: absolute; top: -1px; left: -1px;
-    width: 6px; height: 6px;
-    border-top: 1px solid var(--ink-mute);
-    border-left: 1px solid var(--ink-mute);
-    transition: border-color .2s;
-  }
-  .instrument.moving { border-color: var(--amber); }
-  .instrument.moving::before { border-color: var(--amber); }
-  .instrument.fwd { border-color: var(--phosphor); }
-  .instrument.fwd::before { border-color: var(--phosphor); }
-  .instrument.rev { border-color: var(--alert); }
-  .instrument.rev::before { border-color: var(--alert); }
 
   /* tile header — channel kind + index + status word */
-  .ins-head {
-    display: flex; align-items: baseline; justify-content: space-between;
-    border-bottom: 1px dashed var(--rule);
-    padding-bottom: 6px;
-  }
-  .ins-head .kind {
-    font-family: var(--label);
-    font-size: 8px;
-    text-transform: uppercase;
-    letter-spacing: 0.28em;
-    color: var(--ink-mute);
-    font-weight: 700;
-  }
-  .ins-head .num {
-    font-family: var(--display);
-    font-size: 14px;
-    color: var(--ink);
-    letter-spacing: 0.02em;
-    line-height: 1;
-  }
-  .ins-head .state {
-    font-family: var(--label);
-    font-size: 8px;
-    text-transform: uppercase;
-    letter-spacing: 0.24em;
-    color: var(--ink-mute);
-    font-weight: 700;
-  }
-  .instrument.moving .ins-head .state { color: var(--amber); }
-  .instrument.fwd .ins-head .state { color: var(--phosphor); }
-  .instrument.rev .ins-head .state { color: var(--alert); }
 
   /* SERVO BODY — big pulse readout + small gauge */
-  .ins-body {
-    display: grid;
-    grid-template-columns: 1fr 28px;
-    gap: 10px;
-    align-items: stretch;
-    min-height: 0;
-  }
-  .ins-readout {
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    gap: 4px;
-    overflow: hidden;
-  }
-  .ins-readout .big {
-    font-family: var(--display);
-    font-size: 30px;
-    line-height: 0.9;
-    color: var(--ink);
-    letter-spacing: -0.01em;
-    font-variant-numeric: tabular-nums;
-  }
-  .instrument.moving .ins-readout .big { color: var(--amber); }
-  .ins-readout .unit {
-    font-family: var(--label);
-    font-size: 8px;
-    text-transform: uppercase;
-    letter-spacing: 0.32em;
-    color: var(--ink-mute);
-    font-weight: 600;
-    margin-top: -2px;
-  }
-  .ins-readout .second {
-    font-family: var(--mono);
-    font-size: 10px;
-    color: var(--ink-dim);
-    letter-spacing: 0.02em;
-    margin-top: 6px;
-    display: flex;
-    justify-content: space-between;
-    gap: 8px;
-  }
-  .ins-readout .second .k {
-    font-family: var(--label);
-    font-size: 8px;
-    text-transform: uppercase;
-    letter-spacing: 0.24em;
-    color: var(--ink-mute);
-    font-weight: 600;
-  }
 
   /* Vertical pulse gauge — same scale as old meter (PULSE 150..600) */
-  .ins-gauge {
-    position: relative;
-    width: 28px;
-    background: rgba(0,0,0,0.35);
-    border: 1px solid var(--rule);
-    background-image:
-      linear-gradient(to bottom,
-        transparent 0%, transparent 24%, var(--rule) 24%, var(--rule) calc(24% + 1px),
-        transparent calc(24% + 1px), transparent 49%, var(--rule) 49%, var(--rule) calc(49% + 1px),
-        transparent calc(49% + 1px), transparent 74%, var(--rule) 74%, var(--rule) calc(74% + 1px),
-        transparent calc(74% + 1px));
-  }
-  .ins-gauge .bar {
-    position: absolute; left: 1px; right: 1px; bottom: 1px;
-    background: var(--ink-dim);
-    transition: height .25s cubic-bezier(.4,.6,.2,1), background .2s;
-    min-height: 1px;
-  }
-  .instrument.moving .ins-gauge .bar { background: var(--amber); box-shadow: 0 0 8px var(--amber); }
-  .ins-gauge .ghost {
-    position: absolute; left: 1px; right: 1px; height: 1px;
-    background: var(--amber); opacity: 0.55;
-    transition: bottom .25s cubic-bezier(.4,.6,.2,1);
-  }
-  .ins-gauge .mid {
-    position: absolute; left: -3px; right: -3px; top: 50%;
-    height: 1px;
-    background: var(--rule-hi);
-    pointer-events: none;
-  }
 
   /* tile footer — micro range hint */
-  .ins-foot {
-    display: flex;
-    justify-content: space-between;
-    font-family: var(--mono);
-    font-size: 8px;
-    color: var(--ink-mute);
-    letter-spacing: 0.04em;
-    padding-top: 4px;
-    border-top: 1px dashed var(--rule);
-  }
-  .ins-foot .k {
-    font-family: var(--label);
-    text-transform: uppercase;
-    letter-spacing: 0.22em;
-    font-weight: 600;
-  }
 
   /* DC TILE — bipolar horizontal gauge replaces vertical body */
-  .instrument.dc .ins-body { grid-template-columns: 1fr; }
-  .ins-dc-readout {
-    display: flex;
-    align-items: baseline;
-    justify-content: space-between;
-    gap: 8px;
-  }
-  .ins-dc-readout .big {
-    font-family: var(--display);
-    font-size: 30px;
-    line-height: 0.9;
-    color: var(--ink);
-    letter-spacing: -0.01em;
-    font-variant-numeric: tabular-nums;
-  }
-  .instrument.dc.fwd .ins-dc-readout .big { color: var(--phosphor); }
-  .instrument.dc.rev .ins-dc-readout .big { color: var(--alert); }
-  .ins-dc-readout .unit {
-    font-family: var(--label);
-    font-size: 8px;
-    text-transform: uppercase;
-    letter-spacing: 0.28em;
-    color: var(--ink-mute);
-    font-weight: 600;
-  }
   /* Bipolar horizontal gauge: zero centered, fills toward sign. */
-  .ins-bipolar {
-    position: relative;
-    height: 14px;
-    background: rgba(0,0,0,0.35);
-    border: 1px solid var(--rule);
-    margin: 4px 0 2px;
-  }
-  .ins-bipolar::before {
-    /* centerline tick */
-    content: ""; position: absolute; left: 50%; top: -3px; bottom: -3px;
-    width: 1px; background: var(--ink-mute);
-  }
-  .ins-bipolar .fill {
-    position: absolute; top: 1px; bottom: 1px;
-    transition: left .25s cubic-bezier(.4,.6,.2,1), width .25s cubic-bezier(.4,.6,.2,1), background .2s;
-  }
-  .instrument.dc.fwd .ins-bipolar .fill { background: var(--phosphor); box-shadow: 0 0 8px var(--phosphor); }
-  .instrument.dc.rev .ins-bipolar .fill { background: var(--alert); box-shadow: 0 0 8px var(--alert); }
-  .ins-bipolar-labels {
-    display: flex;
-    justify-content: space-between;
-    font-family: var(--label);
-    font-size: 8px;
-    text-transform: uppercase;
-    letter-spacing: 0.28em;
-    color: var(--ink-mute);
-    font-weight: 700;
-  }
-  .ins-bipolar-labels .mid { color: var(--ink-mute); }
 
   /* Command audit tail at bottom of right column */
-  .lastcmd {
-    display: grid;
-    grid-template-columns: auto 1fr auto;
-    align-items: center;
-    gap: 10px;
-    padding: 6px 10px;
-    border: 1px solid var(--rule);
-    background: var(--bg-deep);
-    font-family: var(--mono);
-    font-size: 10px;
-    color: var(--ink-dim);
-    letter-spacing: 0.02em;
-  }
-  .lastcmd .k {
-    font-family: var(--label);
-    font-size: 8px;
-    text-transform: uppercase;
-    letter-spacing: 0.28em;
-    color: var(--ink-mute);
-    font-weight: 700;
-  }
-  .lastcmd .cmd {
-    color: var(--amber);
-    font-family: var(--mono);
-    font-weight: 500;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .lastcmd .ts {
-    color: var(--ink-mute);
-    font-family: var(--mono);
-    font-size: 9px;
-  }
-  .lastcmd.idle .cmd { color: var(--ink-mute); font-style: italic; }
 
   /* — empty / loading states — */
   .placeholder {
@@ -862,7 +460,6 @@
   }
   .placeholder em { color: var(--amber); font-style: normal; }
 
-  .board.skeleton .id::before { content: "—"; color: var(--ink-mute); }
 
   /* ---------- footer ---------- */
 
@@ -960,6 +557,21 @@
   .seq-tags {
     margin-top: 12px;
   }
+  /* The show-control transport (// 01) hosts the setlist chooser outside the
+     .seq-picker context, so give its select the same dark-input treatment. */
+  .show-transport select {
+    appearance: none;
+    -webkit-appearance: none;
+    background: var(--bg-deep);
+    color: var(--ink);
+    border: 1px solid var(--rule-hi);
+    font: 500 11px/1 var(--mono);
+    padding: 8px 10px;
+    outline: none;
+    min-width: 180px;
+    max-width: 280px;
+  }
+  .show-transport select:focus { border-color: var(--amber); }
   .seq-chip {
     display: inline-flex;
     align-items: center;
@@ -2080,8 +1692,6 @@
 
   /* small screens */
   @media (max-width: 1100px) {
-    .board { grid-template-columns: 160px 1fr; }
-    .channels { grid-column: 1 / -1; border-top: 1px solid var(--rule); }
   }
   @media (max-width: 820px) {
     .masthead { grid-template-columns: 1fr; align-items: start; }
@@ -2183,21 +1793,40 @@
   </header>
 
   <!-- ============================================================
-       MASTER COMMAND BAR
+       SHOW CONTROL
+       Everything an operator needs to run a show without scrolling:
+       the setlist transport (moved from the Setlist editor — same element
+       ids, so the servo-17r device-walker wiring is untouched), slim board
+       status, and the master STOP + free terminal. The Setlist editor
+       further down edits whatever setlist is chosen here.
        ============================================================ -->
   <div class="sect">
     <span class="num">// 01</span>
-    <span class="label">Master Command</span>
+    <span class="label">Show Control</span>
     <span class="rule"></span>
-    <span class="hint">broadcast → first reachable board mirrors via udp</span>
+    <span class="hint">play runs on-device from the last bake · broadcast → first reachable board mirrors via udp</span>
   </div>
 
   <div class="panel cmdbar">
     <span class="panel-corner-bl"></span><span class="panel-corner-br"></span>
 
+    <div class="group">
+      <div class="gname">Setlist <span class="key">RUN</span></div>
+      <div class="btns show-transport">
+        <select id="slSelect" title="Setlist"></select>
+        <button class="cmd baked" id="slPlay" title="Runs this setlist on the boards — sends RUN <sequence> to the leader per entry; the firmware plays each sequence on-device from the last bake. Requires every entry to be baked. Not browser-streamed.">▶ Play</button>
+        <button class="cmd compact" id="slPause" disabled>Pause</button>
+        <button class="cmd compact alert" id="slStop" disabled>Stop</button>
+        <label style="display:inline-flex; gap:6px; align-items:center; color:var(--ink-dim); font:700 9px/1 var(--label); text-transform:uppercase; letter-spacing:.22em">
+          <input id="slLoop" type="checkbox"> Loop
+        </label>
+        <div id="slStatus" class="seq-status">idle</div>
+      </div>
+    </div>
+
     <!-- Legacy PLAY/SPLAY/RUN-n quick-play groups + TIMESCALE removed in
-         servo-voc. Schema-v1 playback lives in // 03–// 06; the free terminal
-         below sends any command. -->
+         servo-voc. Schema-v1 playback lives in the transport above and the
+         editor sections below; the free terminal sends any command. -->
     <div class="group">
       <div class="gname">Master</div>
       <div class="btns">
@@ -2214,91 +1843,76 @@
       <select id="freeTarget" title="Target board"></select>
       <button id="freeSend">Send</button>
     </div>
+
+    <div id="slLog" class="seq-log"></div>
   </div>
 
+  <div id="boards" class="board-strip"></div>
+
   <!-- ============================================================
-       BOARD GRID
+       MOTION EDITOR
        ============================================================ -->
   <div class="sect">
     <span class="num">// 02</span>
-    <span class="label">Board Telemetry</span>
+    <span class="label">Motion</span>
     <span class="rule"></span>
-    <span class="hint">live · pulse range 150–600</span>
+    <span class="hint">9-track cluster keyframes · servo % down (0=up, 100=down) · motor speed moved to Sequencer DC lanes · live scrub · values snap to 5 (⇧ for fine) · ⌥-drag a shape · ⇧-drag to select (Del removes) · Clr clears a row · shared library</span>
   </div>
 
-  <div id="boards" class="grid"></div>
-
-  <!-- ============================================================
-       SEQUENCER BAKE
-       ============================================================ -->
-  <div class="sect">
-    <span class="num">// 03</span>
-    <span class="label">Sequencer Bake</span>
-    <span class="rule"></span>
-    <span class="hint">project library → POST /sequences · per-board slice · rollback</span>
-  </div>
-
-  <div class="panel cmdbar">
+  <div class="panel motion-editor">
     <span class="panel-corner-bl"></span><span class="panel-corner-br"></span>
 
-    <div class="group">
-      <div class="gname">Library <span class="key">LIB</span></div>
-      <div class="btns" style="align-items:center">
-        <span id="bakeLibSummary" style="font:500 11px/1.4 var(--mono); color:var(--ink-dim)">—</span>
+    <div class="motion-picker">
+      <select id="motionSelect" title="Motion"></select>
+      <input id="motionName" type="text" placeholder="motion name" autocomplete="off" spellcheck="false">
+      <code id="motionIdLabel" class="motion-id" title="Motion id — the auto-generated internal key used by MOTION and Sequence steps. Edit the name; the id stays fixed."></code>
+      <label class="motion-time" title="Total Motion duration">
+        <span>duration</span>
+        <input id="motionDuration" type="number" min="100" max="120000" step="100" value="8000">
+      </label>
+      <div class="motion-actions">
+        <button class="cmd compact" id="motionNew">New</button>
+        <button class="cmd compact" id="motionDuplicate">Duplicate</button>
+        <button class="cmd compact alert" id="motionDelete">Delete</button>
       </div>
     </div>
 
-    <div class="group">
-      <div class="gname">Storage <span class="key">FILE</span></div>
-      <div class="btns" style="align-items:center">
-        <span id="libraryStorageStatus" class="library-storage-status">checking storage...</span>
+    <div class="motion-toolbar">
+      <div class="motion-tags">
+        <div id="motionTags" class="seq-tags"></div>
+        <input id="motionTagInput" type="text" placeholder="add tag" autocomplete="off" spellcheck="false">
+        <button class="cmd compact" id="motionAddTag">Tag</button>
+      </div>
+      <div class="motion-transport">
+        <button class="cmd amber" id="motionPlay" title="Streams frames from THIS browser to the boards — live authoring preview. Not what the gallery runs; needs the browser open and is throughput-limited.">≋ Play Live</button>
+        <button class="cmd compact alert" id="motionStop" disabled>Stop</button>
+        <label style="display:inline-flex; gap:6px; align-items:center; color:var(--ink-dim); font:700 9px/1 var(--label); text-transform:uppercase; letter-spacing:.22em">
+          <input id="motionLoop" type="checkbox"> Loop
+        </label>
+        <button class="cmd compact baked" id="motionFire" title="Plays the BAKED motion on the boards (sends one MOTION command). Full-rate, cluster-synced — this is what the gallery actually runs. Re-bake to apply edits.">▶ Play (baked)</button>
+        <button class="cmd compact amber" id="motionSave">Save</button>
+        <label class="motion-time">
+          <span>playhead</span>
+          <input id="motionScrub" type="range" min="0" max="8000" step="100" value="0">
+          <output id="motionScrubLabel">0ms</output>
+        </label>
       </div>
     </div>
 
-    <div class="group">
-      <div class="gname">Import / Export</div>
-      <div class="btns" style="align-items:center">
-        <!-- color:transparent hides the native "No file selected" / filename
-             text next to the Browse button — bakeFileInfoEl below shows our
-             own label, which survives the bakeFileEl.value = "" reset. The
-             ::file-selector-button keeps its own color so Browse stays visible. -->
-        <input id="bakeFile" type="file" accept=".json,application/json" style="font:500 11px/1 var(--mono); color:transparent; width:90px">
-        <span id="bakeFileInfo" style="font:500 10px/1 var(--mono); color:var(--ink-mute)"></span>
-        <button class="cmd compact" id="bakeExport">Export</button>
-        <button class="cmd compact" id="bakeClear">Clear</button>
-        <button class="cmd compact" id="bakePull" title="Read the baked library back from every reachable board and rebuild the editor library (servo-7mn)">Pull from Boards</button>
-      </div>
+    <div class="motion-grid-wrap">
+      <div id="motionGrid" class="motion-grid"></div>
     </div>
 
-    <div class="group">
-      <div class="gname">Bake</div>
-      <div class="btns">
-        <button class="cmd amber" id="bakeAll" disabled>Bake to Boards</button>
-        <select class="bake-target" id="bakeTarget" title="Board to receive a single-board bake" aria-label="Single-board bake target"></select>
-        <button class="cmd baked" id="bakeOne" disabled title="Bake only the selected board; other configured boards are not contacted">Bake One</button>
-        <button class="cmd compact" id="bakeRetry" disabled title="Re-bake only the boards that failed/were unreachable in the last bake">Retry Failed</button>
-        <button class="cmd compact" id="bakeRestore">Restore Previous</button>
-      </div>
+    <div class="seq-tools">
+      <div id="motionStatus" class="motion-status">idle</div>
     </div>
-
-    <div class="group" style="flex-basis:100%">
-      <div class="gname">Baked on boards <span class="key">RUN</span></div>
-      <div id="bakedPanel" class="baked-panel"></div>
-    </div>
-
-    <div class="group" style="flex-basis:100%">
-      <button type="button" class="gname bb-toggle" id="bakeBudgetToggle" title="Show/hide per-board size + prune" aria-expanded="false" aria-controls="bakeBudget"><span id="bakeBudgetCaret">+</span> Bake budget <span class="key">FIT</span></button>
-      <div id="bakeBudget" class="bake-budget"></div>
-    </div>
-
-    <div id="bakeLog" style="padding:8px 0 0; font:500 11px/1.6 var(--mono); color:var(--ink-dim); max-height:200px; overflow-y:auto"></div>
   </div>
 
   <!-- ============================================================
        SEQUENCE EDITOR
        ============================================================ -->
   <div class="sect">
-    <span class="num">// 04</span>
+    <span class="num">// 03</span>
     <span class="label">Sequencer</span>
     <span class="rule"></span>
     <span class="hint">author · record terminal · shared library</span>
@@ -2426,7 +2040,7 @@
        SETLIST EDITOR
        ============================================================ -->
   <div class="sect">
-    <span class="num">// 05</span>
+    <span class="num">// 04</span>
     <span class="label">Setlist</span>
     <span class="rule"></span>
     <span class="hint">ordered or shuffle · sequence playlists for gallery autonomy</span>
@@ -2435,8 +2049,9 @@
   <div class="panel sequencer">
     <span class="panel-corner-bl"></span><span class="panel-corner-br"></span>
 
-    <div class="seq-picker">
-      <select id="slSelect" title="Setlist"></select>
+    <!-- The setlist chooser lives in // 01 Show Control; this section edits
+         whatever is selected there. -->
+    <div class="seq-picker" style="grid-template-columns: minmax(220px, 1fr) auto">
       <input id="slName" type="text" placeholder="setlist name" autocomplete="off" spellcheck="false">
       <div class="seq-actions">
         <button class="cmd compact" id="slNew">New</button>
@@ -2461,12 +2076,6 @@
 
     <div class="seq-tools">
       <div class="seq-transport">
-        <button class="cmd baked" id="slPlay" title="Runs this setlist on the boards — sends RUN <sequence> to the leader per entry; the firmware plays each sequence on-device from the last bake. Requires every entry to be baked. Not browser-streamed.">▶ Play</button>
-        <button class="cmd compact" id="slPause" disabled>Pause</button>
-        <button class="cmd compact alert" id="slStop" disabled>Stop</button>
-        <label style="display:inline-flex; gap:6px; align-items:center; color:var(--ink-dim); font:700 9px/1 var(--label); text-transform:uppercase; letter-spacing:.22em">
-          <input id="slLoop" type="checkbox"> Loop
-        </label>
         <button class="cmd compact amber" id="slSave">Save</button>
         <button class="cmd compact" id="slDryRun" title="Walks the authored steps on browser timers without sending anything — preview timing and order, no boards required.">Dry Run</button>
         <button class="cmd compact" id="slSimulate" title="Fast-forward one hour of this setlist in the browser to preview what would play — no device, no motion. Catches repetition, unbalanced play counts, and dead air before you bake.">Simulate hour</button>
@@ -2493,7 +2102,6 @@
 
     <div class="seq-tools">
       <button class="cmd compact" id="slAddEntry">Add Entry</button>
-      <div id="slStatus" class="seq-status">idle</div>
     </div>
 
     <div id="slShufflePanel" class="sl-rules" hidden>
@@ -2544,74 +2152,79 @@
       </div>
     </div>
 
-  <div id="slLog" class="seq-log"></div>
-
   </div>
 
   <!-- ============================================================
-       MOTION EDITOR
+       SEQUENCER BAKE
        ============================================================ -->
   <div class="sect">
-    <span class="num">// 06</span>
-    <span class="label">Motion</span>
+    <span class="num">// 05</span>
+    <span class="label">Sequencer Bake</span>
     <span class="rule"></span>
-    <span class="hint">9-track cluster keyframes · servo % down (0=up, 100=down) · motor speed moved to Sequencer DC lanes · live scrub · values snap to 5 (⇧ for fine) · ⌥-drag a shape · ⇧-drag to select (Del removes) · Clr clears a row · shared library</span>
+    <span class="hint">project library → POST /sequences · per-board slice · rollback</span>
   </div>
 
-  <div class="panel motion-editor">
+  <div class="panel cmdbar">
     <span class="panel-corner-bl"></span><span class="panel-corner-br"></span>
 
-    <div class="motion-picker">
-      <select id="motionSelect" title="Motion"></select>
-      <input id="motionName" type="text" placeholder="motion name" autocomplete="off" spellcheck="false">
-      <code id="motionIdLabel" class="motion-id" title="Motion id — the auto-generated internal key used by MOTION and Sequence steps. Edit the name; the id stays fixed."></code>
-      <label class="motion-time" title="Total Motion duration">
-        <span>duration</span>
-        <input id="motionDuration" type="number" min="100" max="120000" step="100" value="8000">
-      </label>
-      <div class="motion-actions">
-        <button class="cmd compact" id="motionNew">New</button>
-        <button class="cmd compact" id="motionDuplicate">Duplicate</button>
-        <button class="cmd compact alert" id="motionDelete">Delete</button>
+    <div class="group">
+      <div class="gname">Library <span class="key">LIB</span></div>
+      <div class="btns" style="align-items:center">
+        <span id="bakeLibSummary" style="font:500 11px/1.4 var(--mono); color:var(--ink-dim)">—</span>
       </div>
     </div>
 
-    <div class="motion-toolbar">
-      <div class="motion-tags">
-        <div id="motionTags" class="seq-tags"></div>
-        <input id="motionTagInput" type="text" placeholder="add tag" autocomplete="off" spellcheck="false">
-        <button class="cmd compact" id="motionAddTag">Tag</button>
-      </div>
-      <div class="motion-transport">
-        <button class="cmd amber" id="motionPlay" title="Streams frames from THIS browser to the boards — live authoring preview. Not what the gallery runs; needs the browser open and is throughput-limited.">≋ Play Live</button>
-        <button class="cmd compact alert" id="motionStop" disabled>Stop</button>
-        <label style="display:inline-flex; gap:6px; align-items:center; color:var(--ink-dim); font:700 9px/1 var(--label); text-transform:uppercase; letter-spacing:.22em">
-          <input id="motionLoop" type="checkbox"> Loop
-        </label>
-        <button class="cmd compact baked" id="motionFire" title="Plays the BAKED motion on the boards (sends one MOTION command). Full-rate, cluster-synced — this is what the gallery actually runs. Re-bake to apply edits.">▶ Play (baked)</button>
-        <button class="cmd compact amber" id="motionSave">Save</button>
-        <label class="motion-time">
-          <span>playhead</span>
-          <input id="motionScrub" type="range" min="0" max="8000" step="100" value="0">
-          <output id="motionScrubLabel">0ms</output>
-        </label>
+    <div class="group">
+      <div class="gname">Storage <span class="key">FILE</span></div>
+      <div class="btns" style="align-items:center">
+        <span id="libraryStorageStatus" class="library-storage-status">checking storage...</span>
       </div>
     </div>
 
-    <div class="motion-grid-wrap">
-      <div id="motionGrid" class="motion-grid"></div>
+    <div class="group">
+      <div class="gname">Import / Export</div>
+      <div class="btns" style="align-items:center">
+        <!-- color:transparent hides the native "No file selected" / filename
+             text next to the Browse button — bakeFileInfoEl below shows our
+             own label, which survives the bakeFileEl.value = "" reset. The
+             ::file-selector-button keeps its own color so Browse stays visible. -->
+        <input id="bakeFile" type="file" accept=".json,application/json" style="font:500 11px/1 var(--mono); color:transparent; width:90px">
+        <span id="bakeFileInfo" style="font:500 10px/1 var(--mono); color:var(--ink-mute)"></span>
+        <button class="cmd compact" id="bakeExport">Export</button>
+        <button class="cmd compact" id="bakeClear">Clear</button>
+        <button class="cmd compact" id="bakePull" title="Read the baked library back from every reachable board and rebuild the editor library (servo-7mn)">Pull from Boards</button>
+      </div>
     </div>
 
-    <div class="seq-tools">
-      <div id="motionStatus" class="motion-status">idle</div>
+    <div class="group">
+      <div class="gname">Bake</div>
+      <div class="btns">
+        <button class="cmd amber" id="bakeAll" disabled>Bake to Boards</button>
+        <select class="bake-target" id="bakeTarget" title="Board to receive a single-board bake" aria-label="Single-board bake target"></select>
+        <button class="cmd baked" id="bakeOne" disabled title="Bake only the selected board; other configured boards are not contacted">Bake One</button>
+        <button class="cmd compact" id="bakeRetry" disabled title="Re-bake only the boards that failed/were unreachable in the last bake">Retry Failed</button>
+        <button class="cmd compact" id="bakeRestore">Restore Previous</button>
+      </div>
     </div>
+
+    <div class="group" style="flex-basis:100%">
+      <div class="gname">Baked on boards <span class="key">RUN</span></div>
+      <div id="bakedPanel" class="baked-panel"></div>
+    </div>
+
+    <div class="group" style="flex-basis:100%">
+      <button type="button" class="gname bb-toggle" id="bakeBudgetToggle" title="Show/hide per-board size + prune" aria-expanded="false" aria-controls="bakeBudget"><span id="bakeBudgetCaret">+</span> Bake budget <span class="key">FIT</span></button>
+      <div id="bakeBudget" class="bake-budget"></div>
+    </div>
+
+    <div id="bakeLog" style="padding:8px 0 0; font:500 11px/1.6 var(--mono); color:var(--ink-dim); max-height:200px; overflow-y:auto"></div>
   </div>
 
   <!-- ============================================================
        OTA FIRMWARE UPLOAD
        ============================================================ -->
   <div class="sect">
-    <span class="num">// 07</span>
+    <span class="num">// 06</span>
     <span class="label">Firmware Upload</span>
     <span class="rule"></span>
     <span class="hint">browser OTA · select compiled .bin</span>
@@ -2720,7 +2333,6 @@ const DEFAULT_BOARDS = ["192.168.8.138", "192.168.8.213", "192.168.8.198"];
 const LS_KEY = "servoCluster.boards";
 
 const PULSE_MIN = 150, PULSE_MAX = 600;
-const ZERO_PULSE_HEIGHT_PCT = 4; // empty-state floor so meters aren't visually empty
 const MOTOR_TEST_SAFE_UP_PCT = 80; // avoid binding winches at the absolute upper limit
 
 // ============================================================
@@ -2821,7 +2433,7 @@ async function refreshBoardIdMap() {
     // Only re-render the editor sections when the boardId↔IP mapping actually
     // changed. pollOnce() calls this every ~800ms; re-rendering unconditionally
     // rebuilt every <select>'s DOM and closed any dropdown the operator had
-    // open mid-selection (the target/cmd pickers in // 04–// 06).
+    // open mid-selection (the target/cmd pickers in // 02–// 04).
     let changed = next.size !== boardIdByIp.size;
     if (!changed) {
       for (const [ip, id] of next) {
@@ -2880,11 +2492,6 @@ function fmtUptime(ms) {
   const h = Math.floor(m / 60);
   return h + "h " + (m % 60).toString().padStart(2, "0") + "m";
 }
-function pulseToPct(p) {
-  if (p == null) return ZERO_PULSE_HEIGHT_PCT;
-  const v = (p - PULSE_MIN) / (PULSE_MAX - PULSE_MIN);
-  return Math.max(ZERO_PULSE_HEIGHT_PCT, Math.min(100, v * 100));
-}
 function pad2(n) { return String(n).padStart(2, "0"); }
 
 // ============================================================
@@ -2915,206 +2522,10 @@ function renderBoardList() {
 // pretend there are 13 nonexistent servos sitting at center pulse.
 const VISIBLE_SERVO_CHANNELS = 3;
 
-// Approximate degrees from pulse using the firmware's calibration window.
-// Servos can have per-channel calibration; for a quick degree readout in the
-// UI a 150..600 → 0..180 mapping is close enough to be useful at a glance.
-function pulseToDeg(p) {
-  if (p == null) return null;
-  const clamped = Math.max(PULSE_MIN, Math.min(PULSE_MAX, p));
-  return Math.round((clamped - PULSE_MIN) / (PULSE_MAX - PULSE_MIN) * 180);
-}
-
-function renderServoInstrument(s, idx) {
-  // Skeleton (no telemetry yet)
-  if (!s) {
-    return `<article class="instrument" data-ch="${idx}">
-      <header class="ins-head">
-        <span class="kind">Servo</span>
-        <span class="num">${pad2(idx)}</span>
-        <span class="state">—</span>
-      </header>
-      <div class="ins-body">
-        <div class="ins-readout">
-          <div class="big">—</div>
-          <div class="unit">µs · pulse</div>
-          <div class="second"><span class="k">θ</span><span>—°</span></div>
-        </div>
-        <div class="ins-gauge"><div class="mid"></div><div class="bar" style="height:${ZERO_PULSE_HEIGHT_PCT}%"></div></div>
-      </div>
-      <footer class="ins-foot">
-        <span class="k">range</span><span>150 ┄ 600 µs</span>
-      </footer>
-    </article>`;
-  }
-
-  const h = pulseToPct(s.pulse);
-  const t = pulseToPct(s.target);
-  const deg = pulseToDeg(s.pulse);
-  const targetDeg = pulseToDeg(s.target);
-  const cls = ["instrument"];
-  if (s.moving) cls.push("moving");
-  if (s.cont) cls.push("cont");
-  const stateWord = s.stopped ? "off" : s.moving ? "moving" : (s.cont ? "cont" : "hold");
-  const showGhost = Math.abs((s.target ?? s.pulse) - s.pulse) > 4;
-  const ghost = showGhost ? `<div class="ghost" style="bottom:${t}%"></div>` : "";
-
-  return `<article class="${cls.join(' ')}" data-ch="${idx}">
-    <header class="ins-head">
-      <span class="kind">Servo</span>
-      <span class="num">${pad2(idx)}</span>
-      <span class="state">${stateWord}</span>
-    </header>
-    <div class="ins-body">
-      <div class="ins-readout">
-        <div class="big">${s.pulse}</div>
-        <div class="unit">µs · pulse</div>
-        <div class="second">
-          <span><span class="k">θ</span> ${deg != null ? deg + '°' : '—'}</span>
-          ${showGhost ? `<span><span class="k">→</span> ${targetDeg}°</span>` : ''}
-        </div>
-      </div>
-      <div class="ins-gauge">
-        <div class="mid"></div>
-        ${ghost}
-        <div class="bar" style="height:${h}%"></div>
-      </div>
-    </div>
-    <footer class="ins-foot">
-      <span class="k">range</span><span>150 ┄ 600 µs</span>
-    </footer>
-  </article>`;
-}
-
-function renderDcInstrument(motor) {
-  // Skeleton
-  if (!motor) {
-    return `<article class="instrument dc">
-      <header class="ins-head">
-        <span class="kind">DC</span>
-        <span class="num">M0</span>
-        <span class="state">—</span>
-      </header>
-      <div class="ins-body">
-        <div class="ins-dc-readout">
-          <span class="big">—</span>
-          <span class="unit">% · speed</span>
-        </div>
-        <div class="ins-bipolar"><div class="fill" style="left:50%; width:0"></div></div>
-        <div class="ins-bipolar-labels"><span>← rev</span><span class="mid">0</span><span>fwd →</span></div>
-      </div>
-      <footer class="ins-foot">
-        <span class="k">range</span><span>−100 ┄ +100</span>
-      </footer>
-    </article>`;
-  }
-
-  const spd = motor.speed | 0;
-  const cls = ["instrument", "dc"];
-  if (spd > 0) cls.push("fwd");
-  else if (spd < 0) cls.push("rev");
-  const stateWord = spd === 0 ? "stop" : (spd > 0 ? "fwd" : "rev");
-  // Bipolar fill — width is |spd|% of half the bar (50%), positioned from center.
-  const halfPct = Math.min(100, Math.abs(spd)) / 2;
-  const left = spd >= 0 ? 50 : (50 - halfPct);
-  const width = halfPct;
-  const signed = (spd > 0 ? '+' : '') + spd;
-
-  return `<article class="${cls.join(' ')}">
-    <header class="ins-head">
-      <span class="kind">DC</span>
-      <span class="num">M0</span>
-      <span class="state">${stateWord}</span>
-    </header>
-    <div class="ins-body">
-      <div class="ins-dc-readout">
-        <span class="big">${signed}</span>
-        <span class="unit">% · speed</span>
-      </div>
-      <div class="ins-bipolar">
-        <div class="fill" style="left:${left}%; width:${width}%"></div>
-      </div>
-      <div class="ins-bipolar-labels"><span>← rev</span><span class="mid">0</span><span>fwd →</span></div>
-    </div>
-    <footer class="ins-foot">
-      <span class="k">commit</span><span>−100 ┄ +100</span>
-    </footer>
-  </article>`;
-}
-
-function renderNowPlaying(motion, seq) {
-  // Highlights baked MOTION first; falls back to legacy SEQ progress.
-  const motionActive = motion && motion.active;
-  const seqActive = seq && seq.active;
-  if (motionActive) {
-    const elapsed = motion.startedMs || 0;
-    const total = motion.durationMs || 0;
-    const pct = total > 0 ? Math.min(100, (elapsed / total) * 100) : 0;
-    return `<div class="nowplaying on">
-      <span class="k">Now ▶</span>
-      <span class="id">${escapeHtml(motion.id || '—')}</span>
-      <div class="progress-mini"><div class="fill" style="width:${pct}%"></div></div>
-    </div>`;
-  }
-  if (seqActive) {
-    return `<div class="nowplaying on">
-      <span class="k">Seq ▶</span>
-      <span class="id">sequence · ${seq.len} frames${seq.loop ? ' ↺' : ''}</span>
-      <div class="progress-mini"><div class="fill" style="width:30%"></div></div>
-    </div>`;
-  }
-  return `<div class="nowplaying idle">
-    <span class="k">idle</span>
-    <span class="id">no motion playing</span>
-    <div class="progress-mini"><div class="fill"></div></div>
-  </div>`;
-}
-
-function renderLastCmd(ip) {
-  const entry = lastCmd.get(ip);
-  if (!entry) {
-    return `<div class="lastcmd idle">
-      <span class="k">› last</span>
-      <span class="cmd">—</span>
-      <span class="ts">—</span>
-    </div>`;
-  }
-  const ageMs = Date.now() - entry.ts;
-  return `<div class="lastcmd">
-    <span class="k">› last</span>
-    <span class="cmd">${escapeHtml(entry.cmd)}</span>
-    <span class="ts">${fmtAge(ageMs)}</span>
-  </div>`;
-}
-
-function fmtAge(ms) {
-  if (ms < 1000) return "now";
-  const s = Math.floor(ms / 1000);
-  if (s < 60) return s + "s ago";
-  const m = Math.floor(s / 60);
-  if (m < 60) return m + "m ago";
-  const h = Math.floor(m / 60);
-  return h + "h ago";
-}
-
 function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, c => (
     { '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]
   ));
-}
-
-function renderInstruments(servos, motor, motion, seq, ip) {
-  const servoList = (servos || []).filter(s => s.i < VISIBLE_SERVO_CHANNELS);
-  const servoByCh = new Map(servoList.map(s => [s.i, s]));
-  const tiles = [];
-  for (let i = 0; i < VISIBLE_SERVO_CHANNELS; i++) {
-    tiles.push(renderServoInstrument(servoByCh.get(i) || null, i));
-  }
-  tiles.push(renderDcInstrument(motor || null));
-  return `
-    ${renderNowPlaying(motion, seq)}
-    <div class="instruments">${tiles.join("")}</div>
-    ${renderLastCmd(ip)}
-  `;
 }
 
 function renderPills(s) {
@@ -3146,52 +2557,27 @@ function renderPills(s) {
 
 // renderProgress (legacy Position/Speed sequence tape) removed in servo-voc.
 
-function renderBoardCard(ip, idx, status, online) {
-  const id = status?.node ?? "—";
+// Slim board row (servo-lqq): the operator question is "is the board on, and
+// what is it playing?" — id · ip · dot · uptime · status pills. The old
+// per-channel instrument graphics were deleted; the Motor Test drawer is the
+// place to watch/poke individual channels.
+function renderBoardRow(ip, idx, status, online) {
   const idStr = (status?.node != null) ? pad2(status.node) : "—";
   const ipShort = status?.ip ?? ip;
-  const uptime = status ? fmtUptime(status.uptimeMs) : "offline";
   const ageS = lastSeen.has(ip) ? Math.round((Date.now() - lastSeen.get(ip)) / 1000) : null;
   let dataState = "offline";
   if (online) dataState = status?.otaInProgress ? "ota" : "online";
 
-  // Legacy timescale telemetry removed in servo-voc.
-
-  const instruments = renderInstruments(
-    status?.servos, status?.motor, status?.motion, status?.sequence, ip
-  );
-
-  const offlineNote = !online
-    ? `<div style="color: var(--alert); font-family: var(--label); font-size: 10px; text-transform: uppercase; letter-spacing: 0.24em; font-weight:600;">Signal lost ${ageS != null ? '· ' + ageS + 's' : ''}</div>`
-    : "";
+  const health = online
+    ? `<span class="br-up"><span class="k">up</span> ${fmtUptime(status.uptimeMs)}</span>`
+    : `<span class="br-lost">signal lost${ageS != null ? ` · ${ageS}s` : ""}</span>`;
 
   return `
-    <article class="board" data-state="${dataState}">
-      <span class="panel-corner-bl"></span><span class="panel-corner-br"></span>
-
-      <section class="ident">
-        <div class="row1">
-          <div class="id">${idStr}</div>
-          <div class="id-label">node</div>
-        </div>
-        <div class="ip">${ipShort}<span class="dot"></span></div>
-        <div class="stamp"><span class="k">uptime</span><span>${uptime}</span></div>
-        <div class="stamp"><span class="k">slot</span><span>0${idx + 1} / 03</span></div>
-        ${offlineNote}
-      </section>
-
-      <section class="telemetry">
-        ${ status ? `<div class="pills">${renderPills(status)}</div>` : `<div class="pills"><span class="pill alert">NO SIGNAL</span></div>` }
-        <!-- Legacy Position/Speed sequence progress + timescale removed (servo-voc). -->
-      </section>
-
-      <section class="channels">
-        <div class="channels-head">
-          <span class="label">Actuators · 3 servo · 1 dc</span>
-          <span class="scale">pulse 150 ┄ 600 µs · dc ±100</span>
-        </div>
-        ${instruments}
-      </section>
+    <article class="board-row" data-state="${dataState}">
+      <span class="br-id">${idStr}<span class="br-id-label">node</span></span>
+      <span class="br-ip">${ipShort}<span class="dot"></span></span>
+      ${health}
+      <span class="br-pills pills">${status ? renderPills(status) : `<span class="pill alert">NO SIGNAL</span>`}</span>
     </article>`;
 }
 
@@ -3210,7 +2596,7 @@ function render() {
     // that took close to the timeout slipped past and the card flickered
     // offline even while the header still counted the board as online.
     const online = status && (Date.now() - lastTs < OFFLINE_AFTER_MS);
-    return renderBoardCard(ip, i, online ? status : status, !!online);
+    return renderBoardRow(ip, i, online ? status : status, !!online);
   });
   boardsEl.innerHTML = cards.join("");
 
@@ -6544,7 +5930,7 @@ function toggleSequenceStepPreRoll(steps, index) {
   return copy;
 }
 
-// The // 07 step table has inputs for cmd/duration/target/label/hold/dc and
+// The // 03 step table has inputs for cmd/duration/target/label/hold/dc and
 // nothing for noPrep, so rebuilding a step from its row would quietly delete
 // the opt-out. Editing an unrelated field must not resurrect a pre-roll the
 // operator deleted, so the flag is carried across from the step the row came
@@ -6693,7 +6079,7 @@ function formatSequencePreviewValue(value, unit, compact = false) {
 function renderSequenceArrangementMotionLibrary(lib) {
   const motions = lib.motions || [];
   if (!motions.length) {
-    seqArrangeMotionListEl.innerHTML = `<div class="seq-arrange-library-empty">No Motions in this library yet. Create one in // 06 Motion, then return here.</div>`;
+    seqArrangeMotionListEl.innerHTML = `<div class="seq-arrange-library-empty">No Motions in this library yet. Create one in // 02 Motion, then return here.</div>`;
     return;
   }
   seqArrangeMotionListEl.innerHTML = motions.map(motion => `<article class="seq-arrange-motion-card">
@@ -8643,7 +8029,7 @@ bakedPanelEl.addEventListener("click", async (e) => {
   btn.disabled = false;
 });
 
-// Collapsed by default to keep // 03 tidy; expand to see bars + prune (servo-gwa).
+// Collapsed by default to keep // 05 tidy; expand to see bars + prune (servo-gwa).
 $("#bakeBudgetToggle").addEventListener("click", () => {
   bakeBudgetExpanded = !bakeBudgetExpanded;
   $("#bakeBudgetToggle").setAttribute("aria-expanded", String(bakeBudgetExpanded));
