@@ -670,6 +670,13 @@
     background: var(--amber);
     border-color: var(--amber);
   }
+  /* servo-4vl: a MOTION step shorter than its motion's length can't finish the
+     move before the next step fires. Flag the duration cell + offer a one-click
+     "fit to motion length". */
+  .seq-dur { display: flex; align-items: center; gap: 4px; }
+  .seq-dur input { flex: 1 1 auto; min-width: 0; }
+  .seq-dur.short input { border-color: var(--alert); background: rgba(241, 90, 58, 0.10); }
+  .seq-fit { flex: 0 0 auto; padding: 3px 6px; font-size: 9px; white-space: nowrap; }
   /* Per-board DC lane inputs (servo-i0v). Three narrow cells; an empty one
      means "unchanged", which is why the placeholder is a dash rather than 0. */
   .seq-dc {
@@ -5849,7 +5856,7 @@ function autofillMotionStepDuration(cmdEl) {
   durInput.value = dur;
   markSeqDirty();
   const seq = readSequenceFromDom();
-  seqTotalEl.textContent = `total ${formatMs(seq.steps.reduce((s, st) => s + st.durationMs, 0))}`;
+  seqTotalEl.textContent = seqTotalText(seq.steps, sequenceLibrary().motions || []);
   return true;
 }
 
@@ -5857,6 +5864,16 @@ function formatMs(ms) {
   if (ms < 1000) return `${ms}ms`;
   const s = ms / 1000;
   return `${s.toFixed(s % 1 ? 1 : 0)}s`;
+}
+
+// The "total Xs" readout plus a servo-4vl tally of MOTION steps that are shorter
+// than the motion they fire. Shared by the initial render and the live input
+// handler so the warning count stays consistent while typing.
+function seqTotalText(steps, motions) {
+  const list = Array.isArray(steps) ? steps : [];
+  const total = list.reduce((sum, step) => sum + (parseInt(step && step.durationMs, 10) || 0), 0);
+  const short = list.reduce((n, step) => n + (motionStepDurationShortfall(step, motions) ? 1 : 0), 0);
+  return `total ${formatMs(total)}${short ? ` · ⚠ ${short} step${short === 1 ? "" : "s"} cut off` : ""}`;
 }
 
 // === SEQ-ARRANGE-CORE START ===
@@ -6279,10 +6296,30 @@ function targetOptions(selected) {
 
 // Parse a step command's referenced Motion id, or null if the command isn't
 // a MOTION. Mirrors autofillMotionStepDuration's parse (servo-seqviz).
+// === SEQ-DURATION-GUARD START ===
 function seqStepMotionId(cmd) {
   const m = /^MOTION\s+(\S+)/i.exec(String(cmd || "").trim());
   return m ? m[1] : null;
 }
+
+// servo-4vl: a step that fires `MOTION <id>` needs at least the motion's own
+// durationMs, or the next step interrupts before the servos finish the move
+// (there is no queueing — schema §3, and that is exactly how a "clear" or
+// "lower" gesture ends up only half-travelled). The bake pre-roll is added on
+// top at bake time, so the authored floor is the raw motion.durationMs. Returns
+// the shortfall for a too-short MOTION step, or null when it is fine, not a
+// MOTION step, or the id is unknown (unknown ids surface in the preview row).
+function motionStepDurationShortfall(step, motions) {
+  const id = seqStepMotionId(step && step.cmd);
+  if (!id) return null;
+  const motion = (motions || []).find(m => m.id === id);
+  if (!motion || motion.durationMs == null) return null;
+  const need = Math.max(0, parseInt(motion.durationMs, 10) || 0);
+  const have = Math.max(0, parseInt(step && step.durationMs, 10) || 0);
+  if (need <= 0 || have >= need) return null;
+  return { motionId: id, need, have, shortMs: need - have };
+}
+// === SEQ-DURATION-GUARD END ===
 
 // Build the inner HTML of an expanded step-preview row. MOTION steps that
 // resolve to a library motion render a compact, read-only per-track strip
@@ -6359,8 +6396,7 @@ function renderSequencer() {
   seqTagsEl.innerHTML = (seq.tags || []).map(tag =>
     `<span class="seq-chip">${escapeHtml(tag)} <button data-tag-remove="${escapeHtml(tag)}" title="Remove tag">x</button></span>`
   ).join("");
-  const total = (seq.steps || []).reduce((sum, step) => sum + (parseInt(step.durationMs, 10) || 0), 0);
-  seqTotalEl.textContent = `total ${formatMs(total)}`;
+  seqTotalEl.textContent = seqTotalText(seq.steps || [], lib.motions || []);
   seqScrubEl.max = Math.max(0, (seq.steps || []).length - 1);
   seqScrubEl.value = Math.min(parseInt(seqScrubEl.value, 10) || 0, parseInt(seqScrubEl.max, 10) || 0);
   seqScrubLabelEl.textContent = `${pad2((parseInt(seqScrubEl.value, 10) || 0) + 1)} / ${pad2((seq.steps || []).length)}`;
@@ -6370,13 +6406,14 @@ function renderSequencer() {
   const activeIdx = highlightedAuthoredIndex(seq.id);
   seqStepsEl.innerHTML = (seq.steps || []).map((raw, index) => {
     const step = normalizeStep(raw);
+    const short = motionStepDurationShortfall(step, lib.motions || []);
     const active = activeIdx === index;
     const expanded = seqExpandedSteps.has(index);
     const row = `<tr data-index="${index}" draggable="true"${active ? ' class="active"' : ''}>
       <td class="seq-drag" title="Drag to reorder">=</td>
       <td class="seq-index"><button class="seq-expand${expanded ? " open" : ""}" data-expand="${index}" title="Show/hide keyframe preview">${expanded ? "▾" : "▸"}</button>${pad2(index + 1)}</td>
       <td><input data-field="cmd" type="text" list="seqCmdSuggest" spellcheck="false" autocomplete="off" value="${escapeHtml(step.cmd)}" title="${escapeHtml(CMD_HELP)}"></td>
-      <td><input data-field="durationMs" type="number" min="0" step="100" value="${step.durationMs}"></td>
+      <td class="seq-dur${short ? " short" : ""}"><input data-field="durationMs" type="number" min="0" step="100" value="${step.durationMs}"${short ? ` title="Motion ${escapeHtml(short.motionId)} needs ${short.need}ms to finish — this step cuts it off by ${short.shortMs}ms"` : ""}>${short ? `<button class="cmd compact alert seq-fit" data-fit="${index}" data-fit-ms="${short.need}" title="Set duration to the motion's length (${formatMs(short.need)}) so the move completes">fit ${formatMs(short.need)}</button>` : ""}</td>
       <td><select data-field="target">${targetOptions(step.target)}</select></td>
       <td class="seq-dc">${DC_LANE_BOARD_IDS.map(boardId => `<input data-dc-board="${boardId}" type="number" min="${-DC_LANE_SPEED_LIMIT}" max="${DC_LANE_SPEED_LIMIT}" step="5" placeholder="–" title="B${boardId} motor speed · blank = unchanged, 0 = stop" value="${step.dc[boardId] != null ? step.dc[boardId] : ""}">`).join("")}</td>
       <td><input data-field="label" type="text" value="${escapeHtml(step.label)}" spellcheck="false"></td>
@@ -8167,8 +8204,7 @@ seqTagsEl.addEventListener("click", e => {
 seqStepsEl.addEventListener("input", () => {
   markSeqDirty();
   const seq = readSequenceFromDom();
-  const total = seq.steps.reduce((sum, step) => sum + step.durationMs, 0);
-  seqTotalEl.textContent = `total ${formatMs(total)}`;
+  seqTotalEl.textContent = seqTotalText(seq.steps, sequenceLibrary().motions || []);
 });
 seqStepsEl.addEventListener("change", (e) => {
   autofillMotionStepDuration(e.target);   // MOTION <id> → motion's full duration
@@ -8184,6 +8220,18 @@ seqStepsEl.addEventListener("click", async e => {
     // then re-render to show/hide the sub-row.
     if (seqDirty) saveCurrentSequence(readSequenceFromDom());
     else renderSequencer();
+    return;
+  }
+  // servo-4vl: "fit" a too-short MOTION step to the motion's full length so the
+  // move completes. Reads the DOM first to keep any other in-progress edits.
+  const fit = e.target.dataset.fit;
+  if (fit != null) {
+    const idx = parseInt(fit, 10);
+    const ms = Math.max(0, parseInt(e.target.dataset.fitMs, 10) || 0);
+    const seq = readSequenceFromDom();
+    if (seq.steps[idx]) seq.steps[idx].durationMs = ms;
+    saveCurrentSequence(seq);
+    setSeqStatus(`step ${pad2(idx + 1)} fit to motion · ${formatMs(ms)}`, "amber");
     return;
   }
   const editMotion = e.target.dataset.editMotion;
