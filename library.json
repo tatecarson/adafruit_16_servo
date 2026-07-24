@@ -8,8 +8,80 @@
         "clear"
       ],
       "scope": "cluster",
-      "durationMs": 4000,
+      "durationMs": 8000,
       "tracks": [
+        {
+          "kind": "servo",
+          "boardId": 1,
+          "channel": 0,
+          "label": "B1.S0",
+          "keyframes": [
+            {
+              "atMs": 0,
+              "value": 100
+            }
+          ]
+        },
+        {
+          "kind": "servo",
+          "boardId": 1,
+          "channel": 1,
+          "label": "B1.S1",
+          "keyframes": [
+            {
+              "atMs": 0,
+              "value": 100
+            }
+          ]
+        },
+        {
+          "kind": "servo",
+          "boardId": 1,
+          "channel": 2,
+          "label": "B1.S2",
+          "keyframes": [
+            {
+              "atMs": 0,
+              "value": 100
+            }
+          ]
+        },
+        {
+          "kind": "servo",
+          "boardId": 2,
+          "channel": 0,
+          "label": "B2.S0",
+          "keyframes": [
+            {
+              "atMs": 0,
+              "value": 100
+            }
+          ]
+        },
+        {
+          "kind": "servo",
+          "boardId": 2,
+          "channel": 1,
+          "label": "B2.S1",
+          "keyframes": [
+            {
+              "atMs": 0,
+              "value": 100
+            }
+          ]
+        },
+        {
+          "kind": "servo",
+          "boardId": 2,
+          "channel": 2,
+          "label": "B2.S2",
+          "keyframes": [
+            {
+              "atMs": 0,
+              "value": 100
+            }
+          ]
+        },
         {
           "kind": "servo",
           "boardId": 3,
@@ -18,7 +90,11 @@
           "keyframes": [
             {
               "atMs": 0,
-              "value": 20
+              "value": 100
+            },
+            {
+              "atMs": 7500,
+              "value": 70
             }
           ]
         },
@@ -30,7 +106,11 @@
           "keyframes": [
             {
               "atMs": 0,
-              "value": 20
+              "value": 100
+            },
+            {
+              "atMs": 7500,
+              "value": 70
             }
           ]
         },
@@ -42,7 +122,11 @@
           "keyframes": [
             {
               "atMs": 0,
-              "value": 20
+              "value": 100
+            },
+            {
+              "atMs": 7500,
+              "value": 70
             }
           ]
         }
@@ -55,8 +139,80 @@
         "drag"
       ],
       "scope": "cluster",
-      "durationMs": 5000,
+      "durationMs": 6500,
       "tracks": [
+        {
+          "kind": "servo",
+          "boardId": 1,
+          "channel": 0,
+          "label": "B1.S0",
+          "keyframes": [
+            {
+              "atMs": 0,
+              "value": 100
+            }
+          ]
+        },
+        {
+          "kind": "servo",
+          "boardId": 1,
+          "channel": 1,
+          "label": "B1.S1",
+          "keyframes": [
+            {
+              "atMs": 0,
+              "value": 100
+            }
+          ]
+        },
+        {
+          "kind": "servo",
+          "boardId": 1,
+          "channel": 2,
+          "label": "B1.S2",
+          "keyframes": [
+            {
+              "atMs": 0,
+              "value": 100
+            }
+          ]
+        },
+        {
+          "kind": "servo",
+          "boardId": 2,
+          "channel": 0,
+          "label": "B2.S0",
+          "keyframes": [
+            {
+              "atMs": 0,
+              "value": 100
+            }
+          ]
+        },
+        {
+          "kind": "servo",
+          "boardId": 2,
+          "channel": 1,
+          "label": "B2.S1",
+          "keyframes": [
+            {
+              "atMs": 0,
+              "value": 100
+            }
+          ]
+        },
+        {
+          "kind": "servo",
+          "boardId": 2,
+          "channel": 2,
+          "label": "B2.S2",
+          "keyframes": [
+            {
+              "atMs": 0,
+              "value": 100
+            }
+          ]
+        },
         {
           "kind": "servo",
           "boardId": 3,
@@ -65,10 +221,10 @@
           "keyframes": [
             {
               "atMs": 0,
-              "value": 20
+              "value": 70
             },
             {
-              "atMs": 5000,
+              "atMs": 6160,
               "value": 100
             }
           ]
@@ -81,7 +237,11 @@
           "keyframes": [
             {
               "atMs": 0,
-              "value": 20
+              "value": 70
+            },
+            {
+              "atMs": 6200,
+              "value": 70
             }
           ]
         },
@@ -93,7 +253,11 @@
           "keyframes": [
             {
               "atMs": 0,
-              "value": 20
+              "value": 70
+            },
+            {
+              "atMs": 6200,
+              "value": 70
             }
           ]
         }
@@ -106,8 +270,80 @@
         "drag"
       ],
       "scope": "cluster",
-      "durationMs": 5000,
+      "durationMs": 6000,
       "tracks": [
+        {
+          "kind": "servo",
+          "boardId": 1,
+          "channel": 0,
+          "label": "B1.S0",
+          "keyframes": [
+            {
+              "atMs": 0,
+              "value": 100
+            }
+          ]
+        },
+        {
+          "kind": "servo",
+          "boardId": 1,
+          "channel": 1,
+          "label": "B1.S1",
+          "keyframes": [
+            {
+              "atMs": 0,
+              "value": 100
+            }
+          ]
+        },
+        {
+          "kind": "servo",
+          "boardId": 1,
+          "channel": 2,
+          "label": "B1.S2",
+          "keyframes": [
+            {
+              "atMs": 0,
+              "value": 100
+            }
+          ]
+        },
+        {
+          "kind": "servo",
+          "boardId": 2,
+          "channel": 0,
+          "label": "B2.S0",
+          "keyframes": [
+            {
+              "atMs": 0,
+              "value": 100
+            }
+          ]
+        },
+        {
+          "kind": "servo",
+          "boardId": 2,
+          "channel": 1,
+          "label": "B2.S1",
+          "keyframes": [
+            {
+              "atMs": 0,
+              "value": 100
+            }
+          ]
+        },
+        {
+          "kind": "servo",
+          "boardId": 2,
+          "channel": 2,
+          "label": "B2.S2",
+          "keyframes": [
+            {
+              "atMs": 0,
+              "value": 100
+            }
+          ]
+        },
         {
           "kind": "servo",
           "boardId": 3,
@@ -128,10 +364,10 @@
           "keyframes": [
             {
               "atMs": 0,
-              "value": 20
+              "value": 70
             },
             {
-              "atMs": 5000,
+              "atMs": 6000,
               "value": 100
             }
           ]
@@ -144,7 +380,7 @@
           "keyframes": [
             {
               "atMs": 0,
-              "value": 20
+              "value": 70
             }
           ]
         }
@@ -157,8 +393,80 @@
         "drag"
       ],
       "scope": "cluster",
-      "durationMs": 5000,
+      "durationMs": 6500,
       "tracks": [
+        {
+          "kind": "servo",
+          "boardId": 1,
+          "channel": 0,
+          "label": "B1.S0",
+          "keyframes": [
+            {
+              "atMs": 0,
+              "value": 100
+            }
+          ]
+        },
+        {
+          "kind": "servo",
+          "boardId": 1,
+          "channel": 1,
+          "label": "B1.S1",
+          "keyframes": [
+            {
+              "atMs": 0,
+              "value": 100
+            }
+          ]
+        },
+        {
+          "kind": "servo",
+          "boardId": 1,
+          "channel": 2,
+          "label": "B1.S2",
+          "keyframes": [
+            {
+              "atMs": 0,
+              "value": 100
+            }
+          ]
+        },
+        {
+          "kind": "servo",
+          "boardId": 2,
+          "channel": 0,
+          "label": "B2.S0",
+          "keyframes": [
+            {
+              "atMs": 0,
+              "value": 100
+            }
+          ]
+        },
+        {
+          "kind": "servo",
+          "boardId": 2,
+          "channel": 1,
+          "label": "B2.S1",
+          "keyframes": [
+            {
+              "atMs": 0,
+              "value": 100
+            }
+          ]
+        },
+        {
+          "kind": "servo",
+          "boardId": 2,
+          "channel": 2,
+          "label": "B2.S2",
+          "keyframes": [
+            {
+              "atMs": 0,
+              "value": 100
+            }
+          ]
+        },
         {
           "kind": "servo",
           "boardId": 3,
@@ -191,10 +499,10 @@
           "keyframes": [
             {
               "atMs": 0,
-              "value": 20
+              "value": 70
             },
             {
-              "atMs": 5000,
+              "atMs": 6160,
               "value": 100
             }
           ]
@@ -208,8 +516,80 @@
         "drag"
       ],
       "scope": "cluster",
-      "durationMs": 5000,
+      "durationMs": 6500,
       "tracks": [
+        {
+          "kind": "servo",
+          "boardId": 1,
+          "channel": 0,
+          "label": "B1.S0",
+          "keyframes": [
+            {
+              "atMs": 0,
+              "value": 100
+            }
+          ]
+        },
+        {
+          "kind": "servo",
+          "boardId": 1,
+          "channel": 1,
+          "label": "B1.S1",
+          "keyframes": [
+            {
+              "atMs": 0,
+              "value": 100
+            }
+          ]
+        },
+        {
+          "kind": "servo",
+          "boardId": 1,
+          "channel": 2,
+          "label": "B1.S2",
+          "keyframes": [
+            {
+              "atMs": 0,
+              "value": 100
+            }
+          ]
+        },
+        {
+          "kind": "servo",
+          "boardId": 2,
+          "channel": 0,
+          "label": "B2.S0",
+          "keyframes": [
+            {
+              "atMs": 0,
+              "value": 100
+            }
+          ]
+        },
+        {
+          "kind": "servo",
+          "boardId": 2,
+          "channel": 1,
+          "label": "B2.S1",
+          "keyframes": [
+            {
+              "atMs": 0,
+              "value": 100
+            }
+          ]
+        },
+        {
+          "kind": "servo",
+          "boardId": 2,
+          "channel": 2,
+          "label": "B2.S2",
+          "keyframes": [
+            {
+              "atMs": 0,
+              "value": 100
+            }
+          ]
+        },
         {
           "kind": "servo",
           "boardId": 3,
@@ -218,10 +598,10 @@
           "keyframes": [
             {
               "atMs": 0,
-              "value": 20
+              "value": 70
             },
             {
-              "atMs": 5000,
+              "atMs": 6500,
               "value": 100
             }
           ]
@@ -234,10 +614,10 @@
           "keyframes": [
             {
               "atMs": 0,
-              "value": 20
+              "value": 70
             },
             {
-              "atMs": 5000,
+              "atMs": 6500,
               "value": 100
             }
           ]
@@ -250,7 +630,7 @@
           "keyframes": [
             {
               "atMs": 0,
-              "value": 20
+              "value": 70
             }
           ]
         }
@@ -263,8 +643,80 @@
         "drag"
       ],
       "scope": "cluster",
-      "durationMs": 6000,
+      "durationMs": 8200,
       "tracks": [
+        {
+          "kind": "servo",
+          "boardId": 1,
+          "channel": 0,
+          "label": "B1.S0",
+          "keyframes": [
+            {
+              "atMs": 0,
+              "value": 100
+            }
+          ]
+        },
+        {
+          "kind": "servo",
+          "boardId": 1,
+          "channel": 1,
+          "label": "B1.S1",
+          "keyframes": [
+            {
+              "atMs": 0,
+              "value": 100
+            }
+          ]
+        },
+        {
+          "kind": "servo",
+          "boardId": 1,
+          "channel": 2,
+          "label": "B1.S2",
+          "keyframes": [
+            {
+              "atMs": 0,
+              "value": 100
+            }
+          ]
+        },
+        {
+          "kind": "servo",
+          "boardId": 2,
+          "channel": 0,
+          "label": "B2.S0",
+          "keyframes": [
+            {
+              "atMs": 0,
+              "value": 100
+            }
+          ]
+        },
+        {
+          "kind": "servo",
+          "boardId": 2,
+          "channel": 1,
+          "label": "B2.S1",
+          "keyframes": [
+            {
+              "atMs": 0,
+              "value": 100
+            }
+          ]
+        },
+        {
+          "kind": "servo",
+          "boardId": 2,
+          "channel": 2,
+          "label": "B2.S2",
+          "keyframes": [
+            {
+              "atMs": 0,
+              "value": 100
+            }
+          ]
+        },
         {
           "kind": "servo",
           "boardId": 3,
@@ -273,10 +725,10 @@
           "keyframes": [
             {
               "atMs": 0,
-              "value": 20
+              "value": 70
             },
             {
-              "atMs": 6000,
+              "atMs": 7500,
               "value": 100
             }
           ]
@@ -289,10 +741,10 @@
           "keyframes": [
             {
               "atMs": 0,
-              "value": 20
+              "value": 70
             },
             {
-              "atMs": 6000,
+              "atMs": 7500,
               "value": 100
             }
           ]
@@ -305,10 +757,10 @@
           "keyframes": [
             {
               "atMs": 0,
-              "value": 20
+              "value": 70
             },
             {
-              "atMs": 6000,
+              "atMs": 7500,
               "value": 100
             }
           ]
@@ -327,6 +779,78 @@
       "tracks": [
         {
           "kind": "servo",
+          "boardId": 1,
+          "channel": 0,
+          "label": "B1.S0",
+          "keyframes": [
+            {
+              "atMs": 0,
+              "value": 100
+            }
+          ]
+        },
+        {
+          "kind": "servo",
+          "boardId": 1,
+          "channel": 1,
+          "label": "B1.S1",
+          "keyframes": [
+            {
+              "atMs": 0,
+              "value": 100
+            }
+          ]
+        },
+        {
+          "kind": "servo",
+          "boardId": 1,
+          "channel": 2,
+          "label": "B1.S2",
+          "keyframes": [
+            {
+              "atMs": 0,
+              "value": 100
+            }
+          ]
+        },
+        {
+          "kind": "servo",
+          "boardId": 2,
+          "channel": 0,
+          "label": "B2.S0",
+          "keyframes": [
+            {
+              "atMs": 0,
+              "value": 100
+            }
+          ]
+        },
+        {
+          "kind": "servo",
+          "boardId": 2,
+          "channel": 1,
+          "label": "B2.S1",
+          "keyframes": [
+            {
+              "atMs": 0,
+              "value": 100
+            }
+          ]
+        },
+        {
+          "kind": "servo",
+          "boardId": 2,
+          "channel": 2,
+          "label": "B2.S2",
+          "keyframes": [
+            {
+              "atMs": 0,
+              "value": 100
+            }
+          ]
+        },
+        {
+          "kind": "servo",
           "boardId": 3,
           "channel": 0,
           "label": "B3.S0",
@@ -382,63 +906,6 @@
             {
               "atMs": 5000,
               "value": 100
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "id": "mt-hwwg08",
-      "name": "Rise 30",
-      "tags": [],
-      "scope": "cluster",
-      "durationMs": 8000,
-      "tracks": [
-        {
-          "kind": "servo",
-          "boardId": 3,
-          "channel": 0,
-          "label": "B3.S0",
-          "keyframes": [
-            {
-              "atMs": 0,
-              "value": 100
-            },
-            {
-              "atMs": 8000,
-              "value": 70
-            }
-          ]
-        },
-        {
-          "kind": "servo",
-          "boardId": 3,
-          "channel": 1,
-          "label": "B3.S1",
-          "keyframes": [
-            {
-              "atMs": 0,
-              "value": 100
-            },
-            {
-              "atMs": 8000,
-              "value": 71
-            }
-          ]
-        },
-        {
-          "kind": "servo",
-          "boardId": 3,
-          "channel": 2,
-          "label": "B3.S2",
-          "keyframes": [
-            {
-              "atMs": 0,
-              "value": 100
-            },
-            {
-              "atMs": 8000,
-              "value": 67
             }
           ]
         }
@@ -452,13 +919,13 @@
       "tags": [],
       "steps": [
         {
-          "cmd": "MOTION mt-hwwg08",
+          "cmd": "MOTION mt-allup",
           "durationMs": 8000,
           "target": "all",
           "label": "",
           "hold": false,
           "dc": {
-            "3": 15
+            "3": 7
           }
         }
       ]
@@ -469,8 +936,16 @@
       "tags": [],
       "steps": [
         {
-          "cmd": "Rotate 15",
-          "durationMs": 8000,
+          "cmd": "Rotate 10",
+          "durationMs": 4000,
+          "target": "all",
+          "label": "",
+          "hold": false,
+          "dc": {}
+        },
+        {
+          "cmd": "Rotate 7",
+          "durationMs": 4000,
           "target": "all",
           "label": "",
           "hold": false,
@@ -478,15 +953,7 @@
         },
         {
           "cmd": "Rotate 10",
-          "durationMs": 8000,
-          "target": "all",
-          "label": "",
-          "hold": false,
-          "dc": {}
-        },
-        {
-          "cmd": "Rotate 15",
-          "durationMs": 8000,
+          "durationMs": 4000,
           "target": "all",
           "label": "",
           "hold": false,
@@ -494,7 +961,7 @@
         },
         {
           "cmd": "Rotate 5",
-          "durationMs": 8000,
+          "durationMs": 4000,
           "target": "all",
           "label": "",
           "hold": false,
@@ -511,124 +978,126 @@
       ],
       "steps": [
         {
-          "cmd": "MOTION mt-allup",
-          "durationMs": 4000,
-          "target": "all",
-          "label": "clear \u00b7 slow spin",
-          "hold": false,
-          "dc": {
-            "3": 12
-          }
-        },
-        {
           "cmd": "MOTION mt-low1",
-          "durationMs": 5000,
+          "durationMs": 6500,
           "target": "all",
           "label": "arm 1 drags \u00b7 slow",
           "hold": false,
           "dc": {
-            "3": 12
-          }
+            "3": 10
+          },
+          "noPrep": true
+        },
+        {
+          "cmd": "rotate 12",
+          "durationMs": 6000,
+          "target": "all",
+          "label": "",
+          "hold": false,
+          "dc": {}
         },
         {
           "cmd": "MOTION mt-stg2",
-          "durationMs": 5000,
+          "durationMs": 6500,
           "target": "all",
           "label": "arm 2 drags \u00b7 slow",
           "hold": false,
           "dc": {
-            "3": 12
-          }
+            "3": 10
+          },
+          "noPrep": true
+        },
+        {
+          "cmd": "rotate 12",
+          "durationMs": 6000,
+          "target": "all",
+          "label": "",
+          "hold": false,
+          "dc": {}
         },
         {
           "cmd": "MOTION mt-stg3",
-          "durationMs": 5000,
+          "durationMs": 6500,
           "target": "all",
           "label": "arm 3 drags \u00b7 all down",
           "hold": false,
           "dc": {
-            "3": 12
-          }
+            "3": 10
+          },
+          "noPrep": true
+        },
+        {
+          "cmd": "rotate 15",
+          "durationMs": 6000,
+          "target": "all",
+          "label": "",
+          "hold": false,
+          "dc": {}
         },
         {
           "cmd": "MOTION mt-stir",
-          "durationMs": 7000,
+          "durationMs": 6500,
           "target": "all",
           "label": "all dragging \u00b7 faster",
           "hold": false,
           "dc": {
-            "3": 32
+            "3": 10
           }
         }
       ]
     },
     {
-      "id": "sq-bild01",
-      "name": "Lift & Answer \u00b7 Layers",
-      "tags": [
-        "layers",
-        "build"
-      ],
+      "id": "sq-649ld4",
+      "name": "Shaking rotations",
+      "tags": [],
       "steps": [
         {
-          "cmd": "MOTION mt-allup",
-          "durationMs": 4000,
+          "cmd": "rotate 15",
+          "durationMs": 1000,
           "target": "all",
-          "label": "clear \u00b7 slow",
+          "label": "",
           "hold": false,
-          "dc": {
-            "3": 12
-          }
+          "dc": {}
         },
         {
-          "cmd": "MOTION mt-low1",
-          "durationMs": 5000,
+          "cmd": "rotate -15",
+          "durationMs": 1000,
           "target": "all",
-          "label": "arm 1 drags",
+          "label": "",
           "hold": false,
-          "dc": {
-            "3": 14
-          }
+          "dc": {}
         },
         {
-          "cmd": "MOTION mt-allup",
-          "durationMs": 4000,
+          "cmd": "rotate 18",
+          "durationMs": 1000,
           "target": "all",
-          "label": "arm up \u00b7 quiet (spins on)",
+          "label": "",
           "hold": false,
-          "dc": {
-            "3": 14
-          }
+          "dc": {}
         },
         {
-          "cmd": "MOTION mt-low2",
-          "durationMs": 5000,
+          "cmd": "rotate -18",
+          "durationMs": 1000,
           "target": "all",
-          "label": "two arms drag \u00b7 quicker",
+          "label": "",
           "hold": false,
-          "dc": {
-            "3": 22
-          }
+          "dc": {}
         },
         {
-          "cmd": "MOTION mt-allup",
-          "durationMs": 4000,
+          "cmd": "rotate 5",
+          "durationMs": 1000,
           "target": "all",
-          "label": "arms up \u00b7 quiet",
+          "label": "",
           "hold": false,
-          "dc": {
-            "3": 18
-          }
+          "dc": {}
         },
         {
-          "cmd": "MOTION mt-low3",
-          "durationMs": 6000,
+          "cmd": "rotate -5",
+          "durationMs": 1000,
           "target": "all",
-          "label": "all three drag \u00b7 fast",
+          "label": "",
           "hold": false,
-          "dc": {
-            "3": 30
-          }
+          "dc": {}
         }
       ]
     }
@@ -637,7 +1106,7 @@
     {
       "id": "bench-test",
       "name": "Bench Test",
-      "mode": "shuffle",
+      "mode": "ordered",
       "entries": [
         {
           "seqId": "sq-nxy2a1",
@@ -658,9 +1127,15 @@
           "weight": 1
         },
         {
-          "seqId": "sq-bild01",
+          "seqId": "sq-wyf1tp",
           "repeat": 1,
           "gapMs": 2000,
+          "weight": 1
+        },
+        {
+          "seqId": "sq-nxy2a1",
+          "repeat": 1,
+          "gapMs": 0,
           "weight": 1
         }
       ],
