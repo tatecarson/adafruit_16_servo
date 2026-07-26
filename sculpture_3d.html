@@ -1,0 +1,935 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>// 3D — Sculpture Simulator</title>
+<style>
+  :root {
+    --bg:        #0e0e0c;
+    --bg-elev:   #15140f;
+    --bg-deep:   #07070a;
+    --ink:       #f5f1e8;
+    --ink-dim:   #a39d8e;
+    --ink-mute:  #59554b;
+    --rule:      #2a2825;
+    --rule-hi:   #3d3a33;
+    --amber:     #ffb627;
+    --amber-soft:#5a3a05;
+    --phosphor:  #4be3c1;
+    --phos-soft: #0d3a31;
+    --alert:     #f15a3a;
+    --alert-soft:#3a1208;
+    --mono:  "IBM Plex Mono", ui-monospace, monospace;
+    --label: "IBM Plex Sans Condensed", "Helvetica Neue", sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin:0; padding:0; height:100%; }
+  body {
+    background: var(--bg); color: var(--ink);
+    font-family: var(--mono); font-size: 12px; line-height: 1.4;
+    display: grid; grid-template-columns: 1fr 320px; height: 100vh; overflow: hidden;
+  }
+  @media (max-width: 900px) { body { grid-template-columns: 1fr; grid-template-rows: 55vh 45vh; } }
+
+  #stage { position: relative; background: var(--bg-deep); }
+  #stage canvas { display: block; }
+  #hud {
+    position: absolute; left: 12px; top: 12px; pointer-events: none;
+    color: var(--ink-mute); font-size: 10px; letter-spacing: .08em; text-transform: uppercase;
+  }
+  #hud b { color: var(--amber); font-weight: 400; }
+  #readout {
+    position: absolute; left: 12px; bottom: 12px; pointer-events: none;
+    color: var(--ink-dim); font-size: 10px; white-space: pre; line-height: 1.6;
+  }
+
+  #panel { background: var(--bg-elev); border-left: 1px solid var(--rule); overflow-y: auto; padding: 0 0 40px; }
+  @media (max-width: 900px) { #panel { border-left: none; border-top: 1px solid var(--rule); } }
+
+  h1 { font-size: 11px; letter-spacing: .18em; text-transform: uppercase; color: var(--ink);
+       margin: 0; padding: 14px 14px 10px; border-bottom: 1px solid var(--rule); font-weight: 500; }
+  h1 span { color: var(--ink-mute); }
+  section { border-bottom: 1px solid var(--rule); padding: 12px 14px 14px; }
+  h2 { font-size: 9px; letter-spacing: .16em; text-transform: uppercase; color: var(--ink-mute);
+       margin: 0 0 10px; font-weight: 500; }
+  .note { color: var(--ink-mute); font-size: 10px; margin-top: 8px; line-height: 1.5; }
+
+  .row { display: grid; grid-template-columns: 34px 1fr 46px; align-items: center; gap: 8px; margin-bottom: 7px; }
+  .row label { color: var(--ink-dim); font-size: 10px; letter-spacing: .06em; }
+  .row output { text-align: right; color: var(--amber); font-variant-numeric: tabular-nums; }
+  .row.dc output { color: var(--phosphor); }
+
+  input[type=range] { -webkit-appearance: none; appearance: none; width: 100%; height: 18px; background: transparent; }
+  input[type=range]::-webkit-slider-runnable-track { height: 2px; background: var(--rule-hi); }
+  input[type=range]::-moz-range-track { height: 2px; background: var(--rule-hi); }
+  input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 10px; height: 14px; margin-top: -6px;
+      background: var(--amber); border: none; border-radius: 1px; cursor: pointer; }
+  input[type=range]::-moz-range-thumb { width: 10px; height: 14px; background: var(--amber); border: none; border-radius: 1px; cursor: pointer; }
+  input[type=range].dc::-webkit-slider-thumb { background: var(--phosphor); }
+  input[type=range].dc::-moz-range-thumb { background: var(--phosphor); }
+
+  button {
+    font-family: var(--mono); font-size: 10px; letter-spacing: .08em; text-transform: uppercase;
+    background: transparent; color: var(--ink-dim); border: 1px solid var(--rule-hi);
+    padding: 5px 8px; cursor: pointer;
+  }
+  button:hover { color: var(--ink); border-color: var(--amber); }
+  button.hot { color: var(--alert); border-color: var(--alert-soft); }
+  button.hot:hover { border-color: var(--alert); }
+  button[aria-pressed=true] { color: var(--bg); background: var(--amber); border-color: var(--amber); }
+  .btns { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; }
+
+  select, input[type=text], input[type=number] {
+    font-family: var(--mono); font-size: 11px; background: var(--bg-deep); color: var(--ink);
+    border: 1px solid var(--rule-hi); padding: 4px 6px; width: 100%;
+  }
+  .check { display: flex; align-items: center; gap: 7px; color: var(--ink-dim); font-size: 10px; margin-top: 8px; cursor: pointer; }
+  .check input { accent-color: var(--amber); }
+
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 10px; }
+  .field label { display: block; color: var(--ink-mute); font-size: 9px; letter-spacing: .08em;
+                 text-transform: uppercase; margin-bottom: 3px; }
+
+  #transport { height: 3px; background: var(--rule); margin-top: 9px; }
+  #transport > i { display: block; height: 100%; width: 0; background: var(--amber); }
+  #playState { color: var(--ink-mute); font-size: 10px; margin-top: 6px; }
+  #playState.on { color: var(--amber); }
+
+  #log { margin-top: 9px; max-height: 84px; overflow-y: auto; color: var(--ink-mute);
+         font-size: 10px; white-space: pre-wrap; }
+  #link { color: var(--ink-mute); font-size: 10px; }
+  #link.ok { color: var(--phosphor); }
+  #link.bad { color: var(--alert); }
+</style>
+</head>
+<body>
+
+<div id="stage">
+  <div id="hud">rig <b id="hudBoard">board 3</b> · drag orbit · scroll zoom · right-drag pan</div>
+  <div id="readout"></div>
+</div>
+
+<div id="panel">
+  <h1>// 3D <span>sculpture simulator</span></h1>
+
+  <section>
+    <h2>Rig</h2>
+    <select id="boardSel">
+      <option value="3" selected>Board 3 — hanging curtain</option>
+      <option value="1">Board 1 — not designed yet</option>
+      <option value="2">Board 2 — not designed yet</option>
+    </select>
+    <div class="note">Boards 1 &amp; 2 render a placeholder until their designs land. Add them in <code>RIGS</code>.</div>
+  </section>
+
+  <section>
+    <h2>Winch servos — percent down</h2>
+    <div class="row"><label>S0</label><input type="range" id="s0" min="0" max="100" step="1" value="100"><output id="s0v">100</output></div>
+    <div class="row"><label>S1</label><input type="range" id="s1" min="0" max="100" step="1" value="100"><output id="s1v">100</output></div>
+    <div class="row"><label>S2</label><input type="range" id="s2" min="0" max="100" step="1" value="100"><output id="s2v">100</output></div>
+    <div class="btns">
+      <button data-all="100">All down</button>
+      <button data-all="50">50%</button>
+      <button data-all="0">All up</button>
+      <button data-all="tilt">Tilt</button>
+    </div>
+    <label class="check"><input type="checkbox" id="gang"> gang all three</label>
+    <label class="check"><input type="checkbox" id="slew" checked> slew limit (77 ms/%, 7.7 s full range)</label>
+    <div class="note">0 = fully up/retracted, 100 = fully down. Unpowered rest is 100.</div>
+  </section>
+
+  <section>
+    <h2>DC motor — rotation</h2>
+    <div class="row dc"><label>SPD</label><input type="range" class="dc" id="dc" min="-100" max="100" step="1" value="0"><output id="dcv">0</output></div>
+    <div class="btns">
+      <button data-dc="-30">−30</button>
+      <button data-dc="0">Stop</button>
+      <button data-dc="30">+30</button>
+      <button data-dc="100">+100</button>
+    </div>
+    <div class="note">±100 live (<code>ROTATE</code>); Motions/Sequences are capped ±50.</div>
+  </section>
+
+  <section>
+    <h2>Library playback</h2>
+    <select id="clipSel"><option>— loading library.json —</option></select>
+    <div class="btns">
+      <button id="play">▶ Play</button>
+      <button id="loop" aria-pressed="false">Loop</button>
+      <button id="stop" class="hot">■ Stop</button>
+      <button id="loadFile">Load file…</button>
+    </div>
+    <input type="file" id="fileIn" accept=".json" hidden>
+    <div id="transport"><i></i></div>
+    <div id="playState">idle</div>
+    <div id="log"></div>
+    <div class="note">Authoring form: bake pre-rolls (<code>MOTION … PREP</code>) are not simulated.</div>
+  </section>
+
+  <section>
+    <h2>Live telemetry</h2>
+    <input type="text" id="ip" value="192.168.8.198" spellcheck="false">
+    <div class="btns">
+      <button id="connect">Connect</button>
+      <button id="disconnect">Disconnect</button>
+    </div>
+    <div id="link">offline</div>
+    <div class="note">Polls <code>/status.json</code> at 2 Hz and mirrors the board's real pulses. Overrides the sliders while connected.</div>
+  </section>
+
+  <section>
+    <h2>Geometry <span style="color:var(--ink-mute)">(inferred — tune to the build)</span></h2>
+    <div class="grid2">
+      <div class="field"><label>Winch travel m</label><input type="number" id="gTravel" step="0.01" value="0.45"></div>
+      <div class="field"><label>Strand len m</label><input type="number" id="gStrand" step="0.01" value="1.62"></div>
+      <div class="field"><label>Ring radius m</label><input type="number" id="gRadius" step="0.01" value="0.56"></div>
+      <div class="field"><label>Strand count</label><input type="number" id="gCount" step="1" min="6" max="72" value="30"></div>
+      <div class="field"><label>Segs / strand</label><input type="number" id="gSegs" step="1" min="1" max="24" value="13"></div>
+      <div class="field"><label>Max RPM @100</label><input type="number" id="gRpm" step="1" value="14"></div>
+    </div>
+    <label class="check"><input type="checkbox" id="optHang"> strands hang from the moving ring (instead of spanning top→bottom)</label>
+    <label class="check"><input type="checkbox" id="optHuman" checked> 1.75 m figure for scale</label>
+    <label class="check"><input type="checkbox" id="optCables" checked> show winch cables</label>
+  </section>
+</div>
+
+<script type="importmap">
+{ "imports": { "three": "./vendor/three.module.js" } }
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from './vendor/OrbitControls.js';
+
+/* ────────────────────────────────────────────────────────────────────────────
+   WHAT THIS SIMULATES
+
+   Everything the dashboard can actually command on one board:
+     · 3 goBILDA 5-turn winch servos on PCA9685 channels 0–2, addressed as
+       "percent down" (0 = fully up/retracted, 100 = fully down). Unpowered
+       rest is 100 — the ring settles at the bottom of its travel.
+     · 1 DC gear motor through the IBT-2, signed speed −100..+100 (ROTATE),
+       clamped to ±50 inside Motions and Sequence DC lanes. It lives in the
+       top housing and spins the whole assembly.
+
+   Physical numbers taken from the firmware/schema, not invented:
+     · Calibration minPulse 110 / maxPulse 480, totalDegrees 1800,
+       reverseDir true  → see servo_setup.h. Used to invert live telemetry.
+     · Full-range travel has a measured mechanical floor of ~7.7 s, i.e.
+       77 ms per 1% — see docs/sequencer-schema.md. The slew limiter uses it,
+       so a Motion that asks for travel the winches can't deliver visibly lags.
+
+   The SHAPE of the sculpture is inferred from the reference render and is the
+   only guessed part. Every dimension is exposed in the Geometry panel so it
+   can be corrected against the real build.
+   ──────────────────────────────────────────────────────────────────────────── */
+
+const SERVO_CAL = { minPulse: 110, maxPulse: 480, totalDegrees: 1800, downDegrees: 1800, upDegrees: 0, reverseDir: true };
+const SLEW_MS_PER_PCT = 77;          // measured mechanical floor
+const DC_LAG_S        = 0.6;         // motor spin-up / spin-down time constant
+const TWIST_LAG_S     = 1.4;         // how far the bottom ring trails the top
+
+/* Board-3 rig dimensions, metres. Scaled off the reference render against a
+   1.75 m figure; live-editable in the panel. */
+const G = {
+  ceiling:     2.60,
+  hubY:        2.32,  hubW: 0.44, hubH: 0.15, hubD: 0.30,
+  topRingY:    1.95,
+  ringR:       0.56,
+  ringTube:    0.018,
+  bottomRingH: 0.17,
+  strandLen:   1.62,
+  strandCount: 30,
+  strandSegs:  13,
+  strandThick: 0.011,
+  segGapFrac:  0.20,
+  travel:      0.45,   // metres of line spooled between 0% and 100%
+  maxRpm:      14,
+};
+const WINCH_ANGLES = [Math.PI / 2, Math.PI / 2 + 2 * Math.PI / 3, Math.PI / 2 + 4 * Math.PI / 3];
+
+/* ── state ──────────────────────────────────────────────────────────────── */
+const state = {
+  boardId: 3,
+  target:  [100, 100, 100],   // commanded percent-down
+  actual:  [100, 100, 100],   // where the winches physically are
+  dcTarget: 0, dcActual: 0,
+  spinTop: 0, spinBottom: 0,  // radians
+  slewLimit: true,
+  hang: false, showHuman: true, showCables: true,
+};
+
+/* ── scene ──────────────────────────────────────────────────────────────── */
+const stage = document.getElementById('stage');
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+stage.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x07070a);
+scene.fog = new THREE.Fog(0x07070a, 8, 22);
+
+const camera = new THREE.PerspectiveCamera(38, 1, 0.05, 100);
+camera.position.set(3.0, 1.85, 4.1);
+
+const orbit = new OrbitControls(camera, renderer.domElement);
+orbit.target.set(0, 1.28, 0);
+orbit.enableDamping = true;
+orbit.maxDistance = 14;
+orbit.minDistance = 0.7;
+
+scene.add(new THREE.HemisphereLight(0x9fb6c8, 0x1a1712, 0.55));
+const key = new THREE.DirectionalLight(0xfff0d6, 2.1);
+key.position.set(3.2, 4.6, 2.4);
+key.castShadow = true;
+key.shadow.mapSize.set(2048, 2048);
+key.shadow.camera.left = -3; key.shadow.camera.right = 3;
+key.shadow.camera.top = 4;   key.shadow.camera.bottom = -1;
+key.shadow.camera.far = 14;  key.shadow.bias = -0.0006;
+scene.add(key);
+const rim = new THREE.DirectionalLight(0x7fc9ff, 0.7);
+rim.position.set(-3.4, 2.2, -2.8);
+scene.add(rim);
+
+// floor + ceiling
+const floor = new THREE.Mesh(
+  new THREE.CircleGeometry(9, 64),
+  new THREE.MeshStandardMaterial({ color: 0x17161a, roughness: 0.92, metalness: 0.0 })
+);
+floor.rotation.x = -Math.PI / 2;
+floor.receiveShadow = true;
+scene.add(floor);
+
+const grid = new THREE.GridHelper(12, 24, 0x2a2825, 0x1b1a18);
+grid.position.y = 0.001;
+scene.add(grid);
+
+const ceilingPlate = new THREE.Mesh(
+  new THREE.BoxGeometry(0.8, 0.03, 0.8),
+  new THREE.MeshStandardMaterial({ color: 0x2b2a27, roughness: 0.8, metalness: 0.3 })
+);
+ceilingPlate.position.y = G.ceiling;
+scene.add(ceilingPlate);
+
+/* ── materials ──────────────────────────────────────────────────────────── */
+const matAlu    = new THREE.MeshStandardMaterial({ color: 0xd8d3c6, roughness: 0.38, metalness: 0.72 });
+const matHub    = new THREE.MeshStandardMaterial({ color: 0xeae5d8, roughness: 0.45, metalness: 0.35 });
+const matStrand = new THREE.MeshStandardMaterial({ color: 0x1b1917, roughness: 0.55, metalness: 0.55 });
+const matCable  = new THREE.MeshBasicMaterial({ color: 0xffb627, transparent: true, opacity: 0.55 });
+const matWire   = new THREE.MeshBasicMaterial({ color: 0x6d6558 });
+const matFigure = new THREE.MeshStandardMaterial({ color: 0x121214, roughness: 1.0 });
+
+/* ── human figure for scale ─────────────────────────────────────────────── */
+function makeFigure() {
+  const g = new THREE.Group();
+  const add = (geo, x, y, z) => { const m = new THREE.Mesh(geo, matFigure); m.position.set(x, y, z); m.castShadow = true; g.add(m); return m; };
+  add(new THREE.CapsuleGeometry(0.075, 0.62, 4, 12), 0, 1.05, 0);          // torso
+  add(new THREE.SphereGeometry(0.098, 16, 12),       0, 1.61, 0);          // head → 1.71 m overall
+  add(new THREE.CapsuleGeometry(0.055, 0.68, 4, 10), -0.08, 0.42, 0);      // legs
+  add(new THREE.CapsuleGeometry(0.055, 0.68, 4, 10),  0.08, 0.42, 0);
+  const la = add(new THREE.CapsuleGeometry(0.042, 0.52, 4, 10), -0.16, 1.08, 0.02);
+  const ra = add(new THREE.CapsuleGeometry(0.042, 0.52, 4, 10),  0.16, 1.08, 0.02);
+  la.rotation.z = 0.14; ra.rotation.z = -0.14;
+  g.position.set(-1.32, 0, 0.35);
+  g.rotation.y = 0.5;
+  return g;
+}
+const figure = makeFigure();
+scene.add(figure);
+
+/* ════════════════════════════════════════════════════════════════════════
+   RIG REGISTRY
+
+   Each rig exposes { group, update(state, dt), describe() }. Board 3 is the
+   hanging curtain below; boards 1 and 2 fall back to a placeholder until
+   their designs exist. Adding one is: write createBoardNRig(), register it.
+   ════════════════════════════════════════════════════════════════════════ */
+const RIGS = {};
+
+/* ── board 3: hanging strand curtain on a winched ring ──────────────────── */
+function createBoard3Rig() {
+  const group = new THREE.Group();
+
+  // ceiling suspension: hub hangs from the plate
+  const drop = new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.014, G.ceiling - G.hubY, 8), matWire);
+  drop.position.y = (G.ceiling + G.hubY) / 2;
+  group.add(drop);
+
+  // top housing — DC gear motor + electronics. Static: it holds the motor,
+  // everything below it is what turns.
+  const hub = new THREE.Mesh(new THREE.BoxGeometry(G.hubW, G.hubH, G.hubD), matHub);
+  hub.position.y = G.hubY;
+  hub.castShadow = true;
+  group.add(hub);
+
+  // spinner: driven by the DC motor, carries the whole assembly
+  const spinner = new THREE.Group();
+  spinner.position.y = 0;
+  group.add(spinner);
+
+  const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, G.hubY - G.hubH / 2 - G.topRingY, 10), matAlu);
+  shaft.position.y = (G.hubY - G.hubH / 2 + G.topRingY) / 2;
+  spinner.add(shaft);
+
+  // fixed top ring — carries the three winches
+  const topRing = new THREE.Mesh(new THREE.TorusGeometry(G.ringR, G.ringTube, 10, 96), matAlu);
+  topRing.rotation.x = Math.PI / 2;
+  topRing.position.y = G.topRingY;
+  topRing.castShadow = true;
+  spinner.add(topRing);
+
+  // three spokes out to the winch stations
+  const spokes = new THREE.Group();
+  spokes.position.y = G.topRingY;
+  spinner.add(spokes);
+  for (const a of WINCH_ANGLES) {
+    const spoke = new THREE.Mesh(new THREE.BoxGeometry(G.ringR, 0.016, 0.03), matAlu);
+    spoke.position.set(Math.cos(a) * G.ringR / 2, 0, Math.sin(a) * G.ringR / 2);
+    spoke.rotation.y = -a;
+    spoke.castShadow = true;
+    spokes.add(spoke);
+    const winch = new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.028, 0.055, 12), matHub);
+    winch.rotation.z = Math.PI / 2;
+    winch.rotation.y = -a;
+    winch.position.set(Math.cos(a) * (G.ringR - 0.07), 0.02, Math.sin(a) * (G.ringR - 0.07));
+    winch.castShadow = true;
+    spokes.add(winch);
+  }
+
+  // moving ring — what the winches raise and lower
+  const ring = new THREE.Group();
+  spinner.add(ring);
+  const ringBody = new THREE.Mesh(
+    new THREE.CylinderGeometry(G.ringR + 0.012, G.ringR + 0.012, G.bottomRingH, 96, 1, true),
+    new THREE.MeshStandardMaterial({ color: 0xe8e3d6, roughness: 0.42, metalness: 0.4, side: THREE.DoubleSide })
+  );
+  ringBody.position.y = -G.bottomRingH / 2;
+  ringBody.castShadow = true;
+  ring.add(ringBody);
+  const ringLip = new THREE.Mesh(new THREE.TorusGeometry(G.ringR + 0.012, 0.012, 8, 96), matAlu);
+  ringLip.rotation.x = Math.PI / 2;
+  ring.add(ringLip);
+  const ringLipB = ringLip.clone();
+  ringLipB.position.y = -G.bottomRingH;
+  ring.add(ringLipB);
+
+  // strands — instanced segments so the dashed/segmented look is real geometry
+  let strandMesh = null, segCount = 0;
+  const dummy = new THREE.Object3D();
+  function rebuildStrands() {
+    if (strandMesh) { spinner.remove(strandMesh); strandMesh.geometry.dispose(); strandMesh.dispose(); }
+    segCount = G.strandCount * G.strandSegs;
+    const geo = new THREE.CylinderGeometry(G.strandThick, G.strandThick, 1, 6, 1);
+    strandMesh = new THREE.InstancedMesh(geo, matStrand, segCount);
+    strandMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    strandMesh.castShadow = true;
+    strandMesh.frustumCulled = false;
+    spinner.add(strandMesh);
+  }
+  rebuildStrands();
+
+  // winch cables — thin amber lines from each winch to its ring anchor
+  const cables = [0, 1, 2].map(() => {
+    const c = new THREE.Mesh(new THREE.CylinderGeometry(0.0035, 0.0035, 1, 5), matCable);
+    spinner.add(c);
+    return c;
+  });
+
+  /* Solve the bow of an inextensible strand of length L spanning a chord of
+     length d. Shape is chord + outward * a * w(u); bisect on a until the
+     polyline length matches L. Cached by chord length — with an untilted ring
+     every strand shares the same d. */
+  const bowCache = new Map();
+  function shapeW(u, g) { return Math.sin(Math.PI * Math.pow(u, g)); }
+  function bowFor(d, L, g) {
+    if (L <= d + 1e-4) return 0;
+    const k = d.toFixed(4) + ':' + g.toFixed(2);
+    const hit = bowCache.get(k);
+    if (hit !== undefined) return hit;
+    const N = 14;
+    const len = (a) => {
+      let acc = 0, px = 0, py = 0;
+      for (let i = 1; i <= N; i++) {
+        const u = i / N;
+        const x = a * shapeW(u, g), y = u * d;
+        acc += Math.hypot(x - px, y - py);
+        px = x; py = y;
+      }
+      return acc;
+    };
+    let lo = 0, hi = L;
+    for (let i = 0; i < 26; i++) { const m = (lo + hi) / 2; if (len(m) < L) lo = m; else hi = m; }
+    const a = (lo + hi) / 2;
+    if (bowCache.size > 400) bowCache.clear();
+    bowCache.set(k, a);
+    return a;
+  }
+
+  // scratch vectors
+  const A = [new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()];
+  const pTop = new THREE.Vector3(), pBot = new THREE.Vector3();
+  const p0 = new THREE.Vector3(), p1 = new THREE.Vector3(), mid = new THREE.Vector3();
+  const outward = new THREE.Vector3(), axis = new THREE.Vector3(), up = new THREE.Vector3(0, 1, 0);
+  const v1 = new THREE.Vector3(), v2 = new THREE.Vector3(), normal = new THREE.Vector3();
+  const q = new THREE.Quaternion();
+  const info = { ringY: 0, tiltDeg: 0, slack: 0, bow: 0 };
+
+  function setSegment(inst, a, b) {
+    const len = a.distanceTo(b);
+    mid.addVectors(a, b).multiplyScalar(0.5);
+    axis.subVectors(b, a).normalize();
+    dummy.position.copy(mid);
+    dummy.quaternion.setFromUnitVectors(up, axis);
+    dummy.scale.set(1, Math.max(len, 1e-4), 1);
+    dummy.updateMatrix();
+    strandMesh.setMatrixAt(inst, dummy.matrix);
+  }
+
+  function update(st, dt, t) {
+    if (segCount !== G.strandCount * G.strandSegs) rebuildStrands();
+    spinner.rotation.y = st.spinTop;
+
+    // Each winch pays out `travel` metres between 0% and 100%. Percent-down
+    // 100 = full drop; 0 = ring hauled up by the full travel.
+    for (let i = 0; i < 3; i++) {
+      const dropLen = G.strandLen - G.travel * (1 - st.actual[i] / 100);
+      const ang = WINCH_ANGLES[i];
+      A[i].set(Math.cos(ang) * G.ringR, G.topRingY - dropLen, Math.sin(ang) * G.ringR);
+    }
+
+    // Rigid ring through the three anchor points: centroid + plane normal.
+    const cx = (A[0].x + A[1].x + A[2].x) / 3;
+    const cy = (A[0].y + A[1].y + A[2].y) / 3;
+    const cz = (A[0].z + A[1].z + A[2].z) / 3;
+    v1.subVectors(A[1], A[0]);
+    v2.subVectors(A[2], A[0]);
+    normal.crossVectors(v2, v1).normalize();
+    if (normal.y < 0) normal.negate();
+    q.setFromUnitVectors(up, normal);
+
+    ring.position.set(cx, cy, cz);
+    ring.quaternion.copy(q);
+    // twist: the hanging mass lags the driven top ring
+    ring.rotateY(st.spinBottom - st.spinTop);
+
+    if (state.showCables) {
+      for (let i = 0; i < 3; i++) {
+        const ang = WINCH_ANGLES[i];
+        p0.set(Math.cos(ang) * (G.ringR - 0.07), G.topRingY + 0.02, Math.sin(ang) * (G.ringR - 0.07));
+        setCable(cables[i], p0, A[i]);
+        cables[i].visible = true;
+      }
+    } else cables.forEach(c => c.visible = false);
+
+    // ── strands ──
+    const twist = st.spinBottom - st.spinTop;
+    const omega = (st.dcActual / 100) * (G.maxRpm * 2 * Math.PI / 60);
+    // spin flattens the gravity-skewed belly toward the middle
+    const gShape = 1.55 - 0.5 * Math.min(1, Math.abs(st.dcActual) / 100);
+    // free pendulum flare, tanα = ω²r / g — only used in "hang" mode
+    const flare = Math.atan2(omega * omega * G.ringR, 9.81);
+    let inst = 0, lastBow = 0, lastSlack = 0;
+
+    for (let s = 0; s < G.strandCount; s++) {
+      const phi = (s / G.strandCount) * Math.PI * 2;
+      const sway = Math.sin(t * 0.7 + s * 1.3) * 0.004;
+      outward.set(Math.cos(phi), 0, Math.sin(phi));
+
+      if (state.hang) {
+        // strands hang free from the moving ring; the ring lifts the curtain
+        pTop.set(Math.cos(phi + twist) * G.ringR, 0, Math.sin(phi + twist) * G.ringR)
+            .applyQuaternion(q).add(ring.position);
+        const L = G.strandLen * 0.55;
+        pBot.copy(pTop)
+            .add(outward.clone().multiplyScalar(Math.sin(flare) * L))
+            .add(new THREE.Vector3(0, -Math.cos(flare) * L, 0));
+        lastSlack = 0; lastBow = 0;
+        for (let k = 0; k < G.strandSegs; k++) {
+          const g0 = (k + G.segGapFrac / 2) / G.strandSegs;
+          const g1 = (k + 1 - G.segGapFrac / 2) / G.strandSegs;
+          p0.lerpVectors(pTop, pBot, g0);
+          p1.lerpVectors(pTop, pBot, g1);
+          setSegment(inst++, p0, p1);
+        }
+        continue;
+      }
+
+      // spanning mode: fixed to the top ring, terminating on the moving ring
+      pTop.set(Math.cos(phi) * G.ringR, G.topRingY, Math.sin(phi) * G.ringR);
+      pBot.set(Math.cos(phi + twist) * G.ringR, 0, Math.sin(phi + twist) * G.ringR)
+          .applyQuaternion(q).add(ring.position);
+
+      const d = pTop.distanceTo(pBot);
+      const bow = bowFor(d, G.strandLen, gShape) + sway;
+      lastSlack = Math.max(0, G.strandLen - d);
+      lastBow = bow;
+
+      for (let k = 0; k < G.strandSegs; k++) {
+        const g0 = (k + G.segGapFrac / 2) / G.strandSegs;
+        const g1 = (k + 1 - G.segGapFrac / 2) / G.strandSegs;
+        curvePoint(p0, pTop, pBot, outward, bow, g0, gShape);
+        curvePoint(p1, pTop, pBot, outward, bow, g1, gShape);
+        setSegment(inst++, p0, p1);
+      }
+    }
+    for (; inst < segCount; inst++) { dummy.scale.set(0, 0, 0); dummy.updateMatrix(); strandMesh.setMatrixAt(inst, dummy.matrix); }
+    strandMesh.instanceMatrix.needsUpdate = true;
+
+    info.ringY = cy - G.bottomRingH;
+    info.tiltDeg = THREE.MathUtils.radToDeg(Math.acos(THREE.MathUtils.clamp(normal.y, -1, 1)));
+    info.slack = lastSlack;
+    info.bow = lastBow;
+  }
+
+  function curvePoint(out, a, b, outward, bow, u, g) {
+    out.lerpVectors(a, b, u).addScaledVector(outward, bow * shapeW(u, g));
+  }
+
+  function setCable(mesh, a, b) {
+    const len = a.distanceTo(b);
+    mid.addVectors(a, b).multiplyScalar(0.5);
+    axis.subVectors(b, a).normalize();
+    mesh.position.copy(mid);
+    mesh.quaternion.setFromUnitVectors(up, axis);
+    mesh.scale.set(1, Math.max(len, 1e-4), 1);
+  }
+
+  return { group, update, info };
+}
+
+function createPlaceholderRig(boardId) {
+  const group = new THREE.Group();
+  const box = new THREE.Mesh(
+    new THREE.BoxGeometry(0.9, 1.4, 0.9),
+    new THREE.MeshStandardMaterial({ color: 0x2a2825, roughness: 0.9, wireframe: true })
+  );
+  box.position.y = 1.2;
+  group.add(box);
+  const info = { ringY: 0, tiltDeg: 0, slack: 0, bow: 0 };
+  return { group, update(st) { group.rotation.y = st.spinTop; }, info, placeholder: true };
+}
+
+RIGS[3] = createBoard3Rig;
+RIGS[1] = () => createPlaceholderRig(1);
+RIGS[2] = () => createPlaceholderRig(2);
+
+let rig = null;
+function mountRig(boardId) {
+  if (rig) scene.remove(rig.group);
+  rig = RIGS[boardId]();
+  scene.add(rig.group);
+  document.getElementById('hudBoard').textContent = 'board ' + boardId +
+    (rig.placeholder ? ' (placeholder)' : '');
+}
+mountRig(3);
+
+/* ════════════════════════════════════════════════════════════════════════
+   PLAYBACK — Motions and Sequences straight out of library.json
+   ════════════════════════════════════════════════════════════════════════ */
+let library = { motions: [], sequences: [] };
+const player = { kind: null, item: null, t: 0, dur: 0, loop: false, stepIdx: -1, stepT: 0, sub: null };
+
+function trackFor(motion, ch, boardId) {
+  return (motion.tracks || []).find(t =>
+    (t.kind || 'servo') === 'servo' && t.boardId === boardId && t.channel === ch);
+}
+function sampleTrack(track, tMs) {
+  const kf = track.keyframes;
+  if (!kf || !kf.length) return 100;
+  if (tMs <= kf[0].atMs) return kf[0].value;
+  for (let i = 1; i < kf.length; i++) {
+    if (tMs <= kf[i].atMs) {
+      const a = kf[i - 1], b = kf[i];
+      const span = b.atMs - a.atMs;
+      if (span <= 0) return b.value;
+      return a.value + (b.value - a.value) * ((tMs - a.atMs) / span); // schema v1: linear only
+    }
+  }
+  return kf[kf.length - 1].value;
+}
+
+function startClip(value) {
+  const [kind, id] = value.split(':');
+  const list = kind === 'seq' ? library.sequences : library.motions;
+  const item = list.find(x => x.id === id);
+  if (!item) return;
+  player.kind = kind; player.item = item; player.t = 0; player.stepIdx = -1; player.stepT = 0; player.sub = null;
+  player.dur = kind === 'seq'
+    ? (item.steps || []).reduce((a, s) => a + (s.durationMs || 0), 0)
+    : (item.durationMs || 0);
+  log(`▶ ${kind === 'seq' ? 'SEQ' : 'MOTION'} ${item.name}  ${(player.dur / 1000).toFixed(1)}s`);
+  setPlayState(true);
+}
+function stopClip(reason) {
+  if (player.item) log('■ stopped' + (reason ? ' — ' + reason : ''));
+  player.kind = null; player.item = null; player.sub = null;
+  setPlayState(false);
+  document.querySelector('#transport > i').style.width = '0';
+}
+
+function tickPlayer(dtMs) {
+  if (!player.item) return;
+  player.t += dtMs;
+  if (player.t >= player.dur) {
+    if (player.loop) { player.t = 0; player.stepIdx = -1; player.sub = null; }
+    else { player.t = player.dur; applyClipAt(player.dur - 1); stopClip('end of clip'); return; }
+  }
+  applyClipAt(player.t);
+  document.querySelector('#transport > i').style.width = (100 * player.t / Math.max(1, player.dur)) + '%';
+}
+
+function applyClipAt(t) {
+  if (player.kind === 'motion') return applyMotion(player.item, t);
+
+  // sequence: walk to the step containing t
+  const steps = player.item.steps || [];
+  let acc = 0, idx = -1, into = 0;
+  for (let i = 0; i < steps.length; i++) {
+    const d = steps[i].durationMs || 0;
+    if (t < acc + d || i === steps.length - 1) { idx = i; into = t - acc; break; }
+    acc += d;
+  }
+  if (idx < 0) return;
+  if (idx !== player.stepIdx) { player.stepIdx = idx; enterStep(steps[idx]); }
+  if (player.sub) applyMotion(player.sub, into);
+}
+
+function enterStep(step) {
+  const mine = step.target === 'all' || step.target === state.boardId;
+  // DC lanes are sticky: a board absent from the map holds its last speed.
+  if (step.dc && step.dc[state.boardId] != null) setDc(clamp(step.dc[state.boardId], -50, 50), true);
+  if (!mine) { log(`· skip (target ${step.target}): ${step.cmd}`); return; }
+
+  const cmd = (step.cmd || '').trim();
+  const m = cmd.match(/^MOTION\s+(\S+)/i);
+  if (m) {
+    const mo = library.motions.find(x => x.id === m[1]);
+    if (mo) { player.sub = mo; log(`  MOTION ${mo.name}`); }
+    else { player.sub = null; log(`  ! unknown motion ${m[1]}`); }
+    return;
+  }
+  const r = cmd.match(/^ROTATE\s+(-?\d+)/i);
+  if (r) { setDc(clamp(+r[1], -100, 100), true); log(`  ROTATE ${r[1]}`); return; }
+  if (/^STOP$/i.test(cmd)) { player.sub = null; setDc(0, true); log('  STOP'); return; }
+  log(`  · ${cmd} (not simulated)`);
+}
+
+function applyMotion(motion, t) {
+  for (let ch = 0; ch < 3; ch++) {
+    const tr = trackFor(motion, ch, state.boardId);
+    // Un-authored channels hold at rest (100% — fully down), per schema §2.
+    state.target[ch] = tr ? clamp(sampleTrack(tr, t), 0, 100) : 100;
+  }
+  syncSlidersFromTarget();
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   LIVE TELEMETRY — mirror a real board
+   ════════════════════════════════════════════════════════════════════════ */
+let pollTimer = null;
+function pulseToPercentDown(pulse) {
+  const { minPulse, maxPulse, totalDegrees, downDegrees, upDegrees, reverseDir } = SERVO_CAL;
+  const deg = ((pulse - minPulse) / (maxPulse - minPulse)) * totalDegrees;
+  const lo = upDegrees, hi = downDegrees || totalDegrees;
+  const p = reverseDir ? (hi - deg) / (hi - lo) : (deg - lo) / (hi - lo);
+  return clamp(p * 100, 0, 100);
+}
+function connect() {
+  const ip = document.getElementById('ip').value.trim();
+  if (!ip) return;
+  disconnect();
+  setLink('connecting…', '');
+  pollTimer = setInterval(async () => {
+    try {
+      const r = await fetch(`http://${ip}/status.json`, { cache: 'no-store' });
+      const s = await r.json();
+      if (Array.isArray(s.servos)) {
+        for (let ch = 0; ch < 3; ch++) {
+          const e = s.servos.find(x => x.i === ch);
+          if (e) { state.actual[ch] = pulseToPercentDown(e.pulse); state.target[ch] = state.actual[ch]; }
+        }
+        syncSlidersFromTarget();
+      }
+      if (s.motor) setDc(s.motor.speed | 0, true);
+      const playing = s.motion?.active ? `MOTION ${s.motion.id}` : (s.runseq?.active ? `RUN ${s.runseq.id}` : 'idle');
+      setLink(`live · ${ip} · ${playing}`, 'ok');
+    } catch (e) {
+      setLink(`unreachable — ${ip}`, 'bad');
+    }
+  }, 500);
+}
+function disconnect() {
+  if (pollTimer) { clearInterval(pollTimer); pollTimer = null; setLink('offline', ''); }
+}
+const isLive = () => pollTimer !== null;
+
+/* ════════════════════════════════════════════════════════════════════════
+   SIM LOOP
+   ════════════════════════════════════════════════════════════════════════ */
+const clock = new THREE.Clock();
+function animate() {
+  requestAnimationFrame(animate);
+  const dt = Math.min(clock.getDelta(), 0.06);
+  const t = clock.elapsedTime;
+
+  if (!isLive()) tickPlayer(dt * 1000);
+
+  // winches follow their target at the measured mechanical limit
+  if (!isLive()) {
+    const maxStep = state.slewLimit ? (1000 / SLEW_MS_PER_PCT) * dt : 1e6;
+    for (let i = 0; i < 3; i++) {
+      const d = state.target[i] - state.actual[i];
+      state.actual[i] += Math.abs(d) <= maxStep ? d : Math.sign(d) * maxStep;
+    }
+  }
+
+  // motor inertia, then integrate rotation; the hanging mass trails the drive
+  state.dcActual += (state.dcTarget - state.dcActual) * (1 - Math.exp(-dt / DC_LAG_S));
+  const omega = (state.dcActual / 100) * (G.maxRpm * 2 * Math.PI / 60);
+  state.spinTop += omega * dt;
+  state.spinBottom += (state.spinTop - state.spinBottom) * (1 - Math.exp(-dt / TWIST_LAG_S));
+
+  rig.update(state, dt, t);
+  figure.visible = state.showHuman;
+
+  orbit.update();
+  renderer.render(scene, camera);
+  drawReadout();
+}
+
+function drawReadout() {
+  const i = rig.info;
+  const rpm = (state.dcActual / 100) * G.maxRpm;
+  const twist = THREE.MathUtils.radToDeg(state.spinBottom - state.spinTop);
+  document.getElementById('readout').textContent =
+`winch  cmd ${fmt(state.target[0])} ${fmt(state.target[1])} ${fmt(state.target[2])}  %down
+       pos ${fmt(state.actual[0])} ${fmt(state.actual[1])} ${fmt(state.actual[2])}
+ring   ${i.ringY.toFixed(2)} m off floor   tilt ${i.tiltDeg.toFixed(1)}°
+strand slack ${(i.slack * 100).toFixed(0)} cm   bow ${(i.bow * 100).toFixed(0)} cm
+dc     ${state.dcActual.toFixed(0)}%  ${rpm.toFixed(1)} rpm   twist ${twist.toFixed(0)}°`;
+}
+const fmt = (v) => String(Math.round(v)).padStart(3, ' ');
+
+function resize() {
+  const w = stage.clientWidth, h = stage.clientHeight;
+  if (!w || !h) return;
+  renderer.setSize(w, h);
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+}
+new ResizeObserver(resize).observe(stage);
+
+/* ════════════════════════════════════════════════════════════════════════
+   UI WIRING
+   ════════════════════════════════════════════════════════════════════════ */
+const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+const $ = (id) => document.getElementById(id);
+
+const sliders = [$('s0'), $('s1'), $('s2')];
+const outs    = [$('s0v'), $('s1v'), $('s2v')];
+sliders.forEach((sl, i) => sl.addEventListener('input', () => {
+  const v = +sl.value;
+  if ($('gang').checked) { state.target = [v, v, v]; }
+  else state.target[i] = v;
+  syncSlidersFromTarget();
+  if (player.item) stopClip('manual override');
+}));
+function syncSlidersFromTarget() {
+  for (let i = 0; i < 3; i++) {
+    sliders[i].value = Math.round(state.target[i]);
+    outs[i].textContent = Math.round(state.target[i]);
+  }
+}
+document.querySelectorAll('[data-all]').forEach(b => b.addEventListener('click', () => {
+  const v = b.dataset.all;
+  state.target = v === 'tilt' ? [10, 55, 95] : [+v, +v, +v];
+  syncSlidersFromTarget();
+  if (player.item) stopClip('manual override');
+}));
+
+const dcSlider = $('dc');
+function setDc(v, quiet) {
+  state.dcTarget = clamp(v, -100, 100);
+  dcSlider.value = state.dcTarget;
+  $('dcv').textContent = (state.dcTarget > 0 ? '+' : '') + Math.round(state.dcTarget);
+}
+dcSlider.addEventListener('input', () => setDc(+dcSlider.value));
+document.querySelectorAll('[data-dc]').forEach(b => b.addEventListener('click', () => setDc(+b.dataset.dc)));
+
+$('gang').addEventListener('change', e => { if (e.target.checked) { const v = +sliders[0].value; state.target = [v, v, v]; syncSlidersFromTarget(); } });
+$('slew').addEventListener('change', e => state.slewLimit = e.target.checked);
+$('boardSel').addEventListener('change', e => { state.boardId = +e.target.value; mountRig(state.boardId); });
+
+$('play').addEventListener('click', () => { const v = $('clipSel').value; if (v) startClip(v); });
+$('stop').addEventListener('click', () => stopClip());
+$('loop').addEventListener('click', (e) => {
+  player.loop = !player.loop;
+  e.target.setAttribute('aria-pressed', String(player.loop));
+});
+$('loadFile').addEventListener('click', () => $('fileIn').click());
+$('fileIn').addEventListener('change', async (e) => {
+  const f = e.target.files[0]; if (!f) return;
+  try { adoptLibrary(JSON.parse(await f.text())); log('library loaded from file'); }
+  catch (err) { log('! bad json: ' + err.message); }
+});
+
+$('connect').addEventListener('click', connect);
+$('disconnect').addEventListener('click', disconnect);
+
+// geometry panel
+const geoBind = { gTravel: 'travel', gStrand: 'strandLen', gRadius: 'ringR', gCount: 'strandCount', gSegs: 'strandSegs', gRpm: 'maxRpm' };
+for (const [id, key] of Object.entries(geoBind)) {
+  $(id).addEventListener('change', () => {
+    const v = +$(id).value;
+    if (!isFinite(v)) return;
+    G[key] = (key === 'strandCount' || key === 'strandSegs') ? Math.round(v) : v;
+    if (key === 'ringR') mountRig(state.boardId);   // ring radius is baked into meshes
+  });
+}
+$('optHang').addEventListener('change', e => state.hang = e.target.checked);
+$('optHuman').addEventListener('change', e => state.showHuman = e.target.checked);
+$('optCables').addEventListener('change', e => state.showCables = e.target.checked);
+
+function setPlayState(on) {
+  const el = $('playState');
+  el.className = on ? 'on' : '';
+  el.textContent = on ? `playing — ${player.item.name}` : 'idle';
+}
+function setLink(text, cls) { const el = $('link'); el.textContent = text; el.className = cls; }
+function log(msg) {
+  const el = $('log');
+  el.textContent = (msg + '\n' + el.textContent).split('\n').slice(0, 40).join('\n');
+}
+
+function adoptLibrary(lib) {
+  library = { motions: lib.motions || [], sequences: lib.sequences || [] };
+  const sel = $('clipSel');
+  sel.innerHTML = '';
+  if (library.sequences.length) {
+    const g = document.createElement('optgroup'); g.label = 'Sequences';
+    for (const s of library.sequences) g.appendChild(new Option(s.name, 'seq:' + s.id));
+    sel.appendChild(g);
+  }
+  if (library.motions.length) {
+    const g = document.createElement('optgroup'); g.label = 'Motions';
+    for (const m of library.motions) g.appendChild(new Option(m.name, 'motion:' + m.id));
+    sel.appendChild(g);
+  }
+  if (!sel.options.length) sel.appendChild(new Option('— library empty —', ''));
+}
+
+fetch('./library.json', { cache: 'no-store' })
+  .then(r => r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status)))
+  .then(lib => { adoptLibrary(lib); log(`library.json — ${library.motions.length} motions, ${library.sequences.length} sequences`); })
+  .catch(err => { $('clipSel').innerHTML = '<option value="">— library.json not found —</option>'; log('! ' + err.message + ' — use Load file…'); });
+
+/* boot — after every declaration above is initialised */
+syncSlidersFromTarget();
+setDc(0, true);
+resize();
+animate();
+</script>
+</body>
+</html>

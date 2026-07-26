@@ -131,6 +131,31 @@ The page is organized into numbered sections:
   `MOTION` command.
 - **`// 07 Firmware Upload`** — OTA flash one board or all of them (see below).
 
+## 3D simulator
+
+`sculpture_3d.html` is a separate page that renders the sculpture in 3D and drives it
+from exactly what the dashboard can command: the three winch servos as percent-down
+(0 = fully up, 100 = fully down, unpowered rest) and the DC motor as signed speed. Serve
+it from the same helper and open
+<http://127.0.0.1:4173/sculpture_3d.html>. `three.js` is vendored in `vendor/` so the
+page works offline in the gallery.
+
+- Sliders for channels 0–2 and the motor, plus All down / 50% / All up / Tilt presets.
+- The winch slew limiter uses the measured `77ms/%` mechanical floor, so a Motion that
+  asks for travel the winches cannot deliver visibly lags its commanded position.
+- **Library playback** loads `library.json` and plays any Motion or Sequence, including
+  `ROTATE`, `STOP`, and per-board DC lanes. Authoring form only — bake pre-rolls
+  (`MOTION … PREP`) are not simulated.
+- **Live telemetry** polls a board's `/status.json` at 2 Hz and mirrors its real pulses,
+  inverted through the `servo_setup.h` calibration.
+- **Geometry** panel exposes every dimension. The mechanism (3 winches at 120°, ring
+  tilt from the plane through the three anchors) is taken from the firmware; the
+  sculpture's *shape* is inferred from the reference render and is meant to be corrected
+  against the real build.
+
+Only board 3's rig exists so far. Boards 1 and 2 draw a placeholder until their designs
+land — add them to the `RIGS` registry near the top of the module.
+
 ## Content model: Motions, Sequences, Setlists
 
 - A **Motion** is a keyframed timeline of servo (percent-of-travel) and DC (signed
