@@ -133,25 +133,35 @@ The page is organized into numbered sections:
 
 ## 3D simulator
 
-`sculpture_3d.html` is a separate page that renders the sculpture in 3D and drives it
-from exactly what the dashboard can command: the three winch servos as percent-down
-(0 = fully up, 100 = fully down, unpowered rest) and the DC motor as signed speed. Serve
-it from the same helper and open
-<http://127.0.0.1:4173/sculpture_3d.html>. `three.js` is vendored in `vendor/` so the
+`sculpture_3d.html` renders the sculpture in 3D and drives it from exactly what the
+dashboard can command: the three winch servos as percent-down (0 = fully up, 100 = fully
+down, unpowered rest) and the DC motor as signed speed. Serve it from the same helper and
+open <http://127.0.0.1:4173/sculpture_3d.html>. `three.js` is vendored in `vendor/` so the
 page works offline in the gallery.
 
-- Sliders for channels 0–2 and the motor, plus All down / 50% / All up / Tilt presets.
-- The winch slew limiter uses the measured `77ms/%` mechanical floor, so a Motion that
-  asks for travel the winches cannot deliver visibly lags its commanded position.
+**Board 3's mechanism.** A ceiling housing holds the three winch servos and the DC gear
+motor. Three cables run down and out to a ring; chains of wooden dowels linked by small
+metal rings hang free from it, over a stationary base whose wooden deck is slightly wider
+than the ring. The winches set how much dowel piles onto the deck; the motor turns the
+hanging assembly, dragging the piled dowels across the stationary wood.
+
+- The dowel chains are simulated, not posed — Verlet particles with distance constraints
+  and a frictional deck contact. Pile-up, buckling, drag, centrifugal lift and swing all
+  fall out of that. The deck accumulates the scrape marks the dowels leave, which is the
+  pattern the piece draws; **Clear marks** resets it and `μ` sets deck friction.
+- Cable payout converts to ring height through the cable's real geometry, so percent-down
+  is slightly non-linear in ring height, as on the rig. Differential winch values tilt the
+  ring on the plane through its three anchors.
+- The slew limiter uses the measured `77ms/%` mechanical floor, so a Motion asking for
+  travel the winches cannot deliver visibly lags its commanded position.
 - **Library playback** loads `library.json` and plays any Motion or Sequence, including
   `ROTATE`, `STOP`, and per-board DC lanes. Authoring form only — bake pre-rolls
   (`MOTION … PREP`) are not simulated.
 - **Live telemetry** polls a board's `/status.json` at 2 Hz and mirrors its real pulses,
   inverted through the `servo_setup.h` calibration.
-- **Geometry** panel exposes every dimension. The mechanism (3 winches at 120°, ring
-  tilt from the plane through the three anchors) is taken from the firmware; the
-  sculpture's *shape* is inferred from the reference render and is meant to be corrected
-  against the real build.
+- **Geometry** panel exposes every dimension. The mechanism is taken from the firmware;
+  the dimensions are scaled off a reference render and are meant to be corrected against
+  the real build.
 
 Only board 3's rig exists so far. Boards 1 and 2 draw a placeholder until their designs
 land — add them to the `RIGS` registry near the top of the module.
