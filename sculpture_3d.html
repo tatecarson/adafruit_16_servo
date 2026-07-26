@@ -21,7 +21,6 @@
     --alert:     #f15a3a;
     --alert-soft:#3a1208;
     --mono:  "IBM Plex Mono", ui-monospace, monospace;
-    --label: "IBM Plex Sans Condensed", "Helvetica Neue", sans-serif;
   }
   * { box-sizing: border-box; }
   html, body { margin:0; padding:0; height:100%; }
@@ -43,7 +42,6 @@
     position: absolute; left: 12px; bottom: 12px; pointer-events: none;
     color: var(--ink-dim); font-size: 10px; white-space: pre; line-height: 1.6;
   }
-  #readout u { color: var(--phosphor); text-decoration: none; }
 
   #panel { background: var(--bg-elev); border-left: 1px solid var(--rule); overflow-y: auto; padding: 0 0 40px; }
   @media (max-width: 900px) { #panel { border-left: none; border-top: 1px solid var(--rule); } }
@@ -100,9 +98,16 @@
 
   #log { margin-top: 9px; max-height: 84px; overflow-y: auto; color: var(--ink-mute);
          font-size: 10px; white-space: pre-wrap; }
-  #link { color: var(--ink-mute); font-size: 10px; }
-  #link.ok { color: var(--phosphor); }
-  #link.bad { color: var(--alert); }
+  #link, #audioState { color: var(--ink-mute); font-size: 10px; }
+  #link.ok, #audioState.ok { color: var(--phosphor); }
+  #link.bad, #audioState.bad { color: var(--alert); }
+
+  /* level meters for the two voices */
+  .meter { height: 3px; background: var(--rule); margin-top: 5px; }
+  .meter > i { display: block; height: 100%; width: 0; background: var(--phosphor); transition: width .05s linear; }
+  .meter.clack > i { background: var(--amber); }
+  .mlabel { display: flex; justify-content: space-between; color: var(--ink-mute); font-size: 9px;
+            letter-spacing: .1em; text-transform: uppercase; margin-top: 8px; }
 </style>
 </head>
 <body>
@@ -118,7 +123,7 @@
   <section>
     <h2>Rig</h2>
     <select id="boardSel">
-      <option value="3" selected>Board 3 — dowel curtain on a winched ring</option>
+      <option value="3" selected>Board 3 — dowel curtain, winched ring</option>
       <option value="1">Board 1 — not designed yet</option>
       <option value="2">Board 2 — not designed yet</option>
     </select>
@@ -150,7 +155,21 @@
       <button data-dc="30">+30</button>
       <button data-dc="100">+100</button>
     </div>
-    <div class="note">±100 live (<code>ROTATE</code>); Motions/Sequences are capped ±50. The deck does not turn — the dowels drag across it.</div>
+    <div class="note">±100 live (<code>ROTATE</code>); Motions/Sequences are capped ±50. Only the inner ring turns — the outer ring and the deck are fixed.</div>
+  </section>
+
+  <section>
+    <h2>Sound</h2>
+    <div class="btns">
+      <button id="audioBtn" aria-pressed="false">Audio off</button>
+    </div>
+    <div class="row"><label>VOL</label><input type="range" id="vol" min="0" max="100" step="1" value="65"><output id="volv">65</output></div>
+    <div class="mlabel"><span>scrape</span><span id="scrapeV">0.00</span></div>
+    <div class="meter"><i id="scrapeM"></i></div>
+    <div class="mlabel"><span>clack</span><span id="clackV">0/s</span></div>
+    <div class="meter clack"><i id="clackM"></i></div>
+    <div id="audioState">idle — audio needs a click to start</div>
+    <div class="note">Scrape is the dowels dragging the deck; clacks are the inner curtain striking the outer ring's dowels. Both are driven by the simulation, not scheduled.</div>
   </section>
 
   <section>
@@ -158,6 +177,7 @@
     <div class="btns">
       <button id="clearTrails">Clear marks</button>
       <button id="trailsOn" aria-pressed="true">Marks</button>
+      <button id="ff">Settle 5 s</button>
     </div>
     <div class="row"><label>μ</label><input type="range" id="mu" min="0" max="95" step="1" value="45"><output id="muv">.45</output></div>
     <div class="note">Deck friction. Low μ = dowels skate; high μ = they catch, drag, and scrape.</div>
@@ -196,11 +216,15 @@
       <div class="field"><label>Winch travel m</label><input type="number" id="gTravel" step="0.01" value="0.50"></div>
       <div class="field"><label>Chain length m</label><input type="number" id="gChain" step="0.01" value="1.78"></div>
       <div class="field"><label>Dowels / chain</label><input type="number" id="gDowels" step="1" min="2" max="20" value="8"></div>
-      <div class="field"><label>Chain count</label><input type="number" id="gCount" step="1" min="6" max="60" value="30"></div>
-      <div class="field"><label>Ring radius m</label><input type="number" id="gRingR" step="0.01" value="0.56"></div>
-      <div class="field"><label>Deck radius m</label><input type="number" id="gBaseR" step="0.01" value="0.60"></div>
+      <div class="field"><label>Inner chains</label><input type="number" id="gCount" step="1" min="6" max="60" value="30"></div>
+      <div class="field"><label>Inner ring m</label><input type="number" id="gRingR" step="0.01" value="0.56"></div>
+      <div class="field"><label>Outer ring m</label><input type="number" id="gOuterR" step="0.01" value="0.68"></div>
+      <div class="field"><label>Outer chains</label><input type="number" id="gOuterCount" step="1" min="0" max="72" value="36"></div>
+      <div class="field"><label>Outer ring y m</label><input type="number" id="gOuterY" step="0.01" value="2.00"></div>
+      <div class="field"><label>Deck radius m</label><input type="number" id="gBaseR" step="0.01" value="0.74"></div>
       <div class="field"><label>Deck height m</label><input type="number" id="gDeckY" step="0.01" value="0.26"></div>
       <div class="field"><label>Max RPM @100</label><input type="number" id="gRpm" step="1" value="14"></div>
+      <div class="field"><label>Clack m/s</label><input type="number" id="gClackV" step="0.05" value="0.28"></div>
     </div>
     <label class="check"><input type="checkbox" id="optHuman" checked> 1.71 m figure for scale</label>
     <label class="check"><input type="checkbox" id="optCables" checked> show winch cables</label>
@@ -217,13 +241,20 @@ import { OrbitControls } from './vendor/OrbitControls.js';
 /* ────────────────────────────────────────────────────────────────────────────
    WHAT THIS SIMULATES
 
-   The board-3 sculpture: a top housing at the ceiling holding three winch
-   servos and the DC gear motor. Three cables run down and out to a ring.
-   Chains of wooden dowels, linked by small metal rings, hang free from that
-   ring. Below is a stationary base with a wooden deck, slightly wider than the
-   ring. The winches raise and lower the ring, so more or less dowel piles onto
-   the deck; the motor turns the whole hanging assembly, dragging the piled
-   dowels across the stationary wood — the scraping, and the marks it leaves.
+   Board 3: a ceiling housing holding three winch servos and the DC gear motor.
+   Three cables run down and out to an inner ring. Chains of wooden dowels,
+   linked by small metal rings, hang free from it. A second, larger ring is
+   fixed to the ceiling and carries its own curtain of dowels; it never moves.
+   Below both is a stationary base with a wooden deck.
+
+   The winches set how much dowel piles onto the deck. The motor turns the
+   inner curtain only:
+     · slow — the piled ends drag across the stationary wood and scrape
+     · fast — centrifugal flare lifts them off the deck and throws them out
+       against the outer ring's dowels, and they clack
+
+   Both of those are consequences of the simulation, not separate modes, and
+   the audio is driven from the same contacts that produce them.
 
    Controllable surface, matching the dashboard exactly:
      · 3 goBILDA 5-turn winch servos, channels 0–2, as "percent down"
@@ -235,56 +266,210 @@ import { OrbitControls } from './vendor/OrbitControls.js';
      · Calibration minPulse 110 / maxPulse 480, totalDegrees 1800,
        reverseDir true — servo_setup.h. Used to invert live telemetry.
      · Full-range travel has a measured mechanical floor of ~7.7 s, i.e.
-       77 ms per 1% — docs/sequencer-schema.md. The slew limiter uses it, so a
-       Motion asking for travel the winches can't deliver visibly lags.
-     · Cable payout is converted to ring height through the cable's actual
-       geometry, so percent-down is slightly non-linear in ring height — the
-       same as the real rig.
+       77 ms per 1% — docs/sequencer-schema.md.
+     · Cable payout converts to ring height through the cable's real geometry,
+       so percent-down is slightly non-linear in ring height.
 
    The dowel chains are simulated, not posed: Verlet particles with distance
-   constraints and a frictional deck contact. Pile-up, drag, trail and swing
-   all fall out of that rather than being animated.
+   constraints, frictional deck contact, and curtain-to-curtain collision.
    ──────────────────────────────────────────────────────────────────────────── */
 
 const SERVO_CAL = { minPulse: 110, maxPulse: 480, totalDegrees: 1800, downDegrees: 1800, upDegrees: 0, reverseDir: true };
-const SLEW_MS_PER_PCT = 77;    // measured mechanical floor
-const DC_LAG_S        = 0.7;   // motor spin-up / spin-down
+const SLEW_MS_PER_PCT = 77;
+const DC_LAG_S        = 0.7;
 const PHYS_H          = 1 / 120;
 const GRAVITY         = -9.81;
 
-/* Board-3 dimensions in metres, scaled off the reference render against a
-   1.71 m figure. All live-editable in the Geometry panel. */
 const G = {
-  ceiling:    3.00,
-  hubY:       2.72, hubW: 0.44, hubH: 0.15, hubD: 0.30,
-  hubAnchorR: 0.15,   // where the cables leave the housing
-  ringYDown:  1.78,   // ring height at 100% (fully down)
-  travel:     0.50,   // metres of cable paid out between 0% and 100%
-  ringR:      0.56,
-  ringTube:   0.020,
-  baseR:      0.60,   // deck is slightly wider than the ring
-  deckY:      0.26,
-  chainLen:   1.78,
-  chainCount: 30,
-  dowels:     8,
-  dowelDia:   0.013,
-  linkDia:    0.011,
-  maxRpm:     14,
+  ceiling:     3.00,
+  hubY:        2.72, hubW: 0.44, hubH: 0.15, hubD: 0.30,
+  hubAnchorR:  0.15,
+  ringYDown:   1.78,
+  travel:      0.50,
+  ringR:       0.56,
+  ringTube:    0.020,
+  outerR:      0.68,   // fixed ring: 12 cm clear of the inner one
+  outerY:      2.00,
+  outerCount:  36,
+  outerChain:  1.86,   // reaches the deck with a little slack
+  baseR:       0.74,
+  deckY:       0.26,
+  chainLen:    1.78,
+  chainCount:  30,
+  dowels:      8,
+  dowelDia:    0.013,
+  linkDia:     0.011,
+  maxRpm:      14,
+  clackV:      0.28,   // m/s of approach that counts as a strike, not a rub
 };
 const WINCH_ANGLES = [Math.PI / 2, Math.PI / 2 + 2 * Math.PI / 3, Math.PI / 2 + 4 * Math.PI / 3];
 
 const state = {
   boardId: 3,
-  target:  [100, 100, 100],   // commanded percent-down
-  actual:  [100, 100, 100],   // where the winches physically are
+  target:  [100, 100, 100],
+  actual:  [100, 100, 100],
   dcTarget: 0, dcActual: 0,
-  spin: 0,                    // radians of the hanging assembly
+  spin: 0,
   slewLimit: true,
   mu: 0.45,
   showHuman: true, showCables: true, showTrails: true,
 };
 
-/* ── scene ──────────────────────────────────────────────────────────────── */
+/* ════════════════════════════════════════════════════════════════════════
+   AUDIO
+   Two voices, both synthesised — nothing is sampled or scheduled ahead.
+
+   · scrape — looping noise through a pair of bandpasses, gain and brightness
+     driven by how fast the contacting dowels are actually moving across the
+     deck. Sits somewhere between a brush on a snare and sandpaper.
+   · clack — one short event per curtain strike: a noise burst through two
+     high-Q resonances an inharmonic ratio apart, which is roughly how a
+     wooden bar rings. Pitch scales with dowel length, gain with impact speed.
+
+   The context can only start from a user gesture, hence the Audio button.
+   ════════════════════════════════════════════════════════════════════════ */
+const DISCRETE_MAX = 45;      // clacks/sec struck individually; the rest become clatter
+const scrapeCurve = (v) => 1 - Math.exp(-v / 5);
+
+const audio = {
+  ctx: null, master: null, noiseBuf: null,
+  scrapeGain: null, scrapeBp1: null, scrapeBp2: null,
+  clatterGain: null, clatterBp: null,
+  on: false, volume: 0.65,
+  budget: 0, budgetAt: 0,
+
+  // Builds the graph and asks the context to start. Resolves as soon as the
+  // graph exists — resume() is fire-and-forget so a browser that refuses to
+  // start it (no user activation, hidden tab) leaves the UI responsive and
+  // reports the real ctx.state instead of hanging on an unresolved promise.
+  enable() {
+    if (!this.ctx) {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) throw new Error('no Web Audio in this browser');
+      this.ctx = new AC();
+
+      // 2 s of white noise, reused by both voices
+      const n = Math.floor(this.ctx.sampleRate * 2);
+      this.noiseBuf = this.ctx.createBuffer(1, n, this.ctx.sampleRate);
+      const ch = this.noiseBuf.getChannelData(0);
+      for (let i = 0; i < n; i++) ch[i] = Math.random() * 2 - 1;
+
+      this.master = this.ctx.createGain();
+      this.master.gain.value = this.volume;
+      this.master.connect(this.ctx.destination);
+
+      // scrape voice
+      const src = this.ctx.createBufferSource();
+      src.buffer = this.noiseBuf;
+      src.loop = true;
+      this.scrapeBp1 = this.ctx.createBiquadFilter();
+      this.scrapeBp1.type = 'bandpass'; this.scrapeBp1.frequency.value = 1400; this.scrapeBp1.Q.value = 0.8;
+      this.scrapeBp2 = this.ctx.createBiquadFilter();
+      this.scrapeBp2.type = 'bandpass'; this.scrapeBp2.frequency.value = 320; this.scrapeBp2.Q.value = 1.6;
+      this.scrapeGain = this.ctx.createGain();
+      this.scrapeGain.gain.value = 0;
+      src.connect(this.scrapeBp1); src.connect(this.scrapeBp2);
+      this.scrapeBp1.connect(this.scrapeGain); this.scrapeBp2.connect(this.scrapeGain);
+      this.scrapeGain.connect(this.master);
+      src.start();
+
+      // clatter bed — see setClatter()
+      const src2 = this.ctx.createBufferSource();
+      src2.buffer = this.noiseBuf;
+      src2.loop = true;
+      this.clatterBp = this.ctx.createBiquadFilter();
+      this.clatterBp.type = 'bandpass'; this.clatterBp.frequency.value = 900; this.clatterBp.Q.value = 1.4;
+      this.clatterGain = this.ctx.createGain();
+      this.clatterGain.gain.value = 0;
+      src2.connect(this.clatterBp);
+      this.clatterBp.connect(this.clatterGain);
+      this.clatterGain.connect(this.master);
+      src2.start();
+    }
+    this.on = true;
+    this.ctx.resume().catch(() => {});
+    return this.ctx.state;
+  },
+
+  disable() {
+    this.on = false;
+    if (this.ctx) {
+      this.scrapeGain.gain.setTargetAtTime(0, this.ctx.currentTime, 0.02);
+      this.clatterGain.gain.setTargetAtTime(0, this.ctx.currentTime, 0.02);
+      this.ctx.suspend();
+    }
+  },
+
+  setVolume(v) { this.volume = v; if (this.master) this.master.gain.setTargetAtTime(v, this.ctx.currentTime, 0.03); },
+
+  /* intensity: metres/second of dowel sliding across the deck, summed over
+     every contact. Ranges roughly 0..15 — near zero at rest, ~4 at a slow
+     turn with the ring down, ~14 at full speed. Mapped through a soft curve
+     rather than a hard clamp so the whole range stays audible instead of
+     pinning at maximum the moment it starts moving. */
+  setScrape(intensity) {
+    if (!this.on || !this.ctx) return;
+    const t = this.ctx.currentTime;
+    const x = scrapeCurve(intensity);
+    this.scrapeGain.gain.setTargetAtTime(0.32 * x, t, 0.05);
+    this.scrapeBp1.frequency.setTargetAtTime(900 + 2600 * x, t, 0.08);
+  },
+
+  /* At full speed the rig really does produce several hundred impacts a
+     second — 30 chains, a few dowels each in range, sweeping past 36 outer
+     chains. That is a wooden roar, not a sequence of taps, and no discrete
+     voice can play it. So DISCRETE_MAX of them are struck individually and
+     everything above that density feeds a noise bed instead. The crossfade is
+     what keeps a slow pass sounding like separate clacks and a fast one
+     sounding like the clatter it is. */
+  setClatter(rate) {
+    if (!this.on || !this.ctx) return;
+    const t = this.ctx.currentTime;
+    const x = Math.min(1, Math.max(0, (rate - 35) / 450));
+    this.clatterGain.gain.setTargetAtTime(0.26 * x, t, 0.07);
+    this.clatterBp.frequency.setTargetAtTime(780 + 950 * x, t, 0.12);
+  },
+
+  clack(vel, panX) {
+    if (!this.on || !this.ctx) return;
+    const t = this.ctx.currentTime;
+    // budget: a dense roll is fine, a machine gun is not
+    if (t - this.budgetAt > 1) { this.budgetAt = t; this.budget = 0; }
+    if (this.budget++ > DISCRETE_MAX) return;
+
+    const amp = Math.min(0.55, 0.12 + vel * 0.5);
+    const dur = 0.05 + Math.random() * 0.07;
+    const f0  = (620 + Math.random() * 520) * (0.22 / Math.max(0.08, G.chainLen / G.dowels));
+
+    const src = this.ctx.createBufferSource();
+    src.buffer = this.noiseBuf;
+    src.loop = true;
+    const g = this.ctx.createGain();
+    g.gain.setValueAtTime(amp, t);
+    g.gain.exponentialRampToValueAtTime(0.0006, t + dur);
+
+    const mk = (f, q, gain) => {
+      const bp = this.ctx.createBiquadFilter();
+      bp.type = 'bandpass'; bp.frequency.value = f; bp.Q.value = q;
+      const vg = this.ctx.createGain(); vg.gain.value = gain;
+      src.connect(bp); bp.connect(vg); vg.connect(g);
+    };
+    mk(f0, 11, 1.0);
+    mk(f0 * 2.76, 14, 0.45);   // inharmonic partial — reads as a bar, not a drum
+    mk(f0 * 5.4, 16, 0.16);
+
+    const pan = this.ctx.createStereoPanner ? this.ctx.createStereoPanner() : null;
+    if (pan) { pan.pan.value = Math.max(-1, Math.min(1, panX / G.outerR)); g.connect(pan); pan.connect(this.master); }
+    else g.connect(this.master);
+
+    src.start(t);
+    src.stop(t + dur + 0.02);
+  },
+};
+
+/* ════════════════════════════════════════════════════════════════════════
+   SCENE
+   ════════════════════════════════════════════════════════════════════════ */
 const stage = document.getElementById('stage');
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
@@ -297,7 +482,7 @@ scene.background = new THREE.Color(0x07070a);
 scene.fog = new THREE.Fog(0x07070a, 9, 24);
 
 const camera = new THREE.PerspectiveCamera(38, 1, 0.05, 100);
-camera.position.set(3.1, 1.9, 4.3);
+camera.position.set(3.3, 1.9, 4.5);
 
 const orbit = new OrbitControls(camera, renderer.domElement);
 orbit.target.set(0, 1.25, 0);
@@ -330,17 +515,11 @@ const grid = new THREE.GridHelper(12, 24, 0x2a2825, 0x1b1a18);
 grid.position.y = 0.001;
 scene.add(grid);
 
-const ceilingPlate = new THREE.Mesh(
-  new THREE.BoxGeometry(0.8, 0.03, 0.8),
-  new THREE.MeshStandardMaterial({ color: 0x2b2a27, roughness: 0.8, metalness: 0.3 })
-);
-ceilingPlate.position.y = G.ceiling;
-scene.add(ceilingPlate);
-
 /* ── materials ──────────────────────────────────────────────────────────── */
 const matAlu    = new THREE.MeshStandardMaterial({ color: 0xd8d3c6, roughness: 0.38, metalness: 0.72 });
 const matHub    = new THREE.MeshStandardMaterial({ color: 0xeae5d8, roughness: 0.45, metalness: 0.3 });
 const matDowel  = new THREE.MeshStandardMaterial({ color: 0xd2b489, roughness: 0.78, metalness: 0.02 });
+const matDowelO = new THREE.MeshStandardMaterial({ color: 0xbb9d76, roughness: 0.80, metalness: 0.02 });
 const matLink   = new THREE.MeshStandardMaterial({ color: 0x9a9aa2, roughness: 0.32, metalness: 0.95 });
 const matPlinth = new THREE.MeshStandardMaterial({ color: 0xe8e3d6, roughness: 0.5, metalness: 0.2 });
 const matCable  = new THREE.MeshBasicMaterial({ color: 0xffb627, transparent: true, opacity: 0.6 });
@@ -358,7 +537,7 @@ function makeFigure() {
   const la = add(new THREE.CapsuleGeometry(0.042, 0.5, 4, 10), -0.155, 1.11, 0.02);
   const ra = add(new THREE.CapsuleGeometry(0.042, 0.5, 4, 10),  0.155, 1.11, 0.02);
   la.rotation.z = 0.12; ra.rotation.z = -0.12;
-  g.position.set(-1.42, 0, 0.4);
+  g.position.set(-1.55, 0, 0.45);
   g.rotation.y = 0.5;
   return g;
 }
@@ -367,27 +546,43 @@ scene.add(figure);
 
 /* ════════════════════════════════════════════════════════════════════════
    RIG REGISTRY
-   Each rig exposes { group, update(state, dt), info }. Board 3 is the dowel
-   curtain below; 1 and 2 fall back to a placeholder until their designs
-   exist. Adding one is: write the factory, register it under its boardId.
    ════════════════════════════════════════════════════════════════════════ */
 const RIGS = {};
 
 function createBoard3Rig() {
   const group = new THREE.Group();
-  const info = { ringY: 0, tiltDeg: 0, onDeck: 0, chainDown: 0, contacts: 0 };
+  const info = { ringY: 0, tiltDeg: 0, contacts: 0, chainDown: 0, scrape: 0, clacks: 0, strikes: 0 };
 
-  /* ── static structure ── */
+  /* ── ceiling + static structure ── */
+  const plate = new THREE.Mesh(
+    new THREE.BoxGeometry(G.outerR * 2 + 0.2, 0.03, G.outerR * 2 + 0.2),
+    new THREE.MeshStandardMaterial({ color: 0x2b2a27, roughness: 0.8, metalness: 0.3 })
+  );
+  plate.position.y = G.ceiling;
+  group.add(plate);
+
   const drop = new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.014, G.ceiling - G.hubY, 8), matWire);
   drop.position.y = (G.ceiling + G.hubY) / 2;
   group.add(drop);
 
-  // top housing: 3 winch servos + the DC gear motor
   const hub = new THREE.Mesh(new THREE.BoxGeometry(G.hubW, G.hubH, G.hubD), matHub);
   hub.position.y = G.hubY;
   hub.castShadow = true;
   group.add(hub);
   const hubBottomY = G.hubY - G.hubH / 2;
+
+  // the fixed outer ring, hung straight off the ceiling plate
+  const outerRing = new THREE.Mesh(new THREE.TorusGeometry(G.outerR, G.ringTube, 10, 120), matAlu);
+  outerRing.rotation.x = Math.PI / 2;
+  outerRing.position.y = G.outerY;
+  outerRing.castShadow = true;
+  group.add(outerRing);
+  for (let i = 0; i < 4; i++) {
+    const a = i * Math.PI / 2 + Math.PI / 4;
+    const rod = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, G.ceiling - G.outerY, 6), matWire);
+    rod.position.set(Math.cos(a) * G.outerR, (G.ceiling + G.outerY) / 2, Math.sin(a) * G.outerR);
+    group.add(rod);
+  }
 
   // the base: plinth with a wooden deck. Stationary — it never turns.
   const plinth = new THREE.Mesh(new THREE.CylinderGeometry(G.baseR, G.baseR, G.deckY, 72), matPlinth);
@@ -395,9 +590,7 @@ function createBoard3Rig() {
   plinth.castShadow = true; plinth.receiveShadow = true;
   group.add(plinth);
 
-  /* Deck texture: wood underneath, scrape marks accumulating on top. Two
-     canvases — the marks canvas is faded back toward the wood every frame, so
-     old passes decay while fresh ones stay bright. */
+  /* Deck texture: wood underneath, scrape marks accumulating on top. */
   const TEX = 512;
   const woodCv = document.createElement('canvas'); woodCv.width = woodCv.height = TEX;
   paintWood(woodCv.getContext('2d'), TEX);
@@ -429,14 +622,13 @@ function createBoard3Rig() {
   }
   function clearTrails() { deckCtx.globalAlpha = 1; deckCtx.drawImage(woodCv, 0, 0); deckTex.needsUpdate = true; }
 
-  /* ── spinner: everything the DC motor turns ── */
+  /* ── spinner: the only thing the DC motor turns ── */
   const spinner = new THREE.Group();
   group.add(spinner);
   const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, 0.10, 10), matAlu);
   shaft.position.y = hubBottomY - 0.05;
   spinner.add(shaft);
 
-  // the moving ring the chains hang from
   const ring = new THREE.Group();
   spinner.add(ring);
   const ringMesh = new THREE.Mesh(new THREE.TorusGeometry(G.ringR, G.ringTube, 10, 96), matAlu);
@@ -455,37 +647,53 @@ function createBoard3Rig() {
     return c;
   });
 
-  /* ── dowel chains: Verlet particles, world space (the deck is stationary) ── */
-  let chains = [], dowelMesh = null, linkMesh = null, segLen = 0, dowelLen = 0;
+  /* ── chains ──
+     One list holds both curtains. `moving` chains anchor to the winched ring
+     (so they inherit its rotation, height and tilt); the rest anchor to fixed
+     points on the outer ring. Same solver either way. */
+  let chains = [], moving = [], fixed = [];
+  let dowelMesh = null, dowelMeshO = null, linkMesh = null;
+  const pendingClacks = [];
 
   function buildChains() {
-    if (dowelMesh) { spinner.remove(dowelMesh); group.remove(dowelMesh); dowelMesh.geometry.dispose(); dowelMesh.dispose(); }
-    if (linkMesh)  { group.remove(linkMesh);  linkMesh.geometry.dispose();  linkMesh.dispose(); }
+    for (const m of [dowelMesh, dowelMeshO, linkMesh]) {
+      if (m) { group.remove(m); m.geometry.dispose(); m.dispose(); }
+    }
+    chains = []; moving = []; fixed = [];
 
-    const M = G.dowels;
-    segLen   = G.chainLen / M;
-    dowelLen = segLen - G.linkDia * 1.6;      // link rings eat a little of each pitch
+    const mk = (phi, R, M, len, isMoving, y0) => {
+      const seg = len / M;
+      const pos = [], prev = [];
+      for (let i = 0; i <= M; i++) {
+        const p = new THREE.Vector3(Math.cos(phi) * R, y0 - i * seg, Math.sin(phi) * R);
+        pos.push(p); prev.push(p.clone());
+      }
+      const ch = { phi, R, M, seg, pos, prev, moving: isMoving };
+      chains.push(ch);
+      (isMoving ? moving : fixed).push(ch);
+      return ch;
+    };
 
+    for (let c = 0; c < G.chainCount; c++)
+      mk((c / G.chainCount) * Math.PI * 2, G.ringR, G.dowels, G.chainLen, true, G.ringYDown);
+
+    const outerDowels = Math.max(2, Math.round(G.dowels * (G.outerChain / G.chainLen)));
+    for (let c = 0; c < G.outerCount; c++)
+      mk((c / G.outerCount) * Math.PI * 2 + Math.PI / G.outerCount, G.outerR, outerDowels, G.outerChain, false, G.outerY);
+
+    const nInner = G.chainCount * G.dowels;
+    const nOuter = G.outerCount * outerDowels;
     dowelMesh = new THREE.InstancedMesh(
-      new THREE.CylinderGeometry(G.dowelDia / 2, G.dowelDia / 2, 1, 7), matDowel, G.chainCount * M);
+      new THREE.CylinderGeometry(G.dowelDia / 2, G.dowelDia / 2, 1, 7), matDowel, Math.max(1, nInner));
+    dowelMeshO = new THREE.InstancedMesh(
+      new THREE.CylinderGeometry(G.dowelDia / 2, G.dowelDia / 2, 1, 7), matDowelO, Math.max(1, nOuter));
     linkMesh = new THREE.InstancedMesh(
-      new THREE.TorusGeometry(G.linkDia, G.linkDia * 0.32, 5, 10), matLink, G.chainCount * (M - 1));
-    for (const m of [dowelMesh, linkMesh]) {
+      new THREE.TorusGeometry(G.linkDia, G.linkDia * 0.32, 5, 10), matLink, Math.max(1, nInner + nOuter));
+    for (const m of [dowelMesh, dowelMeshO, linkMesh]) {
       m.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
       m.castShadow = true;
       m.frustumCulled = false;
-      group.add(m);           // world space — NOT under the spinner
-    }
-
-    chains = [];
-    for (let c = 0; c < G.chainCount; c++) {
-      const phi = (c / G.chainCount) * Math.PI * 2;
-      const pos = [], prev = [];
-      for (let i = 0; i <= M; i++) {
-        const p = new THREE.Vector3(Math.cos(phi) * G.ringR, G.ringYDown - i * segLen, Math.sin(phi) * G.ringR);
-        pos.push(p); prev.push(p.clone());
-      }
-      chains.push({ phi, pos, prev });
+      group.add(m);          // world space — NOT under the spinner
     }
   }
   buildChains();
@@ -504,27 +712,32 @@ function createBoard3Rig() {
      ring height, exactly as on the real rig. */
   function ringDropFor(pct) {
     const dr = Math.max(0.001, G.ringR - G.hubAnchorR);
-    const d0 = hubBottomY - (G.ringYDown + G.travel);     // vertical drop at 0%
-    const c0 = Math.hypot(Math.max(d0, 0.05), dr);        // cable length at 0%
+    const d0 = hubBottomY - (G.ringYDown + G.travel);
+    const c0 = Math.hypot(Math.max(d0, 0.05), dr);
     const c  = c0 + G.travel * (pct / 100);
     return Math.sqrt(Math.max(c * c - dr * dr, 1e-4));
   }
 
   function anchorOf(ch, out) {
-    return out.set(Math.cos(ch.phi) * G.ringR, 0, Math.sin(ch.phi) * G.ringR).applyMatrix4(ring.matrixWorld);
+    if (!ch.moving) return out.set(Math.cos(ch.phi) * ch.R, G.outerY, Math.sin(ch.phi) * ch.R);
+    return out.set(Math.cos(ch.phi) * ch.R, 0, Math.sin(ch.phi) * ch.R).applyMatrix4(ring.matrixWorld);
   }
 
   function stepPhysics(h, st) {
-    const damp = 0.986;
+    /* Velocity damping is air drag, and it competes directly with the effect
+       that throws the curtain outward. At 14 rpm centrifugal acceleration is
+       only ~1.2 m/s², so anything heavier than about 0.999/step cancels the
+       flare entirely and the chains merely trail. Energy is meant to leave
+       through the deck friction, not through this. */
+    const damp = 0.9985;
     const gh2 = GRAVITY * h * h;
     const mu = st.mu;
-    const M = G.dowels;
     const VMAX = 0.06;          // metres per step — keeps a bad frame from detonating
 
     for (const ch of chains) {
       anchorOf(ch, anchor);
+      const M = ch.M;
 
-      // integrate (particle 0 is pinned to the anchor and carries its velocity)
       ch.prev[0].copy(ch.pos[0]);
       ch.pos[0].copy(anchor);
       for (let i = 1; i <= M; i++) {
@@ -536,19 +749,14 @@ function createBoard3Rig() {
         p.set(p.x + vx, p.y + vy + gh2, p.z + vz);
       }
 
-      // distance constraints + deck contact
       for (let it = 0; it < 8; it++) {
         ch.pos[0].copy(anchor);
         for (let i = 1; i <= M; i++) {
           const a = ch.pos[i - 1], b = ch.pos[i];
           d.subVectors(b, a);
           const len = d.length();
-          if (len < 1e-5) {
-            // coincident — separate deterministically instead of dividing by ~0
-            b.set(a.x, a.y - segLen, a.z);
-            continue;
-          }
-          const k = (len - segLen) / len;
+          if (len < 1e-5) { b.set(a.x, a.y - ch.seg, a.z); continue; }
+          const k = (len - ch.seg) / len;
           if (i === 1) b.addScaledVector(d, -k);
           else { a.addScaledVector(d, k * 0.5); b.addScaledVector(d, -k * 0.5); }
         }
@@ -558,41 +766,140 @@ function createBoard3Rig() {
           const ground = r <= G.baseR ? G.deckY : 0;
           if (p.y < ground) {
             p.y = ground;
-            // Coulomb-ish friction: bleed the tangential velocity so dowels
-            // catch and drag instead of skating.
             p.x += (pr.x - p.x) * mu;
             p.z += (pr.z - p.z) * mu;
           }
         }
       }
     }
+
+    curtainCollide(h);
   }
 
-  /* Hang every chain from its current anchor, with a millimetre of lean that
-     grows down the chain. A perfectly vertical chain standing on the deck is a
+  /* Inner curtain against outer curtain.
+
+     This has to be dowel-against-dowel, not joint-against-joint. Both curtains
+     are sparse — 36 outer chains at 0.68 m leaves ~12 cm between neighbours —
+     so testing only the joints lets an inner chain thread straight through a
+     gap without ever registering. The dowels are rods, so the test is
+     segment-to-segment: closest approach between two capsules.
+
+     Broad phase is free: both curtains are rings, so only the outer chains
+     within one angular step of the inner segment's bearing can be in range,
+     and segments still well inside the outer radius are skipped outright. */
+  const seg = { s: 0, t: 0, d: 0, cx: 0, cy: 0, cz: 0, nx: 0, ny: 0, nz: 0 };
+  function closestSegSeg(ax, ay, az, bx, by, bz, cx, cy, cz, dx_, dy_, dz_) {
+    const d1x = bx - ax, d1y = by - ay, d1z = bz - az;
+    const d2x = dx_ - cx, d2y = dy_ - cy, d2z = dz_ - cz;
+    const rx = ax - cx, ry = ay - cy, rz = az - cz;
+    const a = d1x * d1x + d1y * d1y + d1z * d1z;
+    const e = d2x * d2x + d2y * d2y + d2z * d2z;
+    const f = d2x * rx + d2y * ry + d2z * rz;
+    let s = 0, t = 0;
+    if (a < 1e-9 && e < 1e-9) { s = t = 0; }
+    else if (a < 1e-9) { t = Math.min(1, Math.max(0, f / e)); }
+    else {
+      const c = d1x * rx + d1y * ry + d1z * rz;
+      if (e < 1e-9) { s = Math.min(1, Math.max(0, -c / a)); }
+      else {
+        const b = d1x * d2x + d1y * d2y + d1z * d2z;
+        const denom = a * e - b * b;
+        s = denom > 1e-12 ? Math.min(1, Math.max(0, (b * f - c * e) / denom)) : 0;
+        t = (b * s + f) / e;
+        if (t < 0) { t = 0; s = Math.min(1, Math.max(0, -c / a)); }
+        else if (t > 1) { t = 1; s = Math.min(1, Math.max(0, (b - c) / a)); }
+      }
+    }
+    const p1x = ax + d1x * s, p1y = ay + d1y * s, p1z = az + d1z * s;
+    const p2x = cx + d2x * t, p2y = cy + d2y * t, p2z = cz + d2z * t;
+    let nx = p2x - p1x, ny = p2y - p1y, nz = p2z - p1z;
+    const dist = Math.hypot(nx, ny, nz);
+    seg.s = s; seg.t = t; seg.d = dist;
+    if (dist > 1e-9) { seg.nx = nx / dist; seg.ny = ny / dist; seg.nz = nz / dist; }
+    else { seg.nx = 1; seg.ny = 0; seg.nz = 0; }
+    return dist;
+  }
+
+  function curtainCollide(h) {
+    if (!fixed.length) return;
+    const CONTACT = G.dowelDia * 1.15;      // two rods touch at one diameter
+    const dphi = (Math.PI * 2) / fixed.length;
+    const reach = G.outerR - CONTACT - 0.02;
+
+    for (const ci of moving) {
+      for (let i = 0; i < ci.M; i++) {
+        const a = ci.pos[i], b = ci.pos[i + 1];
+        const ra = Math.hypot(a.x, a.z), rb = Math.hypot(b.x, b.z);
+        if (ra < reach && rb < reach) continue;        // nowhere near the outer curtain
+
+        const mx = (a.x + b.x) * 0.5, mz = (a.z + b.z) * 0.5;
+        const base = Math.round(Math.atan2(mz, mx) / dphi);
+        for (let dj = -1; dj <= 1; dj++) {
+          const co = fixed[((base + dj) % fixed.length + fixed.length) % fixed.length];
+          for (let k = 0; k < co.M; k++) {
+            const c = co.pos[k], d2 = co.pos[k + 1];
+            // cheap height reject before the full segment test
+            if (Math.min(c.y, d2.y) - Math.max(a.y, b.y) > CONTACT) continue;
+            if (Math.min(a.y, b.y) - Math.max(c.y, d2.y) > CONTACT) continue;
+
+            const dist = closestSegSeg(a.x, a.y, a.z, b.x, b.y, b.z,
+                                       c.x, c.y, c.z, d2.x, d2.y, d2.z);
+            if (dist >= CONTACT) continue;
+
+            const s = seg.s, t = seg.t;
+            const nx = seg.nx, ny = seg.ny, nz = seg.nz;   // points inner → outer
+
+            // closing speed at the contact point, before we separate them
+            const pa = ci.prev[i], pb = ci.prev[i + 1], pc = co.prev[k], pd = co.prev[k + 1];
+            const iv = ((a.x - pa.x) * (1 - s) + (b.x - pb.x) * s) * nx
+                     + ((a.y - pa.y) * (1 - s) + (b.y - pb.y) * s) * ny
+                     + ((a.z - pa.z) * (1 - s) + (b.z - pb.z) * s) * nz;
+            const ov = ((c.x - pc.x) * (1 - t) + (d2.x - pd.x) * t) * nx
+                     + ((c.y - pc.y) * (1 - t) + (d2.y - pd.y) * t) * ny
+                     + ((c.z - pc.z) * (1 - t) + (d2.z - pd.z) * t) * nz;
+            const approach = (iv - ov) / h;
+
+            // push the contact point apart, split across each segment's
+            // endpoints by barycentric weight
+            const push = (CONTACT - dist) * 0.5;
+            const w1 = 1 - s, w2 = s, k1 = 1 / Math.max(w1 * w1 + w2 * w2, 1e-4);
+            const u1 = 1 - t, u2 = t, k2 = 1 / Math.max(u1 * u1 + u2 * u2, 1e-4);
+            if (i > 0) { a.x -= nx * push * w1 * k1; a.y -= ny * push * w1 * k1; a.z -= nz * push * w1 * k1; }
+            b.x -= nx * push * w2 * k1; b.y -= ny * push * w2 * k1; b.z -= nz * push * w2 * k1;
+            if (k > 0) { c.x += nx * push * u1 * k2; c.y += ny * push * u1 * k2; c.z += nz * push * u1 * k2; }
+            d2.x += nx * push * u2 * k2; d2.y += ny * push * u2 * k2; d2.z += nz * push * u2 * k2;
+
+            if (approach > G.clackV) pendingClacks.push({ v: Math.min(approach, 3), x: b.x });
+          }
+        }
+      }
+    }
+  }
+
+  /* Hang every chain from its anchor, with a millimetre of lean that grows
+     down the chain. A perfectly vertical chain standing on the deck is a
      degenerate equilibrium — it holds as a column instead of buckling — so the
      lean is what lets the excess actually fall over and pile. */
   function reseed() {
-    const M = G.dowels;
     for (const ch of chains) {
       anchorOf(ch, anchor);
       const jx = (Math.random() - 0.5) * 0.006, jz = (Math.random() - 0.5) * 0.006;
-      for (let i = 0; i <= M; i++) {
-        ch.pos[i].set(anchor.x + jx * i, anchor.y - i * segLen, anchor.z + jz * i);
+      for (let i = 0; i <= ch.M; i++) {
+        ch.pos[i].set(anchor.x + jx * i, anchor.y - i * ch.seg, anchor.z + jz * i);
         ch.prev[i].copy(ch.pos[i]);
       }
     }
   }
 
   function writeInstances(st) {
-    const M = G.dowels;
-    let di = 0, li = 0, contacts = 0;
+    let di = 0, doi = 0, li = 0, contacts = 0, slide = 0;
     const markR = TEX / 2 / G.baseR;
 
     if (st.showTrails) { deckCtx.globalAlpha = 0.012; deckCtx.drawImage(woodCv, 0, 0); }
 
     for (const ch of chains) {
-      for (let i = 0; i < M; i++) {
+      const mesh = ch.moving ? dowelMesh : dowelMeshO;
+      for (let i = 0; i < ch.M; i++) {
         const a = ch.pos[i], b = ch.pos[i + 1];
         axis.subVectors(b, a);
         const len = axis.length() || 1e-6;
@@ -600,9 +907,9 @@ function createBoard3Rig() {
         mid.addVectors(a, b).multiplyScalar(0.5);
         dummy.position.copy(mid);
         dummy.quaternion.setFromUnitVectors(up, axis);
-        dummy.scale.set(1, dowelLen, 1);
+        dummy.scale.set(1, Math.max(ch.seg - G.linkDia * 1.6, 0.01), 1);
         dummy.updateMatrix();
-        dowelMesh.setMatrixAt(di++, dummy.matrix);
+        mesh.setMatrixAt(ch.moving ? di++ : doi++, dummy.matrix);
 
         if (i > 0) {
           dummy.position.copy(a);
@@ -611,13 +918,15 @@ function createBoard3Rig() {
           linkMesh.setMatrixAt(li++, dummy.matrix);
         }
       }
-      // deck contact + the mark it leaves
-      for (let i = 1; i <= M; i++) {
-        const p = ch.pos[i];
+
+      // deck contact: count it, mark it, and measure how fast it is sliding
+      for (let i = 1; i <= ch.M; i++) {
+        const p = ch.pos[i], pr = ch.prev[i];
         if (p.y > G.deckY + 0.012) continue;
         const r = Math.hypot(p.x, p.z);
         if (r > G.baseR) continue;
         contacts++;
+        slide += Math.hypot(p.x - pr.x, p.z - pr.z) / PHYS_H;
         if (!st.showTrails) continue;
         const u = TEX / 2 + p.x * markR, v = TEX / 2 + p.z * markR;
         deckCtx.globalAlpha = 0.10;
@@ -627,22 +936,23 @@ function createBoard3Rig() {
         deckCtx.fill();
       }
     }
-    dowelMesh.count = di; linkMesh.count = li;
+    dowelMesh.count = di; dowelMeshO.count = doi; linkMesh.count = li;
     dowelMesh.instanceMatrix.needsUpdate = true;
+    dowelMeshO.instanceMatrix.needsUpdate = true;
     linkMesh.instanceMatrix.needsUpdate = true;
     if (st.showTrails) deckTex.needsUpdate = true;
     info.contacts = contacts;
+    info.scrape = slide;
   }
 
-  function update(st, dt) {
+  /* Place the ring from the three winch positions: each cable payout gives an
+     anchor height, and the rigid ring rides the plane through the three. */
+  function placeRing(st) {
     spinner.rotation.y = st.spin;
-
-    // three cable payouts → three ring anchor heights
     for (let i = 0; i < 3; i++) {
       const a = WINCH_ANGLES[i];
       A[i].set(Math.cos(a) * G.ringR, hubBottomY - ringDropFor(st.actual[i]), Math.sin(a) * G.ringR);
     }
-    // rigid ring on the plane through the three anchors
     const cx = (A[0].x + A[1].x + A[2].x) / 3;
     const cy = (A[0].y + A[1].y + A[2].y) / 3;
     const cz = (A[0].z + A[1].z + A[2].z) / 3;
@@ -652,6 +962,11 @@ function createBoard3Rig() {
     q.setFromUnitVectors(up, normal);
     ring.position.set(cx, cy, cz);
     ring.quaternion.copy(q);
+    return cy;
+  }
+
+  function update(st, dt) {
+    const cy = placeRing(st);
 
     if (st.showCables) {
       for (let i = 0; i < 3; i++) {
@@ -664,15 +979,15 @@ function createBoard3Rig() {
 
     group.updateMatrixWorld(true);
 
-    // Settle once on mount so the first frame shows the chains already resting
-    // on the deck rather than the straight-down pose they were built in.
+    // Settle once on mount so the first frame shows chains already at rest.
     if (!settled) {
       settled = true;
       reseed();
       for (let i = 0; i < 400; i++) stepPhysics(PHYS_H, st);
+      pendingClacks.length = 0;
     }
 
-    // fixed-step physics so the chains stay stable at any frame rate
+    pendingClacks.length = 0;
     acc = Math.min(acc + dt, 0.1);
     let n = 0;
     while (acc >= PHYS_H && n++ < 5) { stepPhysics(PHYS_H, st); acc -= PHYS_H; }
@@ -682,7 +997,8 @@ function createBoard3Rig() {
     info.ringY = cy;
     info.tiltDeg = THREE.MathUtils.radToDeg(Math.acos(THREE.MathUtils.clamp(normal.y, -1, 1)));
     info.chainDown = Math.max(0, G.chainLen - (cy - G.deckY));
-    info.onDeck = info.contacts / Math.max(1, chains.length);
+    info.strikes = pendingClacks.length;
+    return pendingClacks;
   }
 
   function setCable(mesh, a, b) {
@@ -694,7 +1010,42 @@ function createBoard3Rig() {
     mesh.scale.set(1, Math.max(len, 1e-4), 1);
   }
 
-  return { group, update, info, rebuild: buildChains, clearTrails };
+  /* Run the chains forward in one go, spinning the ring as we go. Flare is a
+     dynamic response that takes seconds to develop, so this answers "does this
+     ring height and speed actually reach the outer curtain, or just scrape?"
+     without waiting it out. Silent — the strikes are counted, not sounded. */
+  function fastForward(seconds, st) {
+    const steps = Math.round(seconds / PHYS_H);
+    const k = 1 - Math.exp(-PHYS_H / DC_LAG_S);
+    let strikes = 0;
+    for (let i = 0; i < steps; i++) {
+      // carry the motor's own ramp, and the winches', so the fast-forward
+      // lands where the rig would actually be after `seconds`
+      st.dcActual += (st.dcTarget - st.dcActual) * k;
+      const maxStep = st.slewLimit ? (1000 / SLEW_MS_PER_PCT) * PHYS_H : 1e6;
+      for (let c = 0; c < 3; c++) {
+        const dv = st.target[c] - st.actual[c];
+        st.actual[c] += Math.abs(dv) <= maxStep ? dv : Math.sign(dv) * maxStep;
+      }
+      st.spin += (st.dcActual / 100) * (G.maxRpm * 2 * Math.PI / 60) * PHYS_H;
+      placeRing(st);
+      // must refresh from the group: ring hangs off spinner, and updating the
+      // child alone would read a stale spinner.matrixWorld (i.e. no rotation)
+      group.updateMatrixWorld(true);
+      pendingClacks.length = 0;
+      stepPhysics(PHYS_H, st);
+      strikes += pendingClacks.length;
+    }
+    pendingClacks.length = 0;
+    // refresh geometry + info so the readout reflects where we landed, not
+    // wherever the last rendered frame left it
+    info.ringY = placeRing(st);
+    info.chainDown = Math.max(0, G.chainLen - (info.ringY - G.deckY));
+    writeInstances(st);
+    return strikes;
+  }
+
+  return { group, update, info, clearTrails, fastForward };
 }
 
 function createPlaceholderRig() {
@@ -705,9 +1056,10 @@ function createPlaceholderRig() {
   );
   box.position.y = 1.2;
   group.add(box);
-  return { group, update(st) { group.rotation.y = st.spin; },
-           info: { ringY: 0, tiltDeg: 0, onDeck: 0, chainDown: 0, contacts: 0 },
-           placeholder: true, rebuild() {}, clearTrails() {} };
+  const none = [];
+  return { group, update(st) { group.rotation.y = st.spin; return none; },
+           info: { ringY: 0, tiltDeg: 0, contacts: 0, chainDown: 0, scrape: 0, strikes: 0 },
+           placeholder: true, clearTrails() {}, fastForward() { return 0; } };
 }
 
 RIGS[3] = createBoard3Rig;
@@ -866,13 +1218,13 @@ const isLive = () => pollTimer !== null;
    SIM LOOP
    ════════════════════════════════════════════════════════════════════════ */
 const clock = new THREE.Clock();
+let clackRate = 0;
 function animate() {
   requestAnimationFrame(animate);
   const dt = Math.min(clock.getDelta(), 0.06);
 
   if (!isLive()) {
     tickPlayer(dt * 1000);
-    // winches travel at the measured mechanical limit
     const maxStep = state.slewLimit ? (1000 / SLEW_MS_PER_PCT) * dt : 1e6;
     for (let i = 0; i < 3; i++) {
       const d = state.target[i] - state.actual[i];
@@ -883,12 +1235,19 @@ function animate() {
   state.dcActual += (state.dcTarget - state.dcActual) * (1 - Math.exp(-dt / DC_LAG_S));
   state.spin += (state.dcActual / 100) * (G.maxRpm * 2 * Math.PI / 60) * dt;
 
-  rig.update(state, dt);
+  const clacks = rig.update(state, dt) || [];
   figure.visible = state.showHuman;
+
+  // sound is a readout of the physics, not a separate schedule
+  clackRate += (clacks.length / Math.max(dt, 1e-3) - clackRate) * 0.2;
+  audio.setScrape(rig.info.scrape);
+  audio.setClatter(clackRate);
+  for (const c of clacks) audio.clack(c.v, c.x);
 
   orbit.update();
   renderer.render(scene, camera);
   drawReadout();
+  drawMeters();
 }
 
 function drawReadout() {
@@ -899,10 +1258,20 @@ function drawReadout() {
        pos ${fmt(state.actual[0])} ${fmt(state.actual[1])} ${fmt(state.actual[2])}
 ring   ${i.ringY.toFixed(2)} m   ${(i.ringY - G.deckY).toFixed(2)} m over deck   tilt ${i.tiltDeg.toFixed(1)}°
 dowel  ${(i.chainDown * 100).toFixed(0)} cm of chain past the deck
-       ${i.contacts} joints touching  (${i.onDeck.toFixed(1)} per chain)
+       ${i.contacts} joints on the deck   scrape ${i.scrape.toFixed(2)} m/s
+strike ${clackRate.toFixed(0)} clacks/s against the outer ring
 dc     ${state.dcActual.toFixed(0)}%   ${rpm.toFixed(1)} rpm`;
 }
 const fmt = (v) => String(Math.round(v)).padStart(3, ' ');
+
+function drawMeters() {
+  const s = scrapeCurve(rig.info.scrape);
+  document.getElementById('scrapeM').style.width = (s * 100) + '%';
+  document.getElementById('scrapeV').textContent = rig.info.scrape.toFixed(2);
+  const c = Math.min(1, clackRate / 400);
+  document.getElementById('clackM').style.width = (c * 100) + '%';
+  document.getElementById('clackV').textContent = clackRate.toFixed(0) + '/s';
+}
 
 function resize() {
   const w = stage.clientWidth, h = stage.clientHeight;
@@ -955,10 +1324,42 @@ $('boardSel').addEventListener('change', e => { state.boardId = +e.target.value;
 
 $('mu').addEventListener('input', e => { state.mu = +e.target.value / 100; $('muv').textContent = state.mu.toFixed(2).slice(1); });
 $('clearTrails').addEventListener('click', () => rig.clearTrails());
+$('ff').addEventListener('click', () => {
+  const secs = 5;
+  const strikes = rig.fastForward(secs, state);
+  const i = rig.info;
+  log(`⏩ ${secs}s @ ${((state.dcActual / 100) * G.maxRpm).toFixed(1)} rpm — `
+    + `${(strikes / secs).toFixed(0)} clacks/s · scrape ${i.scrape.toFixed(2)} m/s · `
+    + `ring ${i.ringY.toFixed(2)} m, ${i.contacts} on deck`);
+});
 $('trailsOn').addEventListener('click', e => {
   state.showTrails = !state.showTrails;
   e.target.setAttribute('aria-pressed', String(state.showTrails));
 });
+
+// audio needs a real user gesture to start the context
+$('audioBtn').addEventListener('click', e => {
+  if (audio.on) {
+    audio.disable();
+    e.target.textContent = 'Audio off';
+    e.target.setAttribute('aria-pressed', 'false');
+    setAudioState('suspended', '');
+    return;
+  }
+  try {
+    audio.enable();
+    audio.setVolume(+$('vol').value / 100);
+    e.target.textContent = 'Audio on';
+    e.target.setAttribute('aria-pressed', 'true');
+    setAudioState(`${audio.ctx.state} · ${audio.ctx.sampleRate | 0} Hz`, audio.ctx.state === 'running' ? 'ok' : '');
+    // resume() is async; report where it actually landed
+    setTimeout(() => setAudioState(`${audio.ctx.state} · ${audio.ctx.sampleRate | 0} Hz`,
+      audio.ctx.state === 'running' ? 'ok' : 'bad'), 400);
+  } catch (err) {
+    setAudioState('failed — ' + err.message, 'bad');
+  }
+});
+$('vol').addEventListener('input', e => { $('volv').textContent = e.target.value; audio.setVolume(+e.target.value / 100); });
 
 $('play').addEventListener('click', () => { const v = $('clipSel').value; if (v) startClip(v); });
 $('stop').addEventListener('click', () => stopClip());
@@ -979,13 +1380,14 @@ $('disconnect').addEventListener('click', disconnect);
 // geometry — remounting the rig rebuilds every mesh from G
 const geoBind = {
   gTravel: 'travel', gChain: 'chainLen', gDowels: 'dowels', gCount: 'chainCount',
-  gRingR: 'ringR', gBaseR: 'baseR', gDeckY: 'deckY', gRpm: 'maxRpm',
+  gRingR: 'ringR', gOuterR: 'outerR', gOuterCount: 'outerCount', gOuterY: 'outerY',
+  gBaseR: 'baseR', gDeckY: 'deckY', gRpm: 'maxRpm', gClackV: 'clackV',
 };
 for (const [id, k] of Object.entries(geoBind)) {
   $(id).addEventListener('change', () => {
     const v = +$(id).value;
     if (!isFinite(v)) return;
-    G[k] = (k === 'dowels' || k === 'chainCount') ? Math.round(v) : v;
+    G[k] = (k === 'dowels' || k === 'chainCount' || k === 'outerCount') ? Math.round(v) : v;
     mountRig(state.boardId);
   });
 }
@@ -998,6 +1400,7 @@ function setPlayState(on) {
   el.textContent = on ? `playing — ${player.item.name}` : 'idle';
 }
 function setLink(text, cls) { const el = $('link'); el.textContent = text; el.className = cls; }
+function setAudioState(text, cls) { const el = $('audioState'); el.textContent = text; el.className = cls; }
 function log(msg) {
   const el = $('log');
   el.textContent = (msg + '\n' + el.textContent).split('\n').slice(0, 40).join('\n');

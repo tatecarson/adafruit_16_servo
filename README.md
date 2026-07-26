@@ -140,15 +140,39 @@ open <http://127.0.0.1:4173/sculpture_3d.html>. `three.js` is vendored in `vendo
 page works offline in the gallery.
 
 **Board 3's mechanism.** A ceiling housing holds the three winch servos and the DC gear
-motor. Three cables run down and out to a ring; chains of wooden dowels linked by small
-metal rings hang free from it, over a stationary base whose wooden deck is slightly wider
-than the ring. The winches set how much dowel piles onto the deck; the motor turns the
-hanging assembly, dragging the piled dowels across the stationary wood.
+motor. Three cables run down and out to an inner ring; chains of wooden dowels linked by
+small metal rings hang free from it. A second, larger ring is fixed to the ceiling and
+carries its own dowel curtain — it never moves. Below both is a stationary base with a
+wooden deck. The winches set how much dowel piles onto the deck; the motor turns the
+inner curtain only.
 
-- The dowel chains are simulated, not posed — Verlet particles with distance constraints
-  and a frictional deck contact. Pile-up, buckling, drag, centrifugal lift and swing all
-  fall out of that. The deck accumulates the scrape marks the dowels leave, which is the
-  pattern the piece draws; **Clear marks** resets it and `μ` sets deck friction.
+The two behaviours are consequences of the simulation, not separate modes:
+
+- **slow** — the piled ends drag across the stationary wood and scrape.
+- **fast** — centrifugal flare lifts them off the deck and throws them out against the
+  outer ring's dowels, and they clack.
+
+The measured knee is at **8.4 rpm**: 7.7 rpm gives a stray tick or two, 8.4 rpm gives a
+sustained 138 clacks/s. Note what that implies — the ±50 cap on Motions and DC lanes tops
+out at 7.0 rpm, *just below the threshold*, so authored content cannot reach the clacking
+regime. Only a manual `ROTATE 60` or above does. Lowering `Outer ring m` moves the knee
+down if the real piece clacks at show speeds.
+
+- The dowel chains are simulated, not posed — Verlet particles with distance constraints,
+  frictional deck contact, and segment-to-segment collision between the two curtains
+  (joint-only tests thread straight through the ~12 cm gaps between chains). Pile-up,
+  buckling, drag, flare and swing all fall out of that.
+- The deck accumulates the scrape marks the dowels leave, which is the pattern the piece
+  draws; **Clear marks** resets it and `μ` sets deck friction.
+- **Settle 5 s** runs five seconds of physics in one go and reports where it landed —
+  clacks/s, scrape, ring height, joints on the deck. Flare takes seconds to develop, so
+  this answers "does this height and speed clack, or just scrape?" without waiting.
+- **Sound** is synthesised from those same contacts, nothing sampled or sequenced: a
+  noise-based scrape voice driven by how fast the contacting dowels slide, and one
+  wooden-bar resonance per strike. Above ~45 strikes/s the discrete voices give way to a
+  clatter bed — at full speed the rig really does produce several hundred impacts a
+  second, which is a roar rather than a sequence of taps. Audio needs one click to start
+  (browser autoplay policy).
 - Cable payout converts to ring height through the cable's real geometry, so percent-down
   is slightly non-linear in ring height, as on the rig. Differential winch values tilt the
   ring on the plane through its three anchors.
