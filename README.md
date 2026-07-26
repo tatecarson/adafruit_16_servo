@@ -181,8 +181,16 @@ down if the real piece clacks at show speeds.
 - **Library playback** loads `library.json` and plays any Motion or Sequence, including
   `ROTATE`, `STOP`, and per-board DC lanes. Authoring form only — bake pre-rolls
   (`MOTION … PREP`) are not simulated.
+- **Dashboard link** mirrors the dashboard itself. `servo_controller.html` publishes
+  every command it dispatches on a same-origin `BroadcastChannel`, so opening both pages
+  from the same server makes the 3D rig follow the real control surface — Motor Test,
+  Master Command, live Motion play, `RUN` — **with no boards connected at all**, because
+  the tap sits in front of the HTTP request rather than behind a reply. The simulator
+  applies the firmware's own mirroring rule: `RUN`, `ROTATE`, bare `STOP` and `MOTION`
+  are cluster-wide and always apply; `UP`/`DOWN`/`DMOVE`/`S<n>`/`STOP <n>` are
+  board-local and apply only when addressed to the selected board.
 - **Live telemetry** polls a board's `/status.json` at 2 Hz and mirrors its real pulses,
-  inverted through the `servo_setup.h` calibration.
+  inverted through the `servo_setup.h` calibration. Overrides the dashboard link.
 - **Geometry** panel exposes every dimension. The mechanism is taken from the firmware;
   the dimensions are scaled off a reference render and are meant to be corrected against
   the real build.

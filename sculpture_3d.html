@@ -200,6 +200,18 @@
   </section>
 
   <section>
+    <h2>Dashboard link</h2>
+    <div class="btns">
+      <button id="busBtn" aria-pressed="true">Listening</button>
+    </div>
+    <div id="busState">waiting for servo_controller.html…</div>
+    <div class="note">Mirrors every command the dashboard sends, over a same-origin
+      BroadcastChannel. Open both pages from the same server and the rig follows —
+      Motor Test, Master Command, Motion play, <code>RUN</code> — with or without boards
+      connected.</div>
+  </section>
+
+  <section>
     <h2>Live telemetry</h2>
     <input type="text" id="ip" value="192.168.8.198" spellcheck="false">
     <div class="btns">
@@ -1175,8 +1187,116 @@ function applyMotion(motion, t) {
 }
 
 /* ════════════════════════════════════════════════════════════════════════
-   LIVE TELEMETRY
+   DASHBOARD LINK
+
+   servo_controller.html publishes every command it dispatches on a same-origin
+   BroadcastChannel. Interpreting those here means the 3D rig follows the real
+   control surface — the Motor Test drawer, Master Command, live Motion play,
+   RUN — without any board being present, because the dashboard taps the
+   command before the HTTP request rather than after a reply.
+
+   Commands are the firmware's own vocabulary (README § Command reference).
+   Percent-down is the native unit here, so UP/UMOVE invert and S/P convert
+   through the calibration.
    ════════════════════════════════════════════════════════════════════════ */
+const ramps = [null, null, null];      // per-channel timed moves from D/UMOVE
+let bus = null, busOn = true, busSeen = 0;
+
+function rampTo(ch, pct, ms) {
+  if (ch < 0 || ch > 2) return;
+  const to = clamp(pct, 0, 100);
+  if (!(ms > 0)) { ramps[ch] = null; state.target[ch] = to; return; }
+  // Ramp the *commanded* position, exactly as the firmware interpolates pulse.
+  // The winch still lags it through the slew limiter, which is the point:
+  // a DMOVE faster than the mechanism visibly fails to keep up.
+  ramps[ch] = { from: state.target[ch], to, t0: performance.now(), ms };
+}
+function tickRamps() {
+  const now = performance.now();
+  for (let i = 0; i < 3; i++) {
+    const r = ramps[i];
+    if (!r) continue;
+    const u = Math.min(1, (now - r.t0) / r.ms);
+    state.target[i] = r.from + (r.to - r.from) * u;
+    if (u >= 1) ramps[i] = null;
+  }
+}
+function clearRamps() { ramps[0] = ramps[1] = ramps[2] = null; }
+
+function pulseToPercentDownRaw(pulse) { return pulseToPercentDown(pulse); }
+function degreesToPercentDown(deg) {
+  const { totalDegrees, downDegrees, upDegrees, reverseDir } = SERVO_CAL;
+  const lo = upDegrees, hi = downDegrees || totalDegrees;
+  const p = reverseDir ? (hi - deg) / (hi - lo) : (deg - lo) / (hi - lo);
+  return clamp(p * 100, 0, 100);
+}
+
+// Mirrors shouldMirrorCommand() in command_interface.h, plus MOTION (which is
+// mirrored through the synchronized MOTION_START path rather than as an event).
+function isClusterCommand(cmd) {
+  const c = String(cmd || '').trim().toUpperCase();
+  return /^RUN\b/.test(c) || /^ROTATE\b/.test(c) || c === 'STOP' || /^MOTION\b/.test(c);
+}
+
+function applyBoardCommand(cmd) {
+  const c = String(cmd || '').trim();
+  let m;
+
+  if ((m = /^DMOVE\s+(\d+)\s+(-?[\d.]+)\s+(\d+)/i.exec(c)))  { rampTo(+m[1], +m[2], +m[3]); return 'DMOVE'; }
+  if ((m = /^UMOVE\s+(\d+)\s+(-?[\d.]+)\s+(\d+)/i.exec(c)))  { rampTo(+m[1], 100 - +m[2], +m[3]); return 'UMOVE'; }
+  if ((m = /^DOWN\s+(\d+)\s+(-?[\d.]+)/i.exec(c)))           { rampTo(+m[1], +m[2], 0); return 'DOWN'; }
+  if ((m = /^UP\s+(\d+)\s+(-?[\d.]+)/i.exec(c)))             { rampTo(+m[1], 100 - +m[2], 0); return 'UP'; }
+  if ((m = /^S(\d+)\s+(-?[\d.]+)/i.exec(c)))                 { rampTo(+m[1], degreesToPercentDown(+m[2]), 0); return 'S'; }
+  if ((m = /^P(\d+)\s+(-?[\d.]+)/i.exec(c)))                 { rampTo(+m[1], pulseToPercentDownRaw(+m[2]), 0); return 'P'; }
+  if ((m = /^ROTATE\s+(-?\d+)/i.exec(c)))                    { setDc(clamp(+m[1], -100, 100)); return 'ROTATE'; }
+
+  if (/^STOP\b/i.test(c)) {
+    // Firmware STOP halts motion and holds position; it does not home.
+    const one = /^STOP\s+(\d+)/i.exec(c);
+    if (one) { ramps[+one[1]] = null; state.target[+one[1]] = state.actual[+one[1]]; }
+    else { clearRamps(); for (let i = 0; i < 3; i++) state.target[i] = state.actual[i]; setDc(0); stopClip('STOP from dashboard'); }
+    return 'STOP';
+  }
+  // "MOTION <id>" and the baked "MOTION <id> PREP <ms>" form both land here;
+  // the pre-roll glide itself is not simulated.
+  if ((m = /^MOTION\s+(\S+)/i.exec(c))) {
+    if (library.motions.some(x => x.id === m[1])) { clearRamps(); startClip('motion:' + m[1]); }
+    else log(`  ! MOTION ${m[1]} not in this library`);
+    return 'MOTION';
+  }
+  if ((m = /^RUN\s+(\S+)(\s+LOOP)?/i.exec(c))) {
+    if (/^AUTO$/i.test(m[1])) { log('  · RUN AUTO (setlist not simulated)'); return 'RUN'; }
+    if (library.sequences.some(x => x.id === m[1])) {
+      clearRamps();
+      player.loop = !!m[2];
+      $('loop').setAttribute('aria-pressed', String(player.loop));
+      startClip('seq:' + m[1]);
+    } else log(`  ! RUN ${m[1]} not in this library`);
+    return 'RUN';
+  }
+  return null;    // SWEEP, TPULSE, CAL*, STATUS, GALLERY, BOARDID … not simulated
+}
+
+function openBus() {
+  try { bus = new BroadcastChannel('servo-sim'); }
+  catch { setBusState('BroadcastChannel unavailable in this browser', 'bad'); return; }
+  bus.onmessage = (e) => {
+    const msg = e.data;
+    if (!busOn || !msg || isLive()) return;
+    // Match the firmware's mirroring rule exactly (shouldMirrorCommand in
+    // command_interface.h): RUN / ROTATE / bare STOP are re-broadcast over UDP
+    // and MOTION goes out as a synchronized MOTION_START, so all of those
+    // reach every board whichever one the browser addressed. Everything else —
+    // UP, DOWN, DMOVE, S<n>, STOP <n> — is board-local and must be ignored
+    // unless it was addressed here, or the rig would follow another board's
+    // servo tracks.
+    if (!isClusterCommand(msg.cmd) && msg.boardId != null && msg.boardId !== state.boardId) return;
+    busSeen++;
+    const kind = applyBoardCommand(msg.cmd);
+    setBusState(`${busSeen} cmd · last ${msg.cmd.slice(0, 40)}${kind ? '' : ' (ignored)'}`, 'ok');
+    if (kind && !/^DMOVE|^UMOVE/i.test(msg.cmd)) log(`⇐ ${msg.cmd}`);
+  };
+}
 let pollTimer = null;
 function pulseToPercentDown(pulse) {
   const { minPulse, maxPulse, totalDegrees, downDegrees, upDegrees, reverseDir } = SERVO_CAL;
@@ -1225,6 +1345,8 @@ function animate() {
 
   if (!isLive()) {
     tickPlayer(dt * 1000);
+    tickRamps();
+    syncSlidersFromTarget();
     const maxStep = state.slewLimit ? (1000 / SLEW_MS_PER_PCT) * dt : 1e6;
     for (let i = 0; i < 3; i++) {
       const d = state.target[i] - state.actual[i];
@@ -1377,6 +1499,13 @@ $('fileIn').addEventListener('change', async e => {
 $('connect').addEventListener('click', connect);
 $('disconnect').addEventListener('click', disconnect);
 
+$('busBtn').addEventListener('click', e => {
+  busOn = !busOn;
+  e.target.setAttribute('aria-pressed', String(busOn));
+  e.target.textContent = busOn ? 'Listening' : 'Ignoring';
+  if (!busOn) { clearRamps(); setBusState('not listening', ''); }
+});
+
 // geometry — remounting the rig rebuilds every mesh from G
 const geoBind = {
   gTravel: 'travel', gChain: 'chainLen', gDowels: 'dowels', gCount: 'chainCount',
@@ -1400,6 +1529,7 @@ function setPlayState(on) {
   el.textContent = on ? `playing — ${player.item.name}` : 'idle';
 }
 function setLink(text, cls) { const el = $('link'); el.textContent = text; el.className = cls; }
+function setBusState(text, cls) { const el = $('busState'); el.textContent = text; el.className = cls; }
 function setAudioState(text, cls) { const el = $('audioState'); el.textContent = text; el.className = cls; }
 function log(msg) {
   const el = $('log');
@@ -1429,6 +1559,7 @@ fetch('./library.json', { cache: 'no-store' })
   .catch(err => { $('clipSel').innerHTML = '<option value="">— library.json not found —</option>'; log('! ' + err.message + ' — use Load file…'); });
 
 /* boot — after every declaration above is initialised */
+openBus();
 syncSlidersFromTarget();
 setDc(0);
 resize();
