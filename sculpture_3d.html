@@ -203,12 +203,16 @@
     <h2>Dashboard link</h2>
     <div class="btns">
       <button id="busBtn" aria-pressed="true">Listening</button>
+      <button id="busAny" aria-pressed="false" title="Accept board-local commands sent to any board">This board</button>
     </div>
     <div id="busState">waiting for servo_controller.html…</div>
     <div class="note">Mirrors every command the dashboard sends, over a same-origin
-      BroadcastChannel. Open both pages from the same server and the rig follows —
-      Motor Test, Master Command, Motion play, <code>RUN</code> — with or without boards
-      connected.</div>
+      BroadcastChannel. Open both pages from the <b>same origin</b> —
+      <code>127.0.0.1</code> and <code>localhost</code> are different origins and will not
+      talk. <code>RUN</code>/<code>ROTATE</code>/<code>STOP</code>/<code>MOTION</code> are
+      cluster-wide; <code>UP</code>/<code>DOWN</code>/<code>DMOVE</code> are board-local
+      and only apply when the dashboard is aimed at this rig's board. <b>Any board</b>
+      accepts them whichever board they were sent to.</div>
   </section>
 
   <section>
@@ -1200,7 +1204,7 @@ function applyMotion(motion, t) {
    through the calibration.
    ════════════════════════════════════════════════════════════════════════ */
 const ramps = [null, null, null];      // per-channel timed moves from D/UMOVE
-let bus = null, busOn = true, busSeen = 0;
+let bus = null, busOn = true, busSeen = 0, busAnyBoard = false;
 
 function rampTo(ch, pct, ms) {
   if (ch < 0 || ch > 2) return;
@@ -1282,18 +1286,28 @@ function openBus() {
   catch { setBusState('BroadcastChannel unavailable in this browser', 'bad'); return; }
   bus.onmessage = (e) => {
     const msg = e.data;
-    if (!busOn || !msg || isLive()) return;
+    if (!msg) return;
+    busSeen++;
+    // Every arriving message reports something. Silence here would be
+    // ambiguous between "nothing is arriving" (wrong origin, stale dashboard)
+    // and "arriving but filtered" (aimed at another board) — which are
+    // completely different problems with completely different fixes.
+    if (!busOn)  { setBusState(`${busSeen} cmd · not listening`, ''); return; }
+    if (isLive()) { setBusState(`${busSeen} cmd · ignored, telemetry has control`, ''); return; }
+
     // Match the firmware's mirroring rule exactly (shouldMirrorCommand in
     // command_interface.h): RUN / ROTATE / bare STOP are re-broadcast over UDP
     // and MOTION goes out as a synchronized MOTION_START, so all of those
     // reach every board whichever one the browser addressed. Everything else —
-    // UP, DOWN, DMOVE, S<n>, STOP <n> — is board-local and must be ignored
-    // unless it was addressed here, or the rig would follow another board's
-    // servo tracks.
-    if (!isClusterCommand(msg.cmd) && msg.boardId != null && msg.boardId !== state.boardId) return;
-    busSeen++;
+    // UP, DOWN, DMOVE, S<n>, STOP <n> — is board-local, and applying another
+    // board's servo tracks here would be wrong.
+    const addressedHere = msg.boardId == null || msg.boardId === state.boardId;
+    if (!isClusterCommand(msg.cmd) && !addressedHere && !busAnyBoard) {
+      setBusState(`${busSeen} cmd · "${msg.cmd.slice(0, 24)}" sent to board ${msg.boardId}, not this rig`, 'bad');
+      return;
+    }
     const kind = applyBoardCommand(msg.cmd);
-    setBusState(`${busSeen} cmd · last ${msg.cmd.slice(0, 40)}${kind ? '' : ' (ignored)'}`, 'ok');
+    setBusState(`${busSeen} cmd · ${msg.cmd.slice(0, 34)}${kind ? '' : ' — not simulated'}`, kind ? 'ok' : '');
     if (kind && !/^DMOVE|^UMOVE/i.test(msg.cmd)) log(`⇐ ${msg.cmd}`);
   };
 }
@@ -1504,6 +1518,11 @@ $('busBtn').addEventListener('click', e => {
   e.target.setAttribute('aria-pressed', String(busOn));
   e.target.textContent = busOn ? 'Listening' : 'Ignoring';
   if (!busOn) { clearRamps(); setBusState('not listening', ''); }
+});
+$('busAny').addEventListener('click', e => {
+  busAnyBoard = !busAnyBoard;
+  e.target.setAttribute('aria-pressed', String(busAnyBoard));
+  e.target.textContent = busAnyBoard ? 'Any board' : 'This board';
 });
 
 // geometry — remounting the rig rebuilds every mesh from G
