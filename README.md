@@ -141,10 +141,13 @@ page works offline in the gallery.
 
 **Board 3's mechanism.** A ceiling housing holds the three winch servos and the DC gear
 motor. Three cables run down and out to an inner ring; chains of wooden dowels linked by
-small metal rings hang free from it. A second, larger ring is fixed to the ceiling and
-carries its own dowel curtain — it never moves. Below both is a stationary base with a
-wooden deck. The winches set how much dowel piles onto the deck; the motor turns the
-inner curtain only.
+small metal rings hang free from it, over a stationary base whose wooden deck is slightly
+wider than that ring. A second, larger ring is fixed to the ceiling and carries its own
+dowel curtain — it never moves, and it sits just *outside* the base, so its dowels hang
+past the base wall and rest on the floor rather than on the deck. The base is modelled as
+a solid cylinder for that reason: resolving it as a top surface alone would snap the
+outer curtain up onto the deck. The winches set how much dowel piles onto the deck; the
+motor turns the inner curtain only.
 
 The two behaviours are consequences of the simulation, not separate modes:
 
@@ -152,11 +155,21 @@ The two behaviours are consequences of the simulation, not separate modes:
 - **fast** — centrifugal flare lifts them off the deck and throws them out against the
   outer ring's dowels, and they clack.
 
-The measured knee is at **8.4 rpm**: 7.7 rpm gives a stray tick or two, 8.4 rpm gives a
-sustained 138 clacks/s. Note what that implies — the ±50 cap on Motions and DC lanes tops
-out at 7.0 rpm, *just below the threshold*, so authored content cannot reach the clacking
-regime. Only a manual `ROTATE 60` or above does. Lowering `Outer ring m` moves the knee
-down if the real piece clacks at show speeds.
+Rotation is calibrated against the real installation, where the inner curtain starts
+tangling with the outer ring at about `ROTATE 22` — the practical ceiling. Full scale is
+set so that lands on the threshold rather than being a speed nobody uses:
+
+| `ROTATE` | rpm | s/rev | contact |
+|---|---|---|---|
+| 10–18 | 2.5–4.5 | 24–13 | clear |
+| **22** | **5.5** | **10.9** | **42 clacks/s — starting to tangle** |
+| 25–30 | 6.2–7.5 | 9.7–8.0 | 80–105 |
+| 50 | 12.5 | 4.8 | 696 — unusable |
+
+That threshold falls out of the ring gap, so it is only as right as the geometry. If
+`ROTATE 22` looks too slow, the real gap between the two rings is wider than the modelled
+7 cm — raise `Outer ring m`, which pushes the knee up, then raise `Max RPM @100` to put it
+back on 22.
 
 - The dowel chains are simulated, not posed — Verlet particles with distance constraints,
   frictional deck contact, and segment-to-segment collision between the two curtains

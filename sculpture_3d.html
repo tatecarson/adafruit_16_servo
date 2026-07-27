@@ -234,12 +234,13 @@
       <div class="field"><label>Dowels / chain</label><input type="number" id="gDowels" step="1" min="2" max="20" value="8"></div>
       <div class="field"><label>Inner chains</label><input type="number" id="gCount" step="1" min="6" max="60" value="30"></div>
       <div class="field"><label>Inner ring m</label><input type="number" id="gRingR" step="0.01" value="0.56"></div>
-      <div class="field"><label>Outer ring m</label><input type="number" id="gOuterR" step="0.01" value="0.68"></div>
+      <div class="field"><label>Outer ring m</label><input type="number" id="gOuterR" step="0.01" value="0.63"></div>
       <div class="field"><label>Outer chains</label><input type="number" id="gOuterCount" step="1" min="0" max="72" value="36"></div>
       <div class="field"><label>Outer ring y m</label><input type="number" id="gOuterY" step="0.01" value="2.00"></div>
-      <div class="field"><label>Deck radius m</label><input type="number" id="gBaseR" step="0.01" value="0.74"></div>
+      <div class="field"><label>Outer chain m</label><input type="number" id="gOuterChain" step="0.01" value="2.12"></div>
+      <div class="field"><label>Base radius m</label><input type="number" id="gBaseR" step="0.01" value="0.60"></div>
       <div class="field"><label>Deck height m</label><input type="number" id="gDeckY" step="0.01" value="0.26"></div>
-      <div class="field"><label>Max RPM @100</label><input type="number" id="gRpm" step="1" value="14"></div>
+      <div class="field"><label>Max RPM @100</label><input type="number" id="gRpm" step="1" value="25"></div>
       <div class="field"><label>Clack m/s</label><input type="number" id="gClackV" step="0.05" value="0.28"></div>
     </div>
     <label class="check"><input type="checkbox" id="optHuman" checked> 1.71 m figure for scale</label>
@@ -304,18 +305,24 @@ const G = {
   travel:      0.50,
   ringR:       0.56,
   ringTube:    0.020,
-  outerR:      0.68,   // fixed ring: 12 cm clear of the inner one
+  // The fixed outer ring sits just outside the base, so its dowels hang down
+  // past the base wall and rest on the floor rather than on the deck.
+  outerR:      0.63,
   outerY:      2.00,
   outerCount:  36,
-  outerChain:  1.86,   // reaches the deck with a little slack
-  baseR:       0.74,
+  outerChain:  2.12,   // outerY to the floor, plus slack to lie on it
+  baseR:       0.60,   // slightly larger than the inner ring, inside the outer
   deckY:       0.26,
   chainLen:    1.78,
   chainCount:  30,
   dowels:      8,
   dowelDia:    0.013,
   linkDia:     0.011,
-  maxRpm:      14,
+  /* Calibrated against the real installation, where the inner curtain starts
+     tangling with the outer ring at about ROTATE 22 — that is the practical
+     ceiling, and it already looks fast. So full scale is set such that 22%
+     lands on the tangle threshold rather than being a speed nobody uses. */
+  maxRpm:      25,
   clackV:      0.28,   // m/s of approach that counts as a strike, not a rub
 };
 const WINCH_ANGLES = [Math.PI / 2, Math.PI / 2 + 2 * Math.PI / 3, Math.PI / 2 + 4 * Math.PI / 3];
@@ -776,12 +783,28 @@ function createBoard3Rig() {
           if (i === 1) b.addScaledVector(d, -k);
           else { a.addScaledVector(d, k * 0.5); b.addScaledVector(d, -k * 0.5); }
         }
+        /* The base is a solid cylinder, not just a top surface. Resolving it
+           as a surface would snap any dowel hanging alongside it up onto the
+           deck; the outer curtain hangs past the base wall and must stay
+           outside it and reach the floor. Push along whichever face is
+           nearer — up onto the deck, or out through the wall. */
         for (let i = 1; i <= M; i++) {
           const p = ch.pos[i], pr = ch.prev[i];
           const r = Math.hypot(p.x, p.z);
-          const ground = r <= G.baseR ? G.deckY : 0;
-          if (p.y < ground) {
-            p.y = ground;
+          if (p.y >= G.deckY) continue;                       // clear of the base entirely
+          if (r >= G.baseR) {                                 // outside the wall: floor only
+            if (p.y < 0) {
+              p.y = 0;
+              p.x += (pr.x - p.x) * mu;
+              p.z += (pr.z - p.z) * mu;
+            }
+            continue;
+          }
+          if (G.baseR - r < G.deckY - p.y) {                  // nearer the wall than the top
+            const s = r > 1e-6 ? G.baseR / r : 1;
+            p.x *= s; p.z *= s;
+          } else {
+            p.y = G.deckY;
             p.x += (pr.x - p.x) * mu;
             p.z += (pr.z - p.z) * mu;
           }
@@ -1529,7 +1552,7 @@ $('busAny').addEventListener('click', e => {
 const geoBind = {
   gTravel: 'travel', gChain: 'chainLen', gDowels: 'dowels', gCount: 'chainCount',
   gRingR: 'ringR', gOuterR: 'outerR', gOuterCount: 'outerCount', gOuterY: 'outerY',
-  gBaseR: 'baseR', gDeckY: 'deckY', gRpm: 'maxRpm', gClackV: 'clackV',
+  gOuterChain: 'outerChain', gBaseR: 'baseR', gDeckY: 'deckY', gRpm: 'maxRpm', gClackV: 'clackV',
 };
 for (const [id, k] of Object.entries(geoBind)) {
   $(id).addEventListener('change', () => {
