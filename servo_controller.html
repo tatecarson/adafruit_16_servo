@@ -2358,33 +2358,84 @@ const lastSeen = new Map();
 const lastStatus = new Map();
 const boardIdByIp = new Map();
 
+// === MACHINE-CORE START ===
 // ── what each board actually drives ──────────────────────────────────────
 // A board id is not a machine. Three boards run the same firmware and the
 // same three servo channels, but the mechanism on the end of them is
 // different on each, and so is what a given command means. Naming them here
 // keeps the dashboard talking about sculptures rather than array indices, and
-// keeps the one number that genuinely differs — the reduction between the DC
-// motor and whatever it turns — in one place instead of in someone's head.
+// keeps the numbers that genuinely differ in one place instead of in
+// someone's head.
 //
-// rpmAt100 is the ring/deck speed at ROTATE 100, after the reduction. It is
-// what makes "the same command" mean four different speeds on four machines.
+// Two of those numbers matter enough to spell out:
+//
+//   rpmAt100  — ring or deck speed at ROTATE 100, after the reduction. It is
+//               what makes "the same command" mean three different speeds.
+//   servoMode — these are goBILDA 2000 Series 5-Turn Dual Mode servos, the
+//               same part on every board, switchable between a 5-turn winch
+//               drum and standard travel. A winch wants the turns; a wand
+//               bolted to the horn wants the short sweep. So 100 %down is a
+//               different physical gesture per machine even though the
+//               command is identical.
+//
+// This block is extracted by the Node tests, so it must not reach for
+// anything outside itself — ipLabel stays below it because it reads
+// boardIdByIp, which is network-discovery state rather than machine truth.
+const SERVO_MODE_DEGREES = { turn5: 1800, standard: 300 };
+
 const MACHINES = {
   1: { name: "centre wands", short: "wands",
        drive: "3 wands · ring on a 4:1 gearbox", gear: 4, rpmAt100: 6.25,
-       servos: ["Wand I throw", "Wand II throw", "Wand III throw"] },
+       servos: ["Wand I throw", "Wand II throw", "Wand III throw"],
+       servoMode: "standard" },
   2: { name: "field", short: "field",
        drive: "tone-wheel deck · DC only", gear: 1, rpmAt100: 128,
-       servos: null },                       // no servos on this machine at all
+       servos: null,                         // no servos on this machine at all
+       servoMode: null },
   3: { name: "dowel curtain", short: "curtain",
        drive: "3 winches · ring direct", gear: 1, rpmAt100: 25,
-       servos: ["Winch S0", "Winch S1", "Winch S2"] },
+       servos: ["Winch S0", "Winch S1", "Winch S2"],
+       servoMode: "turn5" },
 };
-const machineOf = (boardId) => MACHINES[Number(boardId)] || null;
+
+/* Every machine has a motor and a bake. Only some have servos. Keeping those
+   as two lists rather than one is what stops "there are three boards" being
+   re-derived, differently, in four places. */
+const MACHINE_IDS     = Object.keys(MACHINES).map(Number).sort((a, b) => a - b);
+const SERVO_BOARD_IDS = MACHINE_IDS.filter(id => Array.isArray(MACHINES[id].servos));
+
+const machineOf   = (boardId) => MACHINES[Number(boardId)] || null;
+const servoCountOf = (boardId) => (machineOf(boardId)?.servos || []).length;
+const servoTravelOf = (boardId) => SERVO_MODE_DEGREES[machineOf(boardId)?.servoMode] ?? null;
+
 function boardLabel(boardId, withDrive) {
   const m = machineOf(boardId);
   if (!m) return `board ${boardId}`;
   return `board ${boardId} · ${m.name}${withDrive ? ` — ${m.drive}` : ""}`;
 }
+
+/* What a signed ROTATE percentage is actually worth on a given machine. */
+function rpmForSpeed(boardId, speed) {
+  const m = machineOf(boardId);
+  const n = Number(speed);
+  if (!m || !Number.isFinite(n)) return null;
+  return (n / 100) * m.rpmAt100;
+}
+function formatRpm(rpm) {
+  if (rpm == null) return "—";
+  const a = Math.abs(rpm);
+  return `${a < 10 ? rpm.toFixed(2) : rpm.toFixed(0)} rpm`;
+}
+
+/* What 100 %down means as a physical gesture, for the places that author in
+   percent and would otherwise imply the three machines move alike. */
+function travelLabel(boardId) {
+  const deg = servoTravelOf(boardId);
+  if (deg == null) return "no servos";
+  return deg >= 720 ? `${(deg / 360).toFixed(0)} turns` : `${deg}°`;
+}
+// === MACHINE-CORE END ===
+
 function ipLabel(ip) {
   const id = boardIdByIp.get(ip);
   const m = machineOf(id);
@@ -2859,11 +2910,12 @@ $("#freeCmd").addEventListener("keydown", e => { if (e.key === "Enter") $("#free
     if (!el) return;
     const m = machineOf(boardId);
     if (!m) { el.textContent = ""; return; }
-    const at30 = (m.rpmAt100 * 0.30).toFixed(m.rpmAt100 < 20 ? 1 : 0);
+    const spun = Number(boardId) === 2 ? "deck" : "ring";
     el.innerHTML = `<b>${m.name}</b> — ${m.drive}.
       ${m.gear > 1 ? `${m.gear}:1 reduction, so ` : ""}<code>ROTATE 30</code> is about
-      ${at30} rpm at the ${boardId === 2 ? "deck" : "ring"}
-      (${m.rpmAt100.toFixed(m.rpmAt100 < 20 ? 2 : 0)} rpm at 100).`;
+      ${formatRpm(rpmForSpeed(boardId, 30))} at the ${spun}
+      (${formatRpm(rpmForSpeed(boardId, 100))} at 100).
+      ${m.servos ? `Servos are ${travelLabel(boardId)} end to end.` : ""}`;
   }
 
   function refreshForBoard() {
