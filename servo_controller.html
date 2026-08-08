@@ -1896,6 +1896,7 @@
     <span class="panel-corner-bl"></span><span class="panel-corner-br"></span>
 
     <div class="motion-picker">
+      <select id="motionMachine" title="Show only motions for one machine — a view filter, it changes nothing"></select>
       <select id="motionSelect" title="Motion"></select>
       <input id="motionName" type="text" placeholder="motion name" autocomplete="off" spellcheck="false">
       <code id="motionIdLabel" class="motion-id" title="Motion id — the auto-generated internal key used by MOTION and Sequence steps. Edit the name; the id stays fixed."></code>
@@ -1906,6 +1907,7 @@
       <div class="motion-actions">
         <button class="cmd compact" id="motionNew">New</button>
         <button class="cmd compact" id="motionDuplicate">Duplicate</button>
+        <select id="motionDupTarget" class="compact" title="Where Duplicate puts the copy — 'same machine' keeps the channels it already uses"></select>
         <button class="cmd compact alert" id="motionDelete">Delete</button>
       </div>
     </div>
@@ -3962,6 +3964,28 @@ let motionPlayer = { active: false, raf: 0, startedAt: 0, lastSendAt: 0, lastSen
 // to 0% instantly and 5-turn winches can't physically traverse that fast.
 const motionLastDispatched = new Map();
 const motionCollapsedBoards = new Set();
+/* Which machine the Motion picker is showing. "all" or a board id. Purely a
+   view filter — it never changes what a motion contains. */
+let motionMachineFilter = "all";
+
+/* Which machines a motion actually moves, from its keyframes rather than its
+   label. This is what lets the filter be useful before anything is tagged: an
+   untagged motion still shows up under the machine it demonstrably drives. */
+function inferredMachineIds(motion) {
+  const out = new Set();
+  for (const t of motion?.tracks || []) {
+    const values = new Set((t.keyframes || []).map(k => k.value));
+    if (values.size > 1) out.add(Number(t.boardId));
+  }
+  return [...out];
+}
+function motionMatchesMachine(motion, filter) {
+  if (filter === "all") return true;
+  const want = Number(filter);
+  if (motion?.machine != null) return Number(motion.machine) === want;
+  const inferred = inferredMachineIds(motion);
+  return inferred.length === 0 || inferred.includes(want);
+}
 const motionMutedTracks = new Set();
 let motionSoloTracks = new Set();
 const motionSelectedKeys = new Map();   // trackKey -> Set<atMs> (servo-dmu)
@@ -4077,6 +4101,7 @@ function defaultMotion(lib, name = "New Motion") {
     name,
     tags: [],
     scope: "cluster",
+    machine: MACHINE_IDS.includes(Number(motionMachineFilter)) ? Number(motionMachineFilter) : null,
     durationMs,
     tracks: MOTION_TRACK_SPECS.map(spec => ({
       kind: spec.kind,
@@ -4169,7 +4194,13 @@ function normalizeMotion(motion) {
     id: String(motion?.id || "motion").slice(0, 32),
     name: String(motion?.name || motion?.id || "Motion").slice(0, 64),
     tags: Array.from(new Set((motion?.tags || []).map(t => String(t).toLowerCase().slice(0, 24)).filter(Boolean))).slice(0, 8),
+    // scope is vestigial: written here and on pull-back, read by nothing. It
+    // predates the machines having names. `machine` below is the live one.
     scope: motion?.scope === "board" ? "board" : "cluster",
+    // Which sculpture this was authored for. null means it is not specific to
+    // one — it is a label for filtering, not an enforcement, so a motion whose
+    // keyframes disagree with it still plays exactly as authored.
+    machine: MACHINE_IDS.includes(Number(motion?.machine)) ? Number(motion.machine) : null,
     durationMs,
     tracks: MOTION_TRACK_SPECS.map(spec => {
       const existing = incoming.get(trackSpecKey(spec));
@@ -4505,6 +4536,7 @@ function renderMotionEditor() {
   const lib = sequenceLibrary();
   const motion = getCurrentMotion(lib);
   if (!motion) return;
+  renderMachineSelectors();
   const feasibilityReport = analyzeMotionServoFeasibility(motion);
   const feasibilityByTrack = new Map();
   for (const finding of feasibilityReport.all) {
@@ -4512,7 +4544,11 @@ function renderMotionEditor() {
     feasibilityByTrack.get(finding.trackKey).push(finding);
   }
   const playheadMs = Math.min(parseInt(motionScrubEl.value, 10) || 0, motion.durationMs);
-  motionSelectEl.innerHTML = lib.motions.map(m =>
+  // Always keep the open motion in the list even when it fails the filter, or
+  // the select goes blank underneath whoever is editing it.
+  motionSelectEl.innerHTML = lib.motions
+    .filter(m => m.id === motion.id || motionMatchesMachine(m, motionMachineFilter))
+    .map(m =>
     `<option value="${escapeHtml(m.id)}"${m.id === motion.id ? " selected" : ""}>${escapeHtml(m.name || m.id)}</option>`
   ).join("");
   if (document.activeElement !== motionNameEl) motionNameEl.value = motion.name || motion.id;
@@ -5445,6 +5481,43 @@ $("#motionDuplicate").addEventListener("click", () => {
   const motion = readMotionFromDom();
   const copy = JSON.parse(JSON.stringify(motion));
   copy.id = uniqueMotionId(lib);   // fresh opaque id (servo-d91)
+
+  /* Duplicate can also move the gesture to another machine. A shape authored
+     against the curtain's winches is often a reasonable starting point for the
+     wands, and re-drawing it by hand is the tedious part. */
+  const target = Number($("#motionDupTarget").value) || null;
+  const sources = [...new Set(copy.tracks.map(t => Number(t.boardId)))]
+    .filter(id => inferredMachineIds(copy).includes(id));
+  const from = sources.length === 1 ? sources[0] : null;
+
+  if (target && from && target !== from) {
+    if (machineOf(target)?.servos === null) {
+      setMotionStatus(`${machineOf(target).name} has no servos — nothing to copy there`, "alert");
+      return;
+    }
+    const room = servoCountOf(target);
+    let dropped = 0;
+    for (const t of copy.tracks) {
+      if (Number(t.boardId) !== from) continue;
+      const dest = copy.tracks.find(x => Number(x.boardId) === target && x.channel === t.channel);
+      if (!dest) { dropped++; continue; }
+      dest.keyframes = JSON.parse(JSON.stringify(t.keyframes));
+      t.keyframes = [{ atMs: 0, value: MOTION_SERVO_REST_PERCENT }];
+    }
+    copy.machine = target;
+    copy.name = `${motion.name || motion.id} → ${machineOf(target).short}`;
+    lib.motions.push(copy);
+    currentMotionId = copy.id;
+    saveLibrary(lib);
+    motionDirty = false;
+    renderLibSummary();
+    renderMotionEditor();
+    setMotionStatus(dropped
+      ? `copied to ${machineOf(target).name} — ${dropped} channel${dropped > 1 ? "s" : ""} dropped, it has only ${room}`
+      : `copied to ${machineOf(target).name}`, dropped ? "amber" : "phosphor");
+    return;
+  }
+
   copy.name = `${motion.name || motion.id} Copy`;
   lib.motions.push(copy);
   currentMotionId = copy.id;
@@ -5453,6 +5526,30 @@ $("#motionDuplicate").addEventListener("click", () => {
   renderLibSummary();
   renderMotionEditor();
   setMotionStatus(`duplicated ${motion.name || motion.id}`, "phosphor");
+});
+
+/* The two machine selects. Kept in one place so adding a machine adds it to
+   both without anyone remembering to. */
+function renderMachineSelectors() {
+  const filterEl = $("#motionMachine");
+  if (filterEl) {
+    filterEl.innerHTML = [`<option value="all">all machines</option>`]
+      .concat(MACHINE_IDS.filter(id => machineOf(id).servos)
+        .map(id => `<option value="${id}"${String(motionMachineFilter) === String(id) ? " selected" : ""}>${escapeHtml(machineOf(id).short)}</option>`))
+      .join("");
+  }
+  const dupEl = $("#motionDupTarget");
+  if (dupEl) {
+    const keep = dupEl.value;
+    dupEl.innerHTML = [`<option value="">same machine</option>`]
+      .concat(SERVO_BOARD_IDS.map(id => `<option value="${id}">→ ${escapeHtml(machineOf(id).short)}</option>`))
+      .join("");
+    dupEl.value = keep;
+  }
+}
+$("#motionMachine")?.addEventListener("change", e => {
+  motionMachineFilter = e.target.value;
+  renderMotionEditor();
 });
 $("#motionDelete").addEventListener("click", () => {
   const lib = sequenceLibrary();
@@ -6610,6 +6707,7 @@ function renderSequencer() {
   // Refresh the step-command suggestions (baked motions) + the hover help.
   const cmdSuggestEl = $("#seqCmdSuggest");
   if (cmdSuggestEl) cmdSuggestEl.innerHTML = cmdSuggestOptions();
+  renderMachineSelectors();
   // Label the three unmarked DC boxes with the machines they drive.
   const dcHeads = $("#seqDcHeads");
   if (dcHeads) {
@@ -7625,6 +7723,9 @@ function hydrateDeviceLibraryForEditor(input) {
       name: m.name || m.id,
       tags: m.tags || [],
       scope: m.scope || "cluster",
+      // Authoring-only, so the device never had it — restore it as unset
+      // rather than undefined.
+      machine: m.machine ?? null,
       tracks: (m.tracks || []).map(t => ({
         ...t,
         label: t.label || `B${t.boardId}.S${t.channel}`,
@@ -7639,6 +7740,7 @@ function hydrateDeviceLibraryForEditor(input) {
       ...s,
       name: s.name || s.id,
       tags: s.tags || [],
+      machine: s.machine ?? null,
       steps: (s.steps || []).map(step => ({
         ...step,
         target: step.target ?? "all",

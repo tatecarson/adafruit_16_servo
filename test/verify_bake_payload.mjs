@@ -107,6 +107,12 @@ check(boardPayloads.every(payload => payload.sequences.every(seq =>
   !Object.hasOwn(seq, "name") && seq.steps.every(step =>
     !Object.hasOwn(step, "label") && !Object.hasOwn(step, "hold")))),
   "device Sequences omit editor-only metadata and flags");
+// The device compactors are allowlists, which is why a new authoring field
+// costs the bake nothing. Pin that, so the next one added is free too.
+check(boardPayloads.every(payload =>
+  payload.motions.every(m => !Object.hasOwn(m, "machine")) &&
+  payload.sequences.every(seq => !Object.hasOwn(seq, "machine"))),
+  "the machine label never reaches the device");
 
 const hydrated = core.hydrateDeviceLibraryForEditor(boardPayloads[0]);
 check(hydrated.motions.every(m => m.name && Array.isArray(m.tags) &&
