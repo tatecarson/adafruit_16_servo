@@ -48,42 +48,6 @@
         },
         {
           "kind": "servo",
-          "boardId": 2,
-          "channel": 0,
-          "label": "B2.S0",
-          "keyframes": [
-            {
-              "atMs": 0,
-              "value": 100
-            }
-          ]
-        },
-        {
-          "kind": "servo",
-          "boardId": 2,
-          "channel": 1,
-          "label": "B2.S1",
-          "keyframes": [
-            {
-              "atMs": 0,
-              "value": 100
-            }
-          ]
-        },
-        {
-          "kind": "servo",
-          "boardId": 2,
-          "channel": 2,
-          "label": "B2.S2",
-          "keyframes": [
-            {
-              "atMs": 0,
-              "value": 100
-            }
-          ]
-        },
-        {
-          "kind": "servo",
           "boardId": 3,
           "channel": 0,
           "label": "B3.S0",
@@ -130,7 +94,8 @@
             }
           ]
         }
-      ]
+      ],
+      "machine": 3
     },
     {
       "id": "mt-low1",
@@ -179,42 +144,6 @@
         },
         {
           "kind": "servo",
-          "boardId": 2,
-          "channel": 0,
-          "label": "B2.S0",
-          "keyframes": [
-            {
-              "atMs": 0,
-              "value": 100
-            }
-          ]
-        },
-        {
-          "kind": "servo",
-          "boardId": 2,
-          "channel": 1,
-          "label": "B2.S1",
-          "keyframes": [
-            {
-              "atMs": 0,
-              "value": 100
-            }
-          ]
-        },
-        {
-          "kind": "servo",
-          "boardId": 2,
-          "channel": 2,
-          "label": "B2.S2",
-          "keyframes": [
-            {
-              "atMs": 0,
-              "value": 100
-            }
-          ]
-        },
-        {
-          "kind": "servo",
           "boardId": 3,
           "channel": 0,
           "label": "B3.S0",
@@ -261,7 +190,8 @@
             }
           ]
         }
-      ]
+      ],
+      "machine": 3
     },
     {
       "id": "mt-stg2",
@@ -310,42 +240,6 @@
         },
         {
           "kind": "servo",
-          "boardId": 2,
-          "channel": 0,
-          "label": "B2.S0",
-          "keyframes": [
-            {
-              "atMs": 0,
-              "value": 100
-            }
-          ]
-        },
-        {
-          "kind": "servo",
-          "boardId": 2,
-          "channel": 1,
-          "label": "B2.S1",
-          "keyframes": [
-            {
-              "atMs": 0,
-              "value": 100
-            }
-          ]
-        },
-        {
-          "kind": "servo",
-          "boardId": 2,
-          "channel": 2,
-          "label": "B2.S2",
-          "keyframes": [
-            {
-              "atMs": 0,
-              "value": 100
-            }
-          ]
-        },
-        {
-          "kind": "servo",
           "boardId": 3,
           "channel": 0,
           "label": "B3.S0",
@@ -384,7 +278,8 @@
             }
           ]
         }
-      ]
+      ],
+      "machine": 3
     },
     {
       "id": "mt-stg3",
@@ -433,42 +328,6 @@
         },
         {
           "kind": "servo",
-          "boardId": 2,
-          "channel": 0,
-          "label": "B2.S0",
-          "keyframes": [
-            {
-              "atMs": 0,
-              "value": 100
-            }
-          ]
-        },
-        {
-          "kind": "servo",
-          "boardId": 2,
-          "channel": 1,
-          "label": "B2.S1",
-          "keyframes": [
-            {
-              "atMs": 0,
-              "value": 100
-            }
-          ]
-        },
-        {
-          "kind": "servo",
-          "boardId": 2,
-          "channel": 2,
-          "label": "B2.S2",
-          "keyframes": [
-            {
-              "atMs": 0,
-              "value": 100
-            }
-          ]
-        },
-        {
-          "kind": "servo",
           "boardId": 3,
           "channel": 0,
           "label": "B3.S0",
@@ -507,7 +366,8 @@
             }
           ]
         }
-      ]
+      ],
+      "machine": 3
     },
     {
       "id": "mt-low2",
@@ -556,42 +416,6 @@
         },
         {
           "kind": "servo",
-          "boardId": 2,
-          "channel": 0,
-          "label": "B2.S0",
-          "keyframes": [
-            {
-              "atMs": 0,
-              "value": 100
-            }
-          ]
-        },
-        {
-          "kind": "servo",
-          "boardId": 2,
-          "channel": 1,
-          "label": "B2.S1",
-          "keyframes": [
-            {
-              "atMs": 0,
-              "value": 100
-            }
-          ]
-        },
-        {
-          "kind": "servo",
-          "boardId": 2,
-          "channel": 2,
-          "label": "B2.S2",
-          "keyframes": [
-            {
-              "atMs": 0,
-              "value": 100
-            }
-          ]
-        },
-        {
-          "kind": "servo",
           "boardId": 3,
           "channel": 0,
           "label": "B3.S0",
@@ -634,7 +458,8 @@
             }
           ]
         }
-      ]
+      ],
+      "machine": 3
     },
     {
       "id": "mt-low3",
@@ -683,42 +508,6 @@
         },
         {
           "kind": "servo",
-          "boardId": 2,
-          "channel": 0,
-          "label": "B2.S0",
-          "keyframes": [
-            {
-              "atMs": 0,
-              "value": 100
-            }
-          ]
-        },
-        {
-          "kind": "servo",
-          "boardId": 2,
-          "channel": 1,
-          "label": "B2.S1",
-          "keyframes": [
-            {
-              "atMs": 0,
-              "value": 100
-            }
-          ]
-        },
-        {
-          "kind": "servo",
-          "boardId": 2,
-          "channel": 2,
-          "label": "B2.S2",
-          "keyframes": [
-            {
-              "atMs": 0,
-              "value": 100
-            }
-          ]
-        },
-        {
-          "kind": "servo",
           "boardId": 3,
           "channel": 0,
           "label": "B3.S0",
@@ -765,7 +554,8 @@
             }
           ]
         }
-      ]
+      ],
+      "machine": 3
     },
     {
       "id": "mt-stir",
@@ -806,42 +596,6 @@
           "boardId": 1,
           "channel": 2,
           "label": "B1.S2",
-          "keyframes": [
-            {
-              "atMs": 0,
-              "value": 100
-            }
-          ]
-        },
-        {
-          "kind": "servo",
-          "boardId": 2,
-          "channel": 0,
-          "label": "B2.S0",
-          "keyframes": [
-            {
-              "atMs": 0,
-              "value": 100
-            }
-          ]
-        },
-        {
-          "kind": "servo",
-          "boardId": 2,
-          "channel": 1,
-          "label": "B2.S1",
-          "keyframes": [
-            {
-              "atMs": 0,
-              "value": 100
-            }
-          ]
-        },
-        {
-          "kind": "servo",
-          "boardId": 2,
-          "channel": 2,
-          "label": "B2.S2",
           "keyframes": [
             {
               "atMs": 0,
@@ -909,19 +663,20 @@
             }
           ]
         }
-      ]
+      ],
+      "machine": 3
     }
   ],
   "sequences": [
     {
       "id": "sq-nxy2a1",
-      "name": "Willow Rustle - Motions",
+      "name": "Curtain · Willow Rustle",
       "tags": [],
       "steps": [
         {
           "cmd": "MOTION mt-allup",
           "durationMs": 8000,
-          "target": "all",
+          "target": "3",
           "label": "",
           "hold": false,
           "dc": {
@@ -929,17 +684,18 @@
           },
           "noPrep": true
         }
-      ]
+      ],
+      "machine": 3
     },
     {
       "id": "sq-wyf1tp",
-      "name": "Rotations",
+      "name": "Curtain · Rotations",
       "tags": [],
       "steps": [
         {
           "cmd": "Rotate 10",
           "durationMs": 4000,
-          "target": "all",
+          "target": "3",
           "label": "",
           "hold": false,
           "dc": {}
@@ -947,7 +703,7 @@
         {
           "cmd": "Rotate 7",
           "durationMs": 4000,
-          "target": "all",
+          "target": "3",
           "label": "",
           "hold": false,
           "dc": {}
@@ -955,7 +711,7 @@
         {
           "cmd": "Rotate 10",
           "durationMs": 4000,
-          "target": "all",
+          "target": "3",
           "label": "",
           "hold": false,
           "dc": {}
@@ -963,16 +719,17 @@
         {
           "cmd": "Rotate 5",
           "durationMs": 4000,
-          "target": "all",
+          "target": "3",
           "label": "",
           "hold": false,
           "dc": {}
         }
-      ]
+      ],
+      "machine": 3
     },
     {
       "id": "sq-drag01",
-      "name": "Contact Build · Slow to Fast",
+      "name": "Curtain · Contact Build",
       "tags": [
         "slow",
         "build"
@@ -981,7 +738,7 @@
         {
           "cmd": "MOTION mt-low1",
           "durationMs": 6500,
-          "target": "all",
+          "target": "3",
           "label": "arm 1 drags · slow",
           "hold": false,
           "dc": {
@@ -992,7 +749,7 @@
         {
           "cmd": "rotate 12",
           "durationMs": 6000,
-          "target": "all",
+          "target": "3",
           "label": "",
           "hold": false,
           "dc": {}
@@ -1000,7 +757,7 @@
         {
           "cmd": "MOTION mt-stg2",
           "durationMs": 6500,
-          "target": "all",
+          "target": "3",
           "label": "arm 2 drags · slow",
           "hold": false,
           "dc": {
@@ -1011,7 +768,7 @@
         {
           "cmd": "rotate 12",
           "durationMs": 6000,
-          "target": "all",
+          "target": "3",
           "label": "",
           "hold": false,
           "dc": {}
@@ -1019,7 +776,7 @@
         {
           "cmd": "MOTION mt-stg3",
           "durationMs": 6500,
-          "target": "all",
+          "target": "3",
           "label": "arm 3 drags · all down",
           "hold": false,
           "dc": {
@@ -1030,7 +787,7 @@
         {
           "cmd": "rotate 15",
           "durationMs": 6000,
-          "target": "all",
+          "target": "3",
           "label": "",
           "hold": false,
           "dc": {}
@@ -1038,24 +795,25 @@
         {
           "cmd": "MOTION mt-stir",
           "durationMs": 6500,
-          "target": "all",
+          "target": "3",
           "label": "all dragging · faster",
           "hold": false,
           "dc": {
             "3": 10
           }
         }
-      ]
+      ],
+      "machine": 3
     },
     {
       "id": "sq-649ld4",
-      "name": "Shaking rotations",
+      "name": "Curtain · Shaking Rotations",
       "tags": [],
       "steps": [
         {
           "cmd": "rotate 15",
           "durationMs": 1000,
-          "target": "all",
+          "target": "3",
           "label": "",
           "hold": false,
           "dc": {}
@@ -1063,7 +821,7 @@
         {
           "cmd": "rotate -15",
           "durationMs": 1000,
-          "target": "all",
+          "target": "3",
           "label": "",
           "hold": false,
           "dc": {}
@@ -1071,7 +829,7 @@
         {
           "cmd": "rotate 18",
           "durationMs": 1000,
-          "target": "all",
+          "target": "3",
           "label": "",
           "hold": false,
           "dc": {}
@@ -1079,7 +837,7 @@
         {
           "cmd": "rotate -18",
           "durationMs": 1000,
-          "target": "all",
+          "target": "3",
           "label": "",
           "hold": false,
           "dc": {}
@@ -1087,7 +845,7 @@
         {
           "cmd": "rotate 5",
           "durationMs": 1000,
-          "target": "all",
+          "target": "3",
           "label": "",
           "hold": false,
           "dc": {}
@@ -1095,12 +853,13 @@
         {
           "cmd": "rotate -5",
           "durationMs": 1000,
-          "target": "all",
+          "target": "3",
           "label": "",
           "hold": false,
           "dc": {}
         }
-      ]
+      ],
+      "machine": 3
     }
   ],
   "setlists": [
