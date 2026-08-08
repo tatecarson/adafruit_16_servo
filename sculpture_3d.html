@@ -1,0 +1,1611 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>// 3D — Sculpture Simulator</title>
+<style>
+  :root {
+    --bg:        #0e0e0c;
+    --bg-elev:   #15140f;
+    --bg-deep:   #07070a;
+    --ink:       #f5f1e8;
+    --ink-dim:   #a39d8e;
+    --ink-mute:  #59554b;
+    --rule:      #2a2825;
+    --rule-hi:   #3d3a33;
+    --amber:     #ffb627;
+    --amber-soft:#5a3a05;
+    --phosphor:  #4be3c1;
+    --phos-soft: #0d3a31;
+    --alert:     #f15a3a;
+    --alert-soft:#3a1208;
+    --mono:  "IBM Plex Mono", ui-monospace, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin:0; padding:0; height:100%; }
+  body {
+    background: var(--bg); color: var(--ink);
+    font-family: var(--mono); font-size: 12px; line-height: 1.4;
+    display: grid; grid-template-columns: 1fr 320px; height: 100vh; overflow: hidden;
+  }
+  @media (max-width: 900px) { body { grid-template-columns: 1fr; grid-template-rows: 55vh 45vh; } }
+
+  #stage { position: relative; background: var(--bg-deep); }
+  #stage canvas { display: block; }
+  #hud {
+    position: absolute; left: 12px; top: 12px; pointer-events: none;
+    color: var(--ink-mute); font-size: 10px; letter-spacing: .08em; text-transform: uppercase;
+  }
+  #hud b { color: var(--amber); font-weight: 400; }
+  #readout {
+    position: absolute; left: 12px; bottom: 12px; pointer-events: none;
+    color: var(--ink-dim); font-size: 10px; white-space: pre; line-height: 1.6;
+  }
+
+  #panel { background: var(--bg-elev); border-left: 1px solid var(--rule); overflow-y: auto; padding: 0 0 40px; }
+  @media (max-width: 900px) { #panel { border-left: none; border-top: 1px solid var(--rule); } }
+
+  h1 { font-size: 11px; letter-spacing: .18em; text-transform: uppercase; color: var(--ink);
+       margin: 0; padding: 14px 14px 10px; border-bottom: 1px solid var(--rule); font-weight: 500; }
+  h1 span { color: var(--ink-mute); }
+  section { border-bottom: 1px solid var(--rule); padding: 12px 14px 14px; }
+  h2 { font-size: 9px; letter-spacing: .16em; text-transform: uppercase; color: var(--ink-mute);
+       margin: 0 0 10px; font-weight: 500; }
+  h2 em { font-style: normal; color: var(--rule-hi); }
+  .note { color: var(--ink-mute); font-size: 10px; margin-top: 8px; line-height: 1.5; }
+
+  .row { display: grid; grid-template-columns: 34px 1fr 46px; align-items: center; gap: 8px; margin-bottom: 7px; }
+  .row label { color: var(--ink-dim); font-size: 10px; letter-spacing: .06em; }
+  .row output { text-align: right; color: var(--amber); font-variant-numeric: tabular-nums; }
+  .row.dc output { color: var(--phosphor); }
+
+  input[type=range] { -webkit-appearance: none; appearance: none; width: 100%; height: 18px; background: transparent; }
+  input[type=range]::-webkit-slider-runnable-track { height: 2px; background: var(--rule-hi); }
+  input[type=range]::-moz-range-track { height: 2px; background: var(--rule-hi); }
+  input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 10px; height: 14px; margin-top: -6px;
+      background: var(--amber); border: none; border-radius: 1px; cursor: pointer; }
+  input[type=range]::-moz-range-thumb { width: 10px; height: 14px; background: var(--amber); border: none; border-radius: 1px; cursor: pointer; }
+  input[type=range].dc::-webkit-slider-thumb { background: var(--phosphor); }
+  input[type=range].dc::-moz-range-thumb { background: var(--phosphor); }
+
+  button {
+    font-family: var(--mono); font-size: 10px; letter-spacing: .08em; text-transform: uppercase;
+    background: transparent; color: var(--ink-dim); border: 1px solid var(--rule-hi);
+    padding: 5px 8px; cursor: pointer;
+  }
+  button:hover { color: var(--ink); border-color: var(--amber); }
+  button.hot { color: var(--alert); border-color: var(--alert-soft); }
+  button.hot:hover { border-color: var(--alert); }
+  button[aria-pressed=true] { color: var(--bg); background: var(--amber); border-color: var(--amber); }
+  .btns { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; }
+
+  select, input[type=text], input[type=number] {
+    font-family: var(--mono); font-size: 11px; background: var(--bg-deep); color: var(--ink);
+    border: 1px solid var(--rule-hi); padding: 4px 6px; width: 100%;
+  }
+  .check { display: flex; align-items: center; gap: 7px; color: var(--ink-dim); font-size: 10px; margin-top: 8px; cursor: pointer; }
+  .check input { accent-color: var(--amber); }
+
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 10px; }
+  .field label { display: block; color: var(--ink-mute); font-size: 9px; letter-spacing: .08em;
+                 text-transform: uppercase; margin-bottom: 3px; }
+
+  #transport { height: 3px; background: var(--rule); margin-top: 9px; }
+  #transport > i { display: block; height: 100%; width: 0; background: var(--amber); }
+  #playState { color: var(--ink-mute); font-size: 10px; margin-top: 6px; }
+  #playState.on { color: var(--amber); }
+
+  #log { margin-top: 9px; max-height: 84px; overflow-y: auto; color: var(--ink-mute);
+         font-size: 10px; white-space: pre-wrap; }
+  #link, #audioState { color: var(--ink-mute); font-size: 10px; }
+  #link.ok, #audioState.ok { color: var(--phosphor); }
+  #link.bad, #audioState.bad { color: var(--alert); }
+
+  /* level meters for the two voices */
+  .meter { height: 3px; background: var(--rule); margin-top: 5px; }
+  .meter > i { display: block; height: 100%; width: 0; background: var(--phosphor); transition: width .05s linear; }
+  .meter.clack > i { background: var(--amber); }
+  .mlabel { display: flex; justify-content: space-between; color: var(--ink-mute); font-size: 9px;
+            letter-spacing: .1em; text-transform: uppercase; margin-top: 8px; }
+</style>
+</head>
+<body>
+
+<div id="stage">
+  <div id="hud">rig <b id="hudBoard">board 3</b> · drag orbit · scroll zoom · right-drag pan</div>
+  <div id="readout"></div>
+</div>
+
+<div id="panel">
+  <h1>// 3D <span>sculpture simulator</span></h1>
+
+  <section>
+    <h2>Rig</h2>
+    <select id="boardSel">
+      <option value="3" selected>Board 3 — dowel curtain, winched ring</option>
+      <option value="1">Board 1 — not designed yet</option>
+      <option value="2">Board 2 — not designed yet</option>
+    </select>
+    <div class="note">Boards 1 &amp; 2 render a placeholder until their designs land. Add them in <code>RIGS</code>.</div>
+  </section>
+
+  <section>
+    <h2>Winch servos — percent down</h2>
+    <div class="row"><label>S0</label><input type="range" id="s0" min="0" max="100" step="1" value="100"><output id="s0v">100</output></div>
+    <div class="row"><label>S1</label><input type="range" id="s1" min="0" max="100" step="1" value="100"><output id="s1v">100</output></div>
+    <div class="row"><label>S2</label><input type="range" id="s2" min="0" max="100" step="1" value="100"><output id="s2v">100</output></div>
+    <div class="btns">
+      <button data-all="100">All down</button>
+      <button data-all="70">70%</button>
+      <button data-all="0">All up</button>
+      <button data-all="tilt">Tilt</button>
+    </div>
+    <label class="check"><input type="checkbox" id="gang"> gang all three</label>
+    <label class="check"><input type="checkbox" id="slew" checked> slew limit (77 ms/%, 7.7 s full range)</label>
+    <div class="note">0 = fully up/retracted, 100 = fully down. Unpowered rest is 100 — the most dowel on the deck.</div>
+  </section>
+
+  <section>
+    <h2>DC motor — rotation</h2>
+    <div class="row dc"><label>SPD</label><input type="range" class="dc" id="dc" min="-100" max="100" step="1" value="0"><output id="dcv">0</output></div>
+    <div class="btns">
+      <button data-dc="-30">−30</button>
+      <button data-dc="0">Stop</button>
+      <button data-dc="30">+30</button>
+      <button data-dc="100">+100</button>
+    </div>
+    <div class="note">±100 live (<code>ROTATE</code>); Motions/Sequences are capped ±50. Only the inner ring turns — the outer ring and the deck are fixed.</div>
+  </section>
+
+  <section>
+    <h2>Sound</h2>
+    <div class="btns">
+      <button id="audioBtn" aria-pressed="false">Audio off</button>
+    </div>
+    <div class="row"><label>VOL</label><input type="range" id="vol" min="0" max="100" step="1" value="65"><output id="volv">65</output></div>
+    <div class="mlabel"><span>scrape</span><span id="scrapeV">0.00</span></div>
+    <div class="meter"><i id="scrapeM"></i></div>
+    <div class="mlabel"><span>clack</span><span id="clackV">0/s</span></div>
+    <div class="meter clack"><i id="clackM"></i></div>
+    <div id="audioState">idle — audio needs a click to start</div>
+    <div class="note">Scrape is the dowels dragging the deck; clacks are the inner curtain striking the outer ring's dowels. Both are driven by the simulation, not scheduled.</div>
+  </section>
+
+  <section>
+    <h2>Deck</h2>
+    <div class="btns">
+      <button id="clearTrails">Clear marks</button>
+      <button id="trailsOn" aria-pressed="true">Marks</button>
+      <button id="ff">Settle 5 s</button>
+    </div>
+    <div class="row"><label>μ</label><input type="range" id="mu" min="0" max="95" step="1" value="45"><output id="muv">.45</output></div>
+    <div class="note">Deck friction. Low μ = dowels skate; high μ = they catch, drag, and scrape.</div>
+  </section>
+
+  <section>
+    <h2>Library playback</h2>
+    <select id="clipSel"><option>— loading library.json —</option></select>
+    <div class="btns">
+      <button id="play">▶ Play</button>
+      <button id="loop" aria-pressed="false">Loop</button>
+      <button id="stop" class="hot">■ Stop</button>
+      <button id="loadFile">Load file…</button>
+    </div>
+    <input type="file" id="fileIn" accept=".json" hidden>
+    <div id="transport"><i></i></div>
+    <div id="playState">idle</div>
+    <div id="log"></div>
+    <div class="note">Authoring form: bake pre-rolls (<code>MOTION … PREP</code>) are not simulated.</div>
+  </section>
+
+  <section>
+    <h2>Dashboard link</h2>
+    <div class="btns">
+      <button id="busBtn" aria-pressed="true">Listening</button>
+      <button id="busAny" aria-pressed="false" title="Accept board-local commands sent to any board">This board</button>
+    </div>
+    <div id="busState">waiting for servo_controller.html…</div>
+    <div class="note">Mirrors every command the dashboard sends, over a same-origin
+      BroadcastChannel. Open both pages from the <b>same origin</b> —
+      <code>127.0.0.1</code> and <code>localhost</code> are different origins and will not
+      talk. <code>RUN</code>/<code>ROTATE</code>/<code>STOP</code>/<code>MOTION</code> are
+      cluster-wide; <code>UP</code>/<code>DOWN</code>/<code>DMOVE</code> are board-local
+      and only apply when the dashboard is aimed at this rig's board. <b>Any board</b>
+      accepts them whichever board they were sent to.</div>
+  </section>
+
+  <section>
+    <h2>Live telemetry</h2>
+    <input type="text" id="ip" value="192.168.8.198" spellcheck="false">
+    <div class="btns">
+      <button id="connect">Connect</button>
+      <button id="disconnect">Disconnect</button>
+    </div>
+    <div id="link">offline</div>
+    <div class="note">Polls <code>/status.json</code> at 2 Hz and mirrors the board's real pulses. Overrides the sliders while connected.</div>
+  </section>
+
+  <section>
+    <h2>Geometry <em>— inferred, tune to the build</em></h2>
+    <div class="grid2">
+      <div class="field"><label>Winch travel m</label><input type="number" id="gTravel" step="0.01" value="0.50"></div>
+      <div class="field"><label>Chain length m</label><input type="number" id="gChain" step="0.01" value="1.78"></div>
+      <div class="field"><label>Dowels / chain</label><input type="number" id="gDowels" step="1" min="2" max="20" value="8"></div>
+      <div class="field"><label>Inner chains</label><input type="number" id="gCount" step="1" min="6" max="60" value="30"></div>
+      <div class="field"><label>Inner ring m</label><input type="number" id="gRingR" step="0.01" value="0.56"></div>
+      <div class="field"><label>Outer ring m</label><input type="number" id="gOuterR" step="0.01" value="0.63"></div>
+      <div class="field"><label>Outer chains</label><input type="number" id="gOuterCount" step="1" min="0" max="72" value="36"></div>
+      <div class="field"><label>Outer ring y m</label><input type="number" id="gOuterY" step="0.01" value="2.00"></div>
+      <div class="field"><label>Outer chain m</label><input type="number" id="gOuterChain" step="0.01" value="2.12"></div>
+      <div class="field"><label>Base radius m</label><input type="number" id="gBaseR" step="0.01" value="0.60"></div>
+      <div class="field"><label>Deck height m</label><input type="number" id="gDeckY" step="0.01" value="0.26"></div>
+      <div class="field"><label>Max RPM @100</label><input type="number" id="gRpm" step="1" value="25"></div>
+      <div class="field"><label>Clack m/s</label><input type="number" id="gClackV" step="0.05" value="0.28"></div>
+    </div>
+    <label class="check"><input type="checkbox" id="optHuman" checked> 1.71 m figure for scale</label>
+    <label class="check"><input type="checkbox" id="optCables" checked> show winch cables</label>
+  </section>
+</div>
+
+<script type="importmap">
+{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js" } }
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/controls/OrbitControls.js';
+
+/* ────────────────────────────────────────────────────────────────────────────
+   WHAT THIS SIMULATES
+
+   Board 3: a ceiling housing holding three winch servos and the DC gear motor.
+   Three cables run down and out to an inner ring. Chains of wooden dowels,
+   linked by small metal rings, hang free from it. A second, larger ring is
+   fixed to the ceiling and carries its own curtain of dowels; it never moves.
+   Below both is a stationary base with a wooden deck.
+
+   The winches set how much dowel piles onto the deck. The motor turns the
+   inner curtain only:
+     · slow — the piled ends drag across the stationary wood and scrape
+     · fast — centrifugal flare lifts them off the deck and throws them out
+       against the outer ring's dowels, and they clack
+
+   Both of those are consequences of the simulation, not separate modes, and
+   the audio is driven from the same contacts that produce them.
+
+   Controllable surface, matching the dashboard exactly:
+     · 3 goBILDA 5-turn winch servos, channels 0–2, as "percent down"
+       (0 = fully up/retracted, 100 = fully down). Unpowered rest is 100.
+     · 1 DC gear motor via the IBT-2, signed −100..+100 (ROTATE), capped ±50
+       inside Motions and Sequence DC lanes.
+
+   Numbers taken from the firmware/schema rather than invented:
+     · Calibration minPulse 110 / maxPulse 480, totalDegrees 1800,
+       reverseDir true — servo_setup.h. Used to invert live telemetry.
+     · Full-range travel has a measured mechanical floor of ~7.7 s, i.e.
+       77 ms per 1% — docs/sequencer-schema.md.
+     · Cable payout converts to ring height through the cable's real geometry,
+       so percent-down is slightly non-linear in ring height.
+
+   The dowel chains are simulated, not posed: Verlet particles with distance
+   constraints, frictional deck contact, and curtain-to-curtain collision.
+   ──────────────────────────────────────────────────────────────────────────── */
+
+const SERVO_CAL = { minPulse: 110, maxPulse: 480, totalDegrees: 1800, downDegrees: 1800, upDegrees: 0, reverseDir: true };
+const SLEW_MS_PER_PCT = 77;
+const DC_LAG_S        = 0.7;
+const PHYS_H          = 1 / 120;
+const GRAVITY         = -9.81;
+
+const G = {
+  ceiling:     3.00,
+  hubY:        2.72, hubW: 0.44, hubH: 0.15, hubD: 0.30,
+  hubAnchorR:  0.15,
+  ringYDown:   1.78,
+  travel:      0.50,
+  ringR:       0.56,
+  ringTube:    0.020,
+  // The fixed outer ring sits just outside the base, so its dowels hang down
+  // past the base wall and rest on the floor rather than on the deck.
+  outerR:      0.63,
+  outerY:      2.00,
+  outerCount:  36,
+  outerChain:  2.12,   // outerY to the floor, plus slack to lie on it
+  baseR:       0.60,   // slightly larger than the inner ring, inside the outer
+  deckY:       0.26,
+  chainLen:    1.78,
+  chainCount:  30,
+  dowels:      8,
+  dowelDia:    0.013,
+  linkDia:     0.011,
+  /* Calibrated against the real installation, where the inner curtain starts
+     tangling with the outer ring at about ROTATE 22 — that is the practical
+     ceiling, and it already looks fast. So full scale is set such that 22%
+     lands on the tangle threshold rather than being a speed nobody uses. */
+  maxRpm:      25,
+  clackV:      0.28,   // m/s of approach that counts as a strike, not a rub
+};
+const WINCH_ANGLES = [Math.PI / 2, Math.PI / 2 + 2 * Math.PI / 3, Math.PI / 2 + 4 * Math.PI / 3];
+
+const state = {
+  boardId: 3,
+  target:  [100, 100, 100],
+  actual:  [100, 100, 100],
+  dcTarget: 0, dcActual: 0,
+  spin: 0,
+  slewLimit: true,
+  mu: 0.45,
+  showHuman: true, showCables: true, showTrails: true,
+};
+
+/* ════════════════════════════════════════════════════════════════════════
+   AUDIO
+   Two voices, both synthesised — nothing is sampled or scheduled ahead.
+
+   · scrape — looping noise through a pair of bandpasses, gain and brightness
+     driven by how fast the contacting dowels are actually moving across the
+     deck. Sits somewhere between a brush on a snare and sandpaper.
+   · clack — one short event per curtain strike: a noise burst through two
+     high-Q resonances an inharmonic ratio apart, which is roughly how a
+     wooden bar rings. Pitch scales with dowel length, gain with impact speed.
+
+   The context can only start from a user gesture, hence the Audio button.
+   ════════════════════════════════════════════════════════════════════════ */
+const DISCRETE_MAX = 45;      // clacks/sec struck individually; the rest become clatter
+const scrapeCurve = (v) => 1 - Math.exp(-v / 5);
+
+const audio = {
+  ctx: null, master: null, noiseBuf: null,
+  scrapeGain: null, scrapeBp1: null, scrapeBp2: null,
+  clatterGain: null, clatterBp: null,
+  on: false, volume: 0.65,
+  budget: 0, budgetAt: 0,
+
+  // Builds the graph and asks the context to start. Resolves as soon as the
+  // graph exists — resume() is fire-and-forget so a browser that refuses to
+  // start it (no user activation, hidden tab) leaves the UI responsive and
+  // reports the real ctx.state instead of hanging on an unresolved promise.
+  enable() {
+    if (!this.ctx) {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) throw new Error('no Web Audio in this browser');
+      this.ctx = new AC();
+
+      // 2 s of white noise, reused by both voices
+      const n = Math.floor(this.ctx.sampleRate * 2);
+      this.noiseBuf = this.ctx.createBuffer(1, n, this.ctx.sampleRate);
+      const ch = this.noiseBuf.getChannelData(0);
+      for (let i = 0; i < n; i++) ch[i] = Math.random() * 2 - 1;
+
+      this.master = this.ctx.createGain();
+      this.master.gain.value = this.volume;
+      this.master.connect(this.ctx.destination);
+
+      // scrape voice
+      const src = this.ctx.createBufferSource();
+      src.buffer = this.noiseBuf;
+      src.loop = true;
+      this.scrapeBp1 = this.ctx.createBiquadFilter();
+      this.scrapeBp1.type = 'bandpass'; this.scrapeBp1.frequency.value = 1400; this.scrapeBp1.Q.value = 0.8;
+      this.scrapeBp2 = this.ctx.createBiquadFilter();
+      this.scrapeBp2.type = 'bandpass'; this.scrapeBp2.frequency.value = 320; this.scrapeBp2.Q.value = 1.6;
+      this.scrapeGain = this.ctx.createGain();
+      this.scrapeGain.gain.value = 0;
+      src.connect(this.scrapeBp1); src.connect(this.scrapeBp2);
+      this.scrapeBp1.connect(this.scrapeGain); this.scrapeBp2.connect(this.scrapeGain);
+      this.scrapeGain.connect(this.master);
+      src.start();
+
+      // clatter bed — see setClatter()
+      const src2 = this.ctx.createBufferSource();
+      src2.buffer = this.noiseBuf;
+      src2.loop = true;
+      this.clatterBp = this.ctx.createBiquadFilter();
+      this.clatterBp.type = 'bandpass'; this.clatterBp.frequency.value = 900; this.clatterBp.Q.value = 1.4;
+      this.clatterGain = this.ctx.createGain();
+      this.clatterGain.gain.value = 0;
+      src2.connect(this.clatterBp);
+      this.clatterBp.connect(this.clatterGain);
+      this.clatterGain.connect(this.master);
+      src2.start();
+    }
+    this.on = true;
+    this.ctx.resume().catch(() => {});
+    return this.ctx.state;
+  },
+
+  disable() {
+    this.on = false;
+    if (this.ctx) {
+      this.scrapeGain.gain.setTargetAtTime(0, this.ctx.currentTime, 0.02);
+      this.clatterGain.gain.setTargetAtTime(0, this.ctx.currentTime, 0.02);
+      this.ctx.suspend();
+    }
+  },
+
+  setVolume(v) { this.volume = v; if (this.master) this.master.gain.setTargetAtTime(v, this.ctx.currentTime, 0.03); },
+
+  /* intensity: metres/second of dowel sliding across the deck, summed over
+     every contact. Ranges roughly 0..15 — near zero at rest, ~4 at a slow
+     turn with the ring down, ~14 at full speed. Mapped through a soft curve
+     rather than a hard clamp so the whole range stays audible instead of
+     pinning at maximum the moment it starts moving. */
+  setScrape(intensity) {
+    if (!this.on || !this.ctx) return;
+    const t = this.ctx.currentTime;
+    const x = scrapeCurve(intensity);
+    this.scrapeGain.gain.setTargetAtTime(0.32 * x, t, 0.05);
+    this.scrapeBp1.frequency.setTargetAtTime(900 + 2600 * x, t, 0.08);
+  },
+
+  /* At full speed the rig really does produce several hundred impacts a
+     second — 30 chains, a few dowels each in range, sweeping past 36 outer
+     chains. That is a wooden roar, not a sequence of taps, and no discrete
+     voice can play it. So DISCRETE_MAX of them are struck individually and
+     everything above that density feeds a noise bed instead. The crossfade is
+     what keeps a slow pass sounding like separate clacks and a fast one
+     sounding like the clatter it is. */
+  setClatter(rate) {
+    if (!this.on || !this.ctx) return;
+    const t = this.ctx.currentTime;
+    const x = Math.min(1, Math.max(0, (rate - 35) / 450));
+    this.clatterGain.gain.setTargetAtTime(0.26 * x, t, 0.07);
+    this.clatterBp.frequency.setTargetAtTime(780 + 950 * x, t, 0.12);
+  },
+
+  clack(vel, panX) {
+    if (!this.on || !this.ctx) return;
+    const t = this.ctx.currentTime;
+    // budget: a dense roll is fine, a machine gun is not
+    if (t - this.budgetAt > 1) { this.budgetAt = t; this.budget = 0; }
+    if (this.budget++ > DISCRETE_MAX) return;
+
+    const amp = Math.min(0.55, 0.12 + vel * 0.5);
+    const dur = 0.05 + Math.random() * 0.07;
+    const f0  = (620 + Math.random() * 520) * (0.22 / Math.max(0.08, G.chainLen / G.dowels));
+
+    const src = this.ctx.createBufferSource();
+    src.buffer = this.noiseBuf;
+    src.loop = true;
+    const g = this.ctx.createGain();
+    g.gain.setValueAtTime(amp, t);
+    g.gain.exponentialRampToValueAtTime(0.0006, t + dur);
+
+    const mk = (f, q, gain) => {
+      const bp = this.ctx.createBiquadFilter();
+      bp.type = 'bandpass'; bp.frequency.value = f; bp.Q.value = q;
+      const vg = this.ctx.createGain(); vg.gain.value = gain;
+      src.connect(bp); bp.connect(vg); vg.connect(g);
+    };
+    mk(f0, 11, 1.0);
+    mk(f0 * 2.76, 14, 0.45);   // inharmonic partial — reads as a bar, not a drum
+    mk(f0 * 5.4, 16, 0.16);
+
+    const pan = this.ctx.createStereoPanner ? this.ctx.createStereoPanner() : null;
+    if (pan) { pan.pan.value = Math.max(-1, Math.min(1, panX / G.outerR)); g.connect(pan); pan.connect(this.master); }
+    else g.connect(this.master);
+
+    src.start(t);
+    src.stop(t + dur + 0.02);
+  },
+};
+
+/* ════════════════════════════════════════════════════════════════════════
+   SCENE
+   ════════════════════════════════════════════════════════════════════════ */
+const stage = document.getElementById('stage');
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+stage.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x07070a);
+scene.fog = new THREE.Fog(0x07070a, 9, 24);
+
+const camera = new THREE.PerspectiveCamera(38, 1, 0.05, 100);
+camera.position.set(3.3, 1.9, 4.5);
+
+const orbit = new OrbitControls(camera, renderer.domElement);
+orbit.target.set(0, 1.25, 0);
+orbit.enableDamping = true;
+orbit.maxDistance = 16;
+orbit.minDistance = 0.7;
+
+scene.add(new THREE.HemisphereLight(0x9fb6c8, 0x1a1712, 0.5));
+const key = new THREE.DirectionalLight(0xfff0d6, 2.2);
+key.position.set(3.2, 4.8, 2.4);
+key.castShadow = true;
+key.shadow.mapSize.set(2048, 2048);
+key.shadow.camera.left = -3; key.shadow.camera.right = 3;
+key.shadow.camera.top = 4.2; key.shadow.camera.bottom = -1;
+key.shadow.camera.far = 15;  key.shadow.bias = -0.0006;
+scene.add(key);
+const rim = new THREE.DirectionalLight(0x7fc9ff, 0.65);
+rim.position.set(-3.4, 2.2, -2.8);
+scene.add(rim);
+
+const floor = new THREE.Mesh(
+  new THREE.CircleGeometry(9, 64),
+  new THREE.MeshStandardMaterial({ color: 0x17161a, roughness: 0.92 })
+);
+floor.rotation.x = -Math.PI / 2;
+floor.receiveShadow = true;
+scene.add(floor);
+
+const grid = new THREE.GridHelper(12, 24, 0x2a2825, 0x1b1a18);
+grid.position.y = 0.001;
+scene.add(grid);
+
+/* ── materials ──────────────────────────────────────────────────────────── */
+const matAlu    = new THREE.MeshStandardMaterial({ color: 0xd8d3c6, roughness: 0.38, metalness: 0.72 });
+const matHub    = new THREE.MeshStandardMaterial({ color: 0xeae5d8, roughness: 0.45, metalness: 0.3 });
+const matDowel  = new THREE.MeshStandardMaterial({ color: 0xd2b489, roughness: 0.78, metalness: 0.02 });
+const matDowelO = new THREE.MeshStandardMaterial({ color: 0xbb9d76, roughness: 0.80, metalness: 0.02 });
+const matLink   = new THREE.MeshStandardMaterial({ color: 0x9a9aa2, roughness: 0.32, metalness: 0.95 });
+const matPlinth = new THREE.MeshStandardMaterial({ color: 0xe8e3d6, roughness: 0.5, metalness: 0.2 });
+const matCable  = new THREE.MeshBasicMaterial({ color: 0xffb627, transparent: true, opacity: 0.6 });
+const matWire   = new THREE.MeshBasicMaterial({ color: 0x6d6558 });
+const matFigure = new THREE.MeshStandardMaterial({ color: 0x121214, roughness: 1.0 });
+
+/* ── human figure for scale ─────────────────────────────────────────────── */
+function makeFigure() {
+  const g = new THREE.Group();
+  const add = (geo, x, y, z) => { const m = new THREE.Mesh(geo, matFigure); m.position.set(x, y, z); m.castShadow = true; g.add(m); return m; };
+  add(new THREE.CapsuleGeometry(0.075, 0.62, 4, 12), 0, 1.05, 0);
+  add(new THREE.SphereGeometry(0.098, 16, 12),       0, 1.61, 0);   // → 1.71 m overall
+  add(new THREE.CapsuleGeometry(0.055, 0.68, 4, 10), -0.08, 0.42, 0);
+  add(new THREE.CapsuleGeometry(0.055, 0.68, 4, 10),  0.08, 0.42, 0);
+  const la = add(new THREE.CapsuleGeometry(0.042, 0.5, 4, 10), -0.155, 1.11, 0.02);
+  const ra = add(new THREE.CapsuleGeometry(0.042, 0.5, 4, 10),  0.155, 1.11, 0.02);
+  la.rotation.z = 0.12; ra.rotation.z = -0.12;
+  g.position.set(-1.55, 0, 0.45);
+  g.rotation.y = 0.5;
+  return g;
+}
+const figure = makeFigure();
+scene.add(figure);
+
+/* ════════════════════════════════════════════════════════════════════════
+   RIG REGISTRY
+   ════════════════════════════════════════════════════════════════════════ */
+const RIGS = {};
+
+function createBoard3Rig() {
+  const group = new THREE.Group();
+  const info = { ringY: 0, tiltDeg: 0, contacts: 0, chainDown: 0, scrape: 0, clacks: 0, strikes: 0 };
+
+  /* ── ceiling + static structure ── */
+  const plate = new THREE.Mesh(
+    new THREE.BoxGeometry(G.outerR * 2 + 0.2, 0.03, G.outerR * 2 + 0.2),
+    new THREE.MeshStandardMaterial({ color: 0x2b2a27, roughness: 0.8, metalness: 0.3 })
+  );
+  plate.position.y = G.ceiling;
+  group.add(plate);
+
+  const drop = new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.014, G.ceiling - G.hubY, 8), matWire);
+  drop.position.y = (G.ceiling + G.hubY) / 2;
+  group.add(drop);
+
+  const hub = new THREE.Mesh(new THREE.BoxGeometry(G.hubW, G.hubH, G.hubD), matHub);
+  hub.position.y = G.hubY;
+  hub.castShadow = true;
+  group.add(hub);
+  const hubBottomY = G.hubY - G.hubH / 2;
+
+  // the fixed outer ring, hung straight off the ceiling plate
+  const outerRing = new THREE.Mesh(new THREE.TorusGeometry(G.outerR, G.ringTube, 10, 120), matAlu);
+  outerRing.rotation.x = Math.PI / 2;
+  outerRing.position.y = G.outerY;
+  outerRing.castShadow = true;
+  group.add(outerRing);
+  for (let i = 0; i < 4; i++) {
+    const a = i * Math.PI / 2 + Math.PI / 4;
+    const rod = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, G.ceiling - G.outerY, 6), matWire);
+    rod.position.set(Math.cos(a) * G.outerR, (G.ceiling + G.outerY) / 2, Math.sin(a) * G.outerR);
+    group.add(rod);
+  }
+
+  // the base: plinth with a wooden deck. Stationary — it never turns.
+  const plinth = new THREE.Mesh(new THREE.CylinderGeometry(G.baseR, G.baseR, G.deckY, 72), matPlinth);
+  plinth.position.y = G.deckY / 2;
+  plinth.castShadow = true; plinth.receiveShadow = true;
+  group.add(plinth);
+
+  /* Deck texture: wood underneath, scrape marks accumulating on top. */
+  const TEX = 512;
+  const woodCv = document.createElement('canvas'); woodCv.width = woodCv.height = TEX;
+  paintWood(woodCv.getContext('2d'), TEX);
+  const deckCv = document.createElement('canvas'); deckCv.width = deckCv.height = TEX;
+  const deckCtx = deckCv.getContext('2d');
+  deckCtx.drawImage(woodCv, 0, 0);
+  const deckTex = new THREE.CanvasTexture(deckCv);
+  deckTex.colorSpace = THREE.SRGBColorSpace;
+  const deck = new THREE.Mesh(
+    new THREE.CircleGeometry(G.baseR, 72),
+    new THREE.MeshStandardMaterial({ map: deckTex, roughness: 0.72, metalness: 0.03 })
+  );
+  deck.rotation.x = -Math.PI / 2;
+  deck.position.y = G.deckY + 0.001;
+  deck.receiveShadow = true;
+  group.add(deck);
+
+  function paintWood(c, n) {
+    c.fillStyle = '#b5895a'; c.fillRect(0, 0, n, n);
+    for (let i = 0; i < 190; i++) {
+      const y = Math.random() * n;
+      c.strokeStyle = `rgba(${120 + Math.random() * 40 | 0},${88 + Math.random() * 30 | 0},52,${0.05 + Math.random() * 0.14})`;
+      c.lineWidth = 0.6 + Math.random() * 2.4;
+      c.beginPath();
+      c.moveTo(0, y);
+      for (let x = 0; x <= n; x += 24) c.lineTo(x, y + Math.sin(x * 0.02 + i) * 3.5);
+      c.stroke();
+    }
+  }
+  function clearTrails() { deckCtx.globalAlpha = 1; deckCtx.drawImage(woodCv, 0, 0); deckTex.needsUpdate = true; }
+
+  /* ── spinner: the only thing the DC motor turns ── */
+  const spinner = new THREE.Group();
+  group.add(spinner);
+  const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, 0.10, 10), matAlu);
+  shaft.position.y = hubBottomY - 0.05;
+  spinner.add(shaft);
+
+  const ring = new THREE.Group();
+  spinner.add(ring);
+  const ringMesh = new THREE.Mesh(new THREE.TorusGeometry(G.ringR, G.ringTube, 10, 96), matAlu);
+  ringMesh.rotation.x = Math.PI / 2;
+  ringMesh.castShadow = true;
+  ring.add(ringMesh);
+  for (const a of WINCH_ANGLES) {
+    const lug = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.03, 0.05), matAlu);
+    lug.position.set(Math.cos(a) * G.ringR, 0.022, Math.sin(a) * G.ringR);
+    ring.add(lug);
+  }
+
+  const cables = [0, 1, 2].map(() => {
+    const c = new THREE.Mesh(new THREE.CylinderGeometry(0.0035, 0.0035, 1, 5), matCable);
+    spinner.add(c);
+    return c;
+  });
+
+  /* ── chains ──
+     One list holds both curtains. `moving` chains anchor to the winched ring
+     (so they inherit its rotation, height and tilt); the rest anchor to fixed
+     points on the outer ring. Same solver either way. */
+  let chains = [], moving = [], fixed = [];
+  let dowelMesh = null, dowelMeshO = null, linkMesh = null;
+  const pendingClacks = [];
+
+  function buildChains() {
+    for (const m of [dowelMesh, dowelMeshO, linkMesh]) {
+      if (m) { group.remove(m); m.geometry.dispose(); m.dispose(); }
+    }
+    chains = []; moving = []; fixed = [];
+
+    const mk = (phi, R, M, len, isMoving, y0) => {
+      const seg = len / M;
+      const pos = [], prev = [];
+      for (let i = 0; i <= M; i++) {
+        const p = new THREE.Vector3(Math.cos(phi) * R, y0 - i * seg, Math.sin(phi) * R);
+        pos.push(p); prev.push(p.clone());
+      }
+      const ch = { phi, R, M, seg, pos, prev, moving: isMoving };
+      chains.push(ch);
+      (isMoving ? moving : fixed).push(ch);
+      return ch;
+    };
+
+    for (let c = 0; c < G.chainCount; c++)
+      mk((c / G.chainCount) * Math.PI * 2, G.ringR, G.dowels, G.chainLen, true, G.ringYDown);
+
+    const outerDowels = Math.max(2, Math.round(G.dowels * (G.outerChain / G.chainLen)));
+    for (let c = 0; c < G.outerCount; c++)
+      mk((c / G.outerCount) * Math.PI * 2 + Math.PI / G.outerCount, G.outerR, outerDowels, G.outerChain, false, G.outerY);
+
+    const nInner = G.chainCount * G.dowels;
+    const nOuter = G.outerCount * outerDowels;
+    dowelMesh = new THREE.InstancedMesh(
+      new THREE.CylinderGeometry(G.dowelDia / 2, G.dowelDia / 2, 1, 7), matDowel, Math.max(1, nInner));
+    dowelMeshO = new THREE.InstancedMesh(
+      new THREE.CylinderGeometry(G.dowelDia / 2, G.dowelDia / 2, 1, 7), matDowelO, Math.max(1, nOuter));
+    linkMesh = new THREE.InstancedMesh(
+      new THREE.TorusGeometry(G.linkDia, G.linkDia * 0.32, 5, 10), matLink, Math.max(1, nInner + nOuter));
+    for (const m of [dowelMesh, dowelMeshO, linkMesh]) {
+      m.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+      m.castShadow = true;
+      m.frustumCulled = false;
+      group.add(m);          // world space — NOT under the spinner
+    }
+  }
+  buildChains();
+
+  /* ── scratch ── */
+  const A = [new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()];
+  const v1 = new THREE.Vector3(), v2 = new THREE.Vector3(), normal = new THREE.Vector3();
+  const up = new THREE.Vector3(0, 1, 0), axis = new THREE.Vector3(), mid = new THREE.Vector3();
+  const q = new THREE.Quaternion(), dummy = new THREE.Object3D();
+  const anchor = new THREE.Vector3(), d = new THREE.Vector3();
+  let acc = 0, settled = false;
+
+  /* Cable payout → ring height. The cable runs from the housing (radius
+     hubAnchorR) down and out to the ring lug (radius ringR), so the vertical
+     drop is sqrt(payout² − offset²) — percent-down is not perfectly linear in
+     ring height, exactly as on the real rig. */
+  function ringDropFor(pct) {
+    const dr = Math.max(0.001, G.ringR - G.hubAnchorR);
+    const d0 = hubBottomY - (G.ringYDown + G.travel);
+    const c0 = Math.hypot(Math.max(d0, 0.05), dr);
+    const c  = c0 + G.travel * (pct / 100);
+    return Math.sqrt(Math.max(c * c - dr * dr, 1e-4));
+  }
+
+  function anchorOf(ch, out) {
+    if (!ch.moving) return out.set(Math.cos(ch.phi) * ch.R, G.outerY, Math.sin(ch.phi) * ch.R);
+    return out.set(Math.cos(ch.phi) * ch.R, 0, Math.sin(ch.phi) * ch.R).applyMatrix4(ring.matrixWorld);
+  }
+
+  function stepPhysics(h, st) {
+    /* Velocity damping is air drag, and it competes directly with the effect
+       that throws the curtain outward. At 14 rpm centrifugal acceleration is
+       only ~1.2 m/s², so anything heavier than about 0.999/step cancels the
+       flare entirely and the chains merely trail. Energy is meant to leave
+       through the deck friction, not through this. */
+    const damp = 0.9985;
+    const gh2 = GRAVITY * h * h;
+    const mu = st.mu;
+    const VMAX = 0.06;          // metres per step — keeps a bad frame from detonating
+
+    for (const ch of chains) {
+      anchorOf(ch, anchor);
+      const M = ch.M;
+
+      ch.prev[0].copy(ch.pos[0]);
+      ch.pos[0].copy(anchor);
+      for (let i = 1; i <= M; i++) {
+        const p = ch.pos[i], pr = ch.prev[i];
+        let vx = (p.x - pr.x) * damp, vy = (p.y - pr.y) * damp, vz = (p.z - pr.z) * damp;
+        const v = Math.hypot(vx, vy, vz);
+        if (v > VMAX) { const s = VMAX / v; vx *= s; vy *= s; vz *= s; }
+        pr.copy(p);
+        p.set(p.x + vx, p.y + vy + gh2, p.z + vz);
+      }
+
+      for (let it = 0; it < 8; it++) {
+        ch.pos[0].copy(anchor);
+        for (let i = 1; i <= M; i++) {
+          const a = ch.pos[i - 1], b = ch.pos[i];
+          d.subVectors(b, a);
+          const len = d.length();
+          if (len < 1e-5) { b.set(a.x, a.y - ch.seg, a.z); continue; }
+          const k = (len - ch.seg) / len;
+          if (i === 1) b.addScaledVector(d, -k);
+          else { a.addScaledVector(d, k * 0.5); b.addScaledVector(d, -k * 0.5); }
+        }
+        /* The base is a solid cylinder, not just a top surface. Resolving it
+           as a surface would snap any dowel hanging alongside it up onto the
+           deck; the outer curtain hangs past the base wall and must stay
+           outside it and reach the floor. Push along whichever face is
+           nearer — up onto the deck, or out through the wall. */
+        for (let i = 1; i <= M; i++) {
+          const p = ch.pos[i], pr = ch.prev[i];
+          const r = Math.hypot(p.x, p.z);
+          if (p.y >= G.deckY) continue;                       // clear of the base entirely
+          if (r >= G.baseR) {                                 // outside the wall: floor only
+            if (p.y < 0) {
+              p.y = 0;
+              p.x += (pr.x - p.x) * mu;
+              p.z += (pr.z - p.z) * mu;
+            }
+            continue;
+          }
+          if (G.baseR - r < G.deckY - p.y) {                  // nearer the wall than the top
+            const s = r > 1e-6 ? G.baseR / r : 1;
+            p.x *= s; p.z *= s;
+          } else {
+            p.y = G.deckY;
+            p.x += (pr.x - p.x) * mu;
+            p.z += (pr.z - p.z) * mu;
+          }
+        }
+      }
+    }
+
+    curtainCollide(h);
+  }
+
+  /* Inner curtain against outer curtain.
+
+     This has to be dowel-against-dowel, not joint-against-joint. Both curtains
+     are sparse — 36 outer chains at 0.68 m leaves ~12 cm between neighbours —
+     so testing only the joints lets an inner chain thread straight through a
+     gap without ever registering. The dowels are rods, so the test is
+     segment-to-segment: closest approach between two capsules.
+
+     Broad phase is free: both curtains are rings, so only the outer chains
+     within one angular step of the inner segment's bearing can be in range,
+     and segments still well inside the outer radius are skipped outright. */
+  const seg = { s: 0, t: 0, d: 0, cx: 0, cy: 0, cz: 0, nx: 0, ny: 0, nz: 0 };
+  function closestSegSeg(ax, ay, az, bx, by, bz, cx, cy, cz, dx_, dy_, dz_) {
+    const d1x = bx - ax, d1y = by - ay, d1z = bz - az;
+    const d2x = dx_ - cx, d2y = dy_ - cy, d2z = dz_ - cz;
+    const rx = ax - cx, ry = ay - cy, rz = az - cz;
+    const a = d1x * d1x + d1y * d1y + d1z * d1z;
+    const e = d2x * d2x + d2y * d2y + d2z * d2z;
+    const f = d2x * rx + d2y * ry + d2z * rz;
+    let s = 0, t = 0;
+    if (a < 1e-9 && e < 1e-9) { s = t = 0; }
+    else if (a < 1e-9) { t = Math.min(1, Math.max(0, f / e)); }
+    else {
+      const c = d1x * rx + d1y * ry + d1z * rz;
+      if (e < 1e-9) { s = Math.min(1, Math.max(0, -c / a)); }
+      else {
+        const b = d1x * d2x + d1y * d2y + d1z * d2z;
+        const denom = a * e - b * b;
+        s = denom > 1e-12 ? Math.min(1, Math.max(0, (b * f - c * e) / denom)) : 0;
+        t = (b * s + f) / e;
+        if (t < 0) { t = 0; s = Math.min(1, Math.max(0, -c / a)); }
+        else if (t > 1) { t = 1; s = Math.min(1, Math.max(0, (b - c) / a)); }
+      }
+    }
+    const p1x = ax + d1x * s, p1y = ay + d1y * s, p1z = az + d1z * s;
+    const p2x = cx + d2x * t, p2y = cy + d2y * t, p2z = cz + d2z * t;
+    let nx = p2x - p1x, ny = p2y - p1y, nz = p2z - p1z;
+    const dist = Math.hypot(nx, ny, nz);
+    seg.s = s; seg.t = t; seg.d = dist;
+    if (dist > 1e-9) { seg.nx = nx / dist; seg.ny = ny / dist; seg.nz = nz / dist; }
+    else { seg.nx = 1; seg.ny = 0; seg.nz = 0; }
+    return dist;
+  }
+
+  function curtainCollide(h) {
+    if (!fixed.length) return;
+    const CONTACT = G.dowelDia * 1.15;      // two rods touch at one diameter
+    const dphi = (Math.PI * 2) / fixed.length;
+    const reach = G.outerR - CONTACT - 0.02;
+
+    for (const ci of moving) {
+      for (let i = 0; i < ci.M; i++) {
+        const a = ci.pos[i], b = ci.pos[i + 1];
+        const ra = Math.hypot(a.x, a.z), rb = Math.hypot(b.x, b.z);
+        if (ra < reach && rb < reach) continue;        // nowhere near the outer curtain
+
+        const mx = (a.x + b.x) * 0.5, mz = (a.z + b.z) * 0.5;
+        const base = Math.round(Math.atan2(mz, mx) / dphi);
+        for (let dj = -1; dj <= 1; dj++) {
+          const co = fixed[((base + dj) % fixed.length + fixed.length) % fixed.length];
+          for (let k = 0; k < co.M; k++) {
+            const c = co.pos[k], d2 = co.pos[k + 1];
+            // cheap height reject before the full segment test
+            if (Math.min(c.y, d2.y) - Math.max(a.y, b.y) > CONTACT) continue;
+            if (Math.min(a.y, b.y) - Math.max(c.y, d2.y) > CONTACT) continue;
+
+            const dist = closestSegSeg(a.x, a.y, a.z, b.x, b.y, b.z,
+                                       c.x, c.y, c.z, d2.x, d2.y, d2.z);
+            if (dist >= CONTACT) continue;
+
+            const s = seg.s, t = seg.t;
+            const nx = seg.nx, ny = seg.ny, nz = seg.nz;   // points inner → outer
+
+            // closing speed at the contact point, before we separate them
+            const pa = ci.prev[i], pb = ci.prev[i + 1], pc = co.prev[k], pd = co.prev[k + 1];
+            const iv = ((a.x - pa.x) * (1 - s) + (b.x - pb.x) * s) * nx
+                     + ((a.y - pa.y) * (1 - s) + (b.y - pb.y) * s) * ny
+                     + ((a.z - pa.z) * (1 - s) + (b.z - pb.z) * s) * nz;
+            const ov = ((c.x - pc.x) * (1 - t) + (d2.x - pd.x) * t) * nx
+                     + ((c.y - pc.y) * (1 - t) + (d2.y - pd.y) * t) * ny
+                     + ((c.z - pc.z) * (1 - t) + (d2.z - pd.z) * t) * nz;
+            const approach = (iv - ov) / h;
+
+            // push the contact point apart, split across each segment's
+            // endpoints by barycentric weight
+            const push = (CONTACT - dist) * 0.5;
+            const w1 = 1 - s, w2 = s, k1 = 1 / Math.max(w1 * w1 + w2 * w2, 1e-4);
+            const u1 = 1 - t, u2 = t, k2 = 1 / Math.max(u1 * u1 + u2 * u2, 1e-4);
+            if (i > 0) { a.x -= nx * push * w1 * k1; a.y -= ny * push * w1 * k1; a.z -= nz * push * w1 * k1; }
+            b.x -= nx * push * w2 * k1; b.y -= ny * push * w2 * k1; b.z -= nz * push * w2 * k1;
+            if (k > 0) { c.x += nx * push * u1 * k2; c.y += ny * push * u1 * k2; c.z += nz * push * u1 * k2; }
+            d2.x += nx * push * u2 * k2; d2.y += ny * push * u2 * k2; d2.z += nz * push * u2 * k2;
+
+            if (approach > G.clackV) pendingClacks.push({ v: Math.min(approach, 3), x: b.x });
+          }
+        }
+      }
+    }
+  }
+
+  /* Hang every chain from its anchor, with a millimetre of lean that grows
+     down the chain. A perfectly vertical chain standing on the deck is a
+     degenerate equilibrium — it holds as a column instead of buckling — so the
+     lean is what lets the excess actually fall over and pile. */
+  function reseed() {
+    for (const ch of chains) {
+      anchorOf(ch, anchor);
+      const jx = (Math.random() - 0.5) * 0.006, jz = (Math.random() - 0.5) * 0.006;
+      for (let i = 0; i <= ch.M; i++) {
+        ch.pos[i].set(anchor.x + jx * i, anchor.y - i * ch.seg, anchor.z + jz * i);
+        ch.prev[i].copy(ch.pos[i]);
+      }
+    }
+  }
+
+  function writeInstances(st) {
+    let di = 0, doi = 0, li = 0, contacts = 0, slide = 0;
+    const markR = TEX / 2 / G.baseR;
+
+    if (st.showTrails) { deckCtx.globalAlpha = 0.012; deckCtx.drawImage(woodCv, 0, 0); }
+
+    for (const ch of chains) {
+      const mesh = ch.moving ? dowelMesh : dowelMeshO;
+      for (let i = 0; i < ch.M; i++) {
+        const a = ch.pos[i], b = ch.pos[i + 1];
+        axis.subVectors(b, a);
+        const len = axis.length() || 1e-6;
+        axis.divideScalar(len);
+        mid.addVectors(a, b).multiplyScalar(0.5);
+        dummy.position.copy(mid);
+        dummy.quaternion.setFromUnitVectors(up, axis);
+        dummy.scale.set(1, Math.max(ch.seg - G.linkDia * 1.6, 0.01), 1);
+        dummy.updateMatrix();
+        mesh.setMatrixAt(ch.moving ? di++ : doi++, dummy.matrix);
+
+        if (i > 0) {
+          dummy.position.copy(a);
+          dummy.scale.set(1, 1, 1);
+          dummy.updateMatrix();
+          linkMesh.setMatrixAt(li++, dummy.matrix);
+        }
+      }
+
+      // deck contact: count it, mark it, and measure how fast it is sliding
+      for (let i = 1; i <= ch.M; i++) {
+        const p = ch.pos[i], pr = ch.prev[i];
+        if (p.y > G.deckY + 0.012) continue;
+        const r = Math.hypot(p.x, p.z);
+        if (r > G.baseR) continue;
+        contacts++;
+        slide += Math.hypot(p.x - pr.x, p.z - pr.z) / PHYS_H;
+        if (!st.showTrails) continue;
+        const u = TEX / 2 + p.x * markR, v = TEX / 2 + p.z * markR;
+        deckCtx.globalAlpha = 0.10;
+        deckCtx.fillStyle = '#6b4b2c';
+        deckCtx.beginPath();
+        deckCtx.arc(u, v, 2.2, 0, Math.PI * 2);
+        deckCtx.fill();
+      }
+    }
+    dowelMesh.count = di; dowelMeshO.count = doi; linkMesh.count = li;
+    dowelMesh.instanceMatrix.needsUpdate = true;
+    dowelMeshO.instanceMatrix.needsUpdate = true;
+    linkMesh.instanceMatrix.needsUpdate = true;
+    if (st.showTrails) deckTex.needsUpdate = true;
+    info.contacts = contacts;
+    info.scrape = slide;
+  }
+
+  /* Place the ring from the three winch positions: each cable payout gives an
+     anchor height, and the rigid ring rides the plane through the three. */
+  function placeRing(st) {
+    spinner.rotation.y = st.spin;
+    for (let i = 0; i < 3; i++) {
+      const a = WINCH_ANGLES[i];
+      A[i].set(Math.cos(a) * G.ringR, hubBottomY - ringDropFor(st.actual[i]), Math.sin(a) * G.ringR);
+    }
+    const cx = (A[0].x + A[1].x + A[2].x) / 3;
+    const cy = (A[0].y + A[1].y + A[2].y) / 3;
+    const cz = (A[0].z + A[1].z + A[2].z) / 3;
+    v1.subVectors(A[1], A[0]); v2.subVectors(A[2], A[0]);
+    normal.crossVectors(v2, v1).normalize();
+    if (normal.y < 0) normal.negate();
+    q.setFromUnitVectors(up, normal);
+    ring.position.set(cx, cy, cz);
+    ring.quaternion.copy(q);
+    return cy;
+  }
+
+  function update(st, dt) {
+    const cy = placeRing(st);
+
+    if (st.showCables) {
+      for (let i = 0; i < 3; i++) {
+        const a = WINCH_ANGLES[i];
+        v1.set(Math.cos(a) * G.hubAnchorR, hubBottomY, Math.sin(a) * G.hubAnchorR);
+        setCable(cables[i], v1, A[i]);
+        cables[i].visible = true;
+      }
+    } else cables.forEach(c => c.visible = false);
+
+    group.updateMatrixWorld(true);
+
+    // Settle once on mount so the first frame shows chains already at rest.
+    if (!settled) {
+      settled = true;
+      reseed();
+      for (let i = 0; i < 400; i++) stepPhysics(PHYS_H, st);
+      pendingClacks.length = 0;
+    }
+
+    pendingClacks.length = 0;
+    acc = Math.min(acc + dt, 0.1);
+    let n = 0;
+    while (acc >= PHYS_H && n++ < 5) { stepPhysics(PHYS_H, st); acc -= PHYS_H; }
+
+    writeInstances(st);
+
+    info.ringY = cy;
+    info.tiltDeg = THREE.MathUtils.radToDeg(Math.acos(THREE.MathUtils.clamp(normal.y, -1, 1)));
+    info.chainDown = Math.max(0, G.chainLen - (cy - G.deckY));
+    info.strikes = pendingClacks.length;
+    return pendingClacks;
+  }
+
+  function setCable(mesh, a, b) {
+    const len = a.distanceTo(b);
+    mid.addVectors(a, b).multiplyScalar(0.5);
+    axis.subVectors(b, a).normalize();
+    mesh.position.copy(mid);
+    mesh.quaternion.setFromUnitVectors(up, axis);
+    mesh.scale.set(1, Math.max(len, 1e-4), 1);
+  }
+
+  /* Run the chains forward in one go, spinning the ring as we go. Flare is a
+     dynamic response that takes seconds to develop, so this answers "does this
+     ring height and speed actually reach the outer curtain, or just scrape?"
+     without waiting it out. Silent — the strikes are counted, not sounded. */
+  function fastForward(seconds, st) {
+    const steps = Math.round(seconds / PHYS_H);
+    const k = 1 - Math.exp(-PHYS_H / DC_LAG_S);
+    let strikes = 0;
+    for (let i = 0; i < steps; i++) {
+      // carry the motor's own ramp, and the winches', so the fast-forward
+      // lands where the rig would actually be after `seconds`
+      st.dcActual += (st.dcTarget - st.dcActual) * k;
+      const maxStep = st.slewLimit ? (1000 / SLEW_MS_PER_PCT) * PHYS_H : 1e6;
+      for (let c = 0; c < 3; c++) {
+        const dv = st.target[c] - st.actual[c];
+        st.actual[c] += Math.abs(dv) <= maxStep ? dv : Math.sign(dv) * maxStep;
+      }
+      st.spin += (st.dcActual / 100) * (G.maxRpm * 2 * Math.PI / 60) * PHYS_H;
+      placeRing(st);
+      // must refresh from the group: ring hangs off spinner, and updating the
+      // child alone would read a stale spinner.matrixWorld (i.e. no rotation)
+      group.updateMatrixWorld(true);
+      pendingClacks.length = 0;
+      stepPhysics(PHYS_H, st);
+      strikes += pendingClacks.length;
+    }
+    pendingClacks.length = 0;
+    // refresh geometry + info so the readout reflects where we landed, not
+    // wherever the last rendered frame left it
+    info.ringY = placeRing(st);
+    info.chainDown = Math.max(0, G.chainLen - (info.ringY - G.deckY));
+    writeInstances(st);
+    return strikes;
+  }
+
+  return { group, update, info, clearTrails, fastForward };
+}
+
+function createPlaceholderRig() {
+  const group = new THREE.Group();
+  const box = new THREE.Mesh(
+    new THREE.BoxGeometry(0.9, 1.4, 0.9),
+    new THREE.MeshStandardMaterial({ color: 0x2a2825, roughness: 0.9, wireframe: true })
+  );
+  box.position.y = 1.2;
+  group.add(box);
+  const none = [];
+  return { group, update(st) { group.rotation.y = st.spin; return none; },
+           info: { ringY: 0, tiltDeg: 0, contacts: 0, chainDown: 0, scrape: 0, strikes: 0 },
+           placeholder: true, clearTrails() {}, fastForward() { return 0; } };
+}
+
+RIGS[3] = createBoard3Rig;
+RIGS[1] = createPlaceholderRig;
+RIGS[2] = createPlaceholderRig;
+
+let rig = null;
+function mountRig(boardId) {
+  if (rig) scene.remove(rig.group);
+  rig = RIGS[boardId]();
+  scene.add(rig.group);
+  document.getElementById('hudBoard').textContent =
+    'board ' + boardId + (rig.placeholder ? ' (placeholder)' : '');
+}
+mountRig(3);
+
+/* ════════════════════════════════════════════════════════════════════════
+   PLAYBACK — Motions and Sequences straight out of library.json
+   ════════════════════════════════════════════════════════════════════════ */
+let library = { motions: [], sequences: [] };
+const player = { kind: null, item: null, t: 0, dur: 0, loop: false, stepIdx: -1, sub: null };
+
+function trackFor(motion, ch, boardId) {
+  return (motion.tracks || []).find(t =>
+    (t.kind || 'servo') === 'servo' && t.boardId === boardId && t.channel === ch);
+}
+function sampleTrack(track, tMs) {
+  const kf = track.keyframes;
+  if (!kf || !kf.length) return 100;
+  if (tMs <= kf[0].atMs) return kf[0].value;
+  for (let i = 1; i < kf.length; i++) {
+    if (tMs <= kf[i].atMs) {
+      const a = kf[i - 1], b = kf[i];
+      const span = b.atMs - a.atMs;
+      if (span <= 0) return b.value;
+      return a.value + (b.value - a.value) * ((tMs - a.atMs) / span);  // schema v1: linear only
+    }
+  }
+  return kf[kf.length - 1].value;
+}
+
+function startClip(value) {
+  const [kind, id] = value.split(':');
+  const list = kind === 'seq' ? library.sequences : library.motions;
+  const item = list.find(x => x.id === id);
+  if (!item) return;
+  player.kind = kind; player.item = item; player.t = 0; player.stepIdx = -1; player.sub = null;
+  player.dur = kind === 'seq'
+    ? (item.steps || []).reduce((a, s) => a + (s.durationMs || 0), 0)
+    : (item.durationMs || 0);
+  log(`▶ ${kind === 'seq' ? 'SEQ' : 'MOTION'} ${item.name}  ${(player.dur / 1000).toFixed(1)}s`);
+  setPlayState(true);
+}
+function stopClip(reason) {
+  if (player.item) log('■ stopped' + (reason ? ' — ' + reason : ''));
+  player.kind = null; player.item = null; player.sub = null;
+  setPlayState(false);
+  document.querySelector('#transport > i').style.width = '0';
+}
+
+function tickPlayer(dtMs) {
+  if (!player.item) return;
+  player.t += dtMs;
+  if (player.t >= player.dur) {
+    if (player.loop) { player.t = 0; player.stepIdx = -1; player.sub = null; }
+    else { applyClipAt(Math.max(0, player.dur - 1)); stopClip('end of clip'); return; }
+  }
+  applyClipAt(player.t);
+  document.querySelector('#transport > i').style.width = (100 * player.t / Math.max(1, player.dur)) + '%';
+}
+
+function applyClipAt(t) {
+  if (player.kind === 'motion') return applyMotion(player.item, t);
+
+  const steps = player.item.steps || [];
+  let acc = 0, idx = -1, into = 0;
+  for (let i = 0; i < steps.length; i++) {
+    const dur = steps[i].durationMs || 0;
+    if (t < acc + dur || i === steps.length - 1) { idx = i; into = t - acc; break; }
+    acc += dur;
+  }
+  if (idx < 0) return;
+  if (idx !== player.stepIdx) { player.stepIdx = idx; enterStep(steps[idx]); }
+  if (player.sub) applyMotion(player.sub, into);
+}
+
+function enterStep(step) {
+  // DC lanes are sticky: a board absent from the map holds its last speed.
+  if (step.dc && step.dc[state.boardId] != null) setDc(clamp(step.dc[state.boardId], -50, 50));
+  if (!(step.target === 'all' || step.target === state.boardId)) { log(`· skip (target ${step.target}): ${step.cmd}`); return; }
+
+  const cmd = (step.cmd || '').trim();
+  const m = cmd.match(/^MOTION\s+(\S+)/i);
+  if (m) {
+    const mo = library.motions.find(x => x.id === m[1]);
+    player.sub = mo || null;
+    log(mo ? `  MOTION ${mo.name}` : `  ! unknown motion ${m[1]}`);
+    return;
+  }
+  const r = cmd.match(/^ROTATE\s+(-?\d+)/i);
+  if (r) { setDc(clamp(+r[1], -100, 100)); log(`  ROTATE ${r[1]}`); return; }
+  if (/^STOP$/i.test(cmd)) { player.sub = null; setDc(0); log('  STOP'); return; }
+  log(`  · ${cmd} (not simulated)`);
+}
+
+function applyMotion(motion, t) {
+  for (let ch = 0; ch < 3; ch++) {
+    const tr = trackFor(motion, ch, state.boardId);
+    // Un-authored channels hold at rest (100% — fully down), per schema §2.
+    state.target[ch] = tr ? clamp(sampleTrack(tr, t), 0, 100) : 100;
+  }
+  syncSlidersFromTarget();
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   DASHBOARD LINK
+
+   servo_controller.html publishes every command it dispatches on a same-origin
+   BroadcastChannel. Interpreting those here means the 3D rig follows the real
+   control surface — the Motor Test drawer, Master Command, live Motion play,
+   RUN — without any board being present, because the dashboard taps the
+   command before the HTTP request rather than after a reply.
+
+   Commands are the firmware's own vocabulary (README § Command reference).
+   Percent-down is the native unit here, so UP/UMOVE invert and S/P convert
+   through the calibration.
+   ════════════════════════════════════════════════════════════════════════ */
+const ramps = [null, null, null];      // per-channel timed moves from D/UMOVE
+let bus = null, busOn = true, busSeen = 0, busAnyBoard = false;
+
+function rampTo(ch, pct, ms) {
+  if (ch < 0 || ch > 2) return;
+  const to = clamp(pct, 0, 100);
+  if (!(ms > 0)) { ramps[ch] = null; state.target[ch] = to; return; }
+  // Ramp the *commanded* position, exactly as the firmware interpolates pulse.
+  // The winch still lags it through the slew limiter, which is the point:
+  // a DMOVE faster than the mechanism visibly fails to keep up.
+  ramps[ch] = { from: state.target[ch], to, t0: performance.now(), ms };
+}
+function tickRamps() {
+  const now = performance.now();
+  for (let i = 0; i < 3; i++) {
+    const r = ramps[i];
+    if (!r) continue;
+    const u = Math.min(1, (now - r.t0) / r.ms);
+    state.target[i] = r.from + (r.to - r.from) * u;
+    if (u >= 1) ramps[i] = null;
+  }
+}
+function clearRamps() { ramps[0] = ramps[1] = ramps[2] = null; }
+
+function pulseToPercentDownRaw(pulse) { return pulseToPercentDown(pulse); }
+function degreesToPercentDown(deg) {
+  const { totalDegrees, downDegrees, upDegrees, reverseDir } = SERVO_CAL;
+  const lo = upDegrees, hi = downDegrees || totalDegrees;
+  const p = reverseDir ? (hi - deg) / (hi - lo) : (deg - lo) / (hi - lo);
+  return clamp(p * 100, 0, 100);
+}
+
+// Mirrors shouldMirrorCommand() in command_interface.h, plus MOTION (which is
+// mirrored through the synchronized MOTION_START path rather than as an event).
+function isClusterCommand(cmd) {
+  const c = String(cmd || '').trim().toUpperCase();
+  return /^RUN\b/.test(c) || /^ROTATE\b/.test(c) || c === 'STOP' || /^MOTION\b/.test(c);
+}
+
+function applyBoardCommand(cmd) {
+  const c = String(cmd || '').trim();
+  let m;
+
+  if ((m = /^DMOVE\s+(\d+)\s+(-?[\d.]+)\s+(\d+)/i.exec(c)))  { rampTo(+m[1], +m[2], +m[3]); return 'DMOVE'; }
+  if ((m = /^UMOVE\s+(\d+)\s+(-?[\d.]+)\s+(\d+)/i.exec(c)))  { rampTo(+m[1], 100 - +m[2], +m[3]); return 'UMOVE'; }
+  if ((m = /^DOWN\s+(\d+)\s+(-?[\d.]+)/i.exec(c)))           { rampTo(+m[1], +m[2], 0); return 'DOWN'; }
+  if ((m = /^UP\s+(\d+)\s+(-?[\d.]+)/i.exec(c)))             { rampTo(+m[1], 100 - +m[2], 0); return 'UP'; }
+  if ((m = /^S(\d+)\s+(-?[\d.]+)/i.exec(c)))                 { rampTo(+m[1], degreesToPercentDown(+m[2]), 0); return 'S'; }
+  if ((m = /^P(\d+)\s+(-?[\d.]+)/i.exec(c)))                 { rampTo(+m[1], pulseToPercentDownRaw(+m[2]), 0); return 'P'; }
+  if ((m = /^ROTATE\s+(-?\d+)/i.exec(c)))                    { setDc(clamp(+m[1], -100, 100)); return 'ROTATE'; }
+
+  if (/^STOP\b/i.test(c)) {
+    // Firmware STOP halts motion and holds position; it does not home.
+    const one = /^STOP\s+(\d+)/i.exec(c);
+    if (one) { ramps[+one[1]] = null; state.target[+one[1]] = state.actual[+one[1]]; }
+    else { clearRamps(); for (let i = 0; i < 3; i++) state.target[i] = state.actual[i]; setDc(0); stopClip('STOP from dashboard'); }
+    return 'STOP';
+  }
+  // "MOTION <id>" and the baked "MOTION <id> PREP <ms>" form both land here;
+  // the pre-roll glide itself is not simulated.
+  if ((m = /^MOTION\s+(\S+)/i.exec(c))) {
+    if (library.motions.some(x => x.id === m[1])) { clearRamps(); startClip('motion:' + m[1]); }
+    else log(`  ! MOTION ${m[1]} not in this library`);
+    return 'MOTION';
+  }
+  if ((m = /^RUN\s+(\S+)(\s+LOOP)?/i.exec(c))) {
+    if (/^AUTO$/i.test(m[1])) { log('  · RUN AUTO (setlist not simulated)'); return 'RUN'; }
+    if (library.sequences.some(x => x.id === m[1])) {
+      clearRamps();
+      player.loop = !!m[2];
+      $('loop').setAttribute('aria-pressed', String(player.loop));
+      startClip('seq:' + m[1]);
+    } else log(`  ! RUN ${m[1]} not in this library`);
+    return 'RUN';
+  }
+  return null;    // SWEEP, TPULSE, CAL*, STATUS, GALLERY, BOARDID … not simulated
+}
+
+function openBus() {
+  try { bus = new BroadcastChannel('servo-sim'); }
+  catch { setBusState('BroadcastChannel unavailable in this browser', 'bad'); return; }
+  bus.onmessage = (e) => {
+    const msg = e.data;
+    if (!msg) return;
+    busSeen++;
+    // Every arriving message reports something. Silence here would be
+    // ambiguous between "nothing is arriving" (wrong origin, stale dashboard)
+    // and "arriving but filtered" (aimed at another board) — which are
+    // completely different problems with completely different fixes.
+    if (!busOn)  { setBusState(`${busSeen} cmd · not listening`, ''); return; }
+    if (isLive()) { setBusState(`${busSeen} cmd · ignored, telemetry has control`, ''); return; }
+
+    // Match the firmware's mirroring rule exactly (shouldMirrorCommand in
+    // command_interface.h): RUN / ROTATE / bare STOP are re-broadcast over UDP
+    // and MOTION goes out as a synchronized MOTION_START, so all of those
+    // reach every board whichever one the browser addressed. Everything else —
+    // UP, DOWN, DMOVE, S<n>, STOP <n> — is board-local, and applying another
+    // board's servo tracks here would be wrong.
+    const addressedHere = msg.boardId == null || msg.boardId === state.boardId;
+    if (!isClusterCommand(msg.cmd) && !addressedHere && !busAnyBoard) {
+      setBusState(`${busSeen} cmd · "${msg.cmd.slice(0, 24)}" sent to board ${msg.boardId}, not this rig`, 'bad');
+      return;
+    }
+    const kind = applyBoardCommand(msg.cmd);
+    setBusState(`${busSeen} cmd · ${msg.cmd.slice(0, 34)}${kind ? '' : ' — not simulated'}`, kind ? 'ok' : '');
+    if (kind && !/^DMOVE|^UMOVE/i.test(msg.cmd)) log(`⇐ ${msg.cmd}`);
+  };
+}
+let pollTimer = null;
+function pulseToPercentDown(pulse) {
+  const { minPulse, maxPulse, totalDegrees, downDegrees, upDegrees, reverseDir } = SERVO_CAL;
+  const deg = ((pulse - minPulse) / (maxPulse - minPulse)) * totalDegrees;
+  const lo = upDegrees, hi = downDegrees || totalDegrees;
+  const p = reverseDir ? (hi - deg) / (hi - lo) : (deg - lo) / (hi - lo);
+  return clamp(p * 100, 0, 100);
+}
+function connect() {
+  const ip = document.getElementById('ip').value.trim();
+  if (!ip) return;
+  disconnect();
+  setLink('connecting…', '');
+  pollTimer = setInterval(async () => {
+    try {
+      const r = await fetch(`http://${ip}/status.json`, { cache: 'no-store' });
+      const s = await r.json();
+      if (Array.isArray(s.servos)) {
+        for (let ch = 0; ch < 3; ch++) {
+          const e = s.servos.find(x => x.i === ch);
+          if (e) { state.actual[ch] = pulseToPercentDown(e.pulse); state.target[ch] = state.actual[ch]; }
+        }
+        syncSlidersFromTarget();
+      }
+      if (s.motor) setDc(s.motor.speed | 0);
+      const playing = s.motion?.active ? `MOTION ${s.motion.id}` : (s.runseq?.active ? `RUN ${s.runseq.id}` : 'idle');
+      setLink(`live · ${ip} · ${playing}`, 'ok');
+    } catch {
+      setLink(`unreachable — ${ip}`, 'bad');
+    }
+  }, 500);
+}
+function disconnect() {
+  if (pollTimer) { clearInterval(pollTimer); pollTimer = null; setLink('offline', ''); }
+}
+const isLive = () => pollTimer !== null;
+
+/* ════════════════════════════════════════════════════════════════════════
+   SIM LOOP
+   ════════════════════════════════════════════════════════════════════════ */
+const clock = new THREE.Clock();
+let clackRate = 0;
+function animate() {
+  requestAnimationFrame(animate);
+  const dt = Math.min(clock.getDelta(), 0.06);
+
+  if (!isLive()) {
+    tickPlayer(dt * 1000);
+    tickRamps();
+    syncSlidersFromTarget();
+    const maxStep = state.slewLimit ? (1000 / SLEW_MS_PER_PCT) * dt : 1e6;
+    for (let i = 0; i < 3; i++) {
+      const d = state.target[i] - state.actual[i];
+      state.actual[i] += Math.abs(d) <= maxStep ? d : Math.sign(d) * maxStep;
+    }
+  }
+
+  state.dcActual += (state.dcTarget - state.dcActual) * (1 - Math.exp(-dt / DC_LAG_S));
+  state.spin += (state.dcActual / 100) * (G.maxRpm * 2 * Math.PI / 60) * dt;
+
+  const clacks = rig.update(state, dt) || [];
+  figure.visible = state.showHuman;
+
+  // sound is a readout of the physics, not a separate schedule
+  clackRate += (clacks.length / Math.max(dt, 1e-3) - clackRate) * 0.2;
+  audio.setScrape(rig.info.scrape);
+  audio.setClatter(clackRate);
+  for (const c of clacks) audio.clack(c.v, c.x);
+
+  orbit.update();
+  renderer.render(scene, camera);
+  drawReadout();
+  drawMeters();
+}
+
+function drawReadout() {
+  const i = rig.info;
+  const rpm = (state.dcActual / 100) * G.maxRpm;
+  document.getElementById('readout').textContent =
+`winch  cmd ${fmt(state.target[0])} ${fmt(state.target[1])} ${fmt(state.target[2])}  %down
+       pos ${fmt(state.actual[0])} ${fmt(state.actual[1])} ${fmt(state.actual[2])}
+ring   ${i.ringY.toFixed(2)} m   ${(i.ringY - G.deckY).toFixed(2)} m over deck   tilt ${i.tiltDeg.toFixed(1)}°
+dowel  ${(i.chainDown * 100).toFixed(0)} cm of chain past the deck
+       ${i.contacts} joints on the deck   scrape ${i.scrape.toFixed(2)} m/s
+strike ${clackRate.toFixed(0)} clacks/s against the outer ring
+dc     ${state.dcActual.toFixed(0)}%   ${rpm.toFixed(1)} rpm`;
+}
+const fmt = (v) => String(Math.round(v)).padStart(3, ' ');
+
+function drawMeters() {
+  const s = scrapeCurve(rig.info.scrape);
+  document.getElementById('scrapeM').style.width = (s * 100) + '%';
+  document.getElementById('scrapeV').textContent = rig.info.scrape.toFixed(2);
+  const c = Math.min(1, clackRate / 400);
+  document.getElementById('clackM').style.width = (c * 100) + '%';
+  document.getElementById('clackV').textContent = clackRate.toFixed(0) + '/s';
+}
+
+function resize() {
+  const w = stage.clientWidth, h = stage.clientHeight;
+  if (!w || !h) return;
+  renderer.setSize(w, h);
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+}
+new ResizeObserver(resize).observe(stage);
+
+/* ════════════════════════════════════════════════════════════════════════
+   UI
+   ════════════════════════════════════════════════════════════════════════ */
+const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+const $ = (id) => document.getElementById(id);
+
+const sliders = [$('s0'), $('s1'), $('s2')];
+const outs    = [$('s0v'), $('s1v'), $('s2v')];
+sliders.forEach((sl, i) => sl.addEventListener('input', () => {
+  const v = +sl.value;
+  if ($('gang').checked) state.target = [v, v, v]; else state.target[i] = v;
+  syncSlidersFromTarget();
+  if (player.item) stopClip('manual override');
+}));
+function syncSlidersFromTarget() {
+  for (let i = 0; i < 3; i++) {
+    sliders[i].value = Math.round(state.target[i]);
+    outs[i].textContent = Math.round(state.target[i]);
+  }
+}
+document.querySelectorAll('[data-all]').forEach(b => b.addEventListener('click', () => {
+  const v = b.dataset.all;
+  state.target = v === 'tilt' ? [20, 60, 100] : [+v, +v, +v];
+  syncSlidersFromTarget();
+  if (player.item) stopClip('manual override');
+}));
+
+const dcSlider = $('dc');
+function setDc(v) {
+  state.dcTarget = clamp(v, -100, 100);
+  dcSlider.value = state.dcTarget;
+  $('dcv').textContent = (state.dcTarget > 0 ? '+' : '') + Math.round(state.dcTarget);
+}
+dcSlider.addEventListener('input', () => setDc(+dcSlider.value));
+document.querySelectorAll('[data-dc]').forEach(b => b.addEventListener('click', () => setDc(+b.dataset.dc)));
+
+$('gang').addEventListener('change', e => { if (e.target.checked) { const v = +sliders[0].value; state.target = [v, v, v]; syncSlidersFromTarget(); } });
+$('slew').addEventListener('change', e => state.slewLimit = e.target.checked);
+$('boardSel').addEventListener('change', e => { state.boardId = +e.target.value; mountRig(state.boardId); });
+
+$('mu').addEventListener('input', e => { state.mu = +e.target.value / 100; $('muv').textContent = state.mu.toFixed(2).slice(1); });
+$('clearTrails').addEventListener('click', () => rig.clearTrails());
+$('ff').addEventListener('click', () => {
+  const secs = 5;
+  const strikes = rig.fastForward(secs, state);
+  const i = rig.info;
+  log(`⏩ ${secs}s @ ${((state.dcActual / 100) * G.maxRpm).toFixed(1)} rpm — `
+    + `${(strikes / secs).toFixed(0)} clacks/s · scrape ${i.scrape.toFixed(2)} m/s · `
+    + `ring ${i.ringY.toFixed(2)} m, ${i.contacts} on deck`);
+});
+$('trailsOn').addEventListener('click', e => {
+  state.showTrails = !state.showTrails;
+  e.target.setAttribute('aria-pressed', String(state.showTrails));
+});
+
+// audio needs a real user gesture to start the context
+$('audioBtn').addEventListener('click', e => {
+  if (audio.on) {
+    audio.disable();
+    e.target.textContent = 'Audio off';
+    e.target.setAttribute('aria-pressed', 'false');
+    setAudioState('suspended', '');
+    return;
+  }
+  try {
+    audio.enable();
+    audio.setVolume(+$('vol').value / 100);
+    e.target.textContent = 'Audio on';
+    e.target.setAttribute('aria-pressed', 'true');
+    setAudioState(`${audio.ctx.state} · ${audio.ctx.sampleRate | 0} Hz`, audio.ctx.state === 'running' ? 'ok' : '');
+    // resume() is async; report where it actually landed
+    setTimeout(() => setAudioState(`${audio.ctx.state} · ${audio.ctx.sampleRate | 0} Hz`,
+      audio.ctx.state === 'running' ? 'ok' : 'bad'), 400);
+  } catch (err) {
+    setAudioState('failed — ' + err.message, 'bad');
+  }
+});
+$('vol').addEventListener('input', e => { $('volv').textContent = e.target.value; audio.setVolume(+e.target.value / 100); });
+
+$('play').addEventListener('click', () => { const v = $('clipSel').value; if (v) startClip(v); });
+$('stop').addEventListener('click', () => stopClip());
+$('loop').addEventListener('click', e => {
+  player.loop = !player.loop;
+  e.target.setAttribute('aria-pressed', String(player.loop));
+});
+$('loadFile').addEventListener('click', () => $('fileIn').click());
+$('fileIn').addEventListener('change', async e => {
+  const f = e.target.files[0]; if (!f) return;
+  try { adoptLibrary(JSON.parse(await f.text())); log('library loaded from file'); }
+  catch (err) { log('! bad json: ' + err.message); }
+});
+
+$('connect').addEventListener('click', connect);
+$('disconnect').addEventListener('click', disconnect);
+
+$('busBtn').addEventListener('click', e => {
+  busOn = !busOn;
+  e.target.setAttribute('aria-pressed', String(busOn));
+  e.target.textContent = busOn ? 'Listening' : 'Ignoring';
+  if (!busOn) { clearRamps(); setBusState('not listening', ''); }
+});
+$('busAny').addEventListener('click', e => {
+  busAnyBoard = !busAnyBoard;
+  e.target.setAttribute('aria-pressed', String(busAnyBoard));
+  e.target.textContent = busAnyBoard ? 'Any board' : 'This board';
+});
+
+// geometry — remounting the rig rebuilds every mesh from G
+const geoBind = {
+  gTravel: 'travel', gChain: 'chainLen', gDowels: 'dowels', gCount: 'chainCount',
+  gRingR: 'ringR', gOuterR: 'outerR', gOuterCount: 'outerCount', gOuterY: 'outerY',
+  gOuterChain: 'outerChain', gBaseR: 'baseR', gDeckY: 'deckY', gRpm: 'maxRpm', gClackV: 'clackV',
+};
+for (const [id, k] of Object.entries(geoBind)) {
+  $(id).addEventListener('change', () => {
+    const v = +$(id).value;
+    if (!isFinite(v)) return;
+    G[k] = (k === 'dowels' || k === 'chainCount' || k === 'outerCount') ? Math.round(v) : v;
+    mountRig(state.boardId);
+  });
+}
+$('optHuman').addEventListener('change', e => state.showHuman = e.target.checked);
+$('optCables').addEventListener('change', e => state.showCables = e.target.checked);
+
+function setPlayState(on) {
+  const el = $('playState');
+  el.className = on ? 'on' : '';
+  el.textContent = on ? `playing — ${player.item.name}` : 'idle';
+}
+function setLink(text, cls) { const el = $('link'); el.textContent = text; el.className = cls; }
+function setBusState(text, cls) { const el = $('busState'); el.textContent = text; el.className = cls; }
+function setAudioState(text, cls) { const el = $('audioState'); el.textContent = text; el.className = cls; }
+function log(msg) {
+  const el = $('log');
+  el.textContent = (msg + '\n' + el.textContent).split('\n').slice(0, 40).join('\n');
+}
+
+function adoptLibrary(lib) {
+  library = { motions: lib.motions || [], sequences: lib.sequences || [] };
+  const sel = $('clipSel');
+  sel.innerHTML = '';
+  if (library.sequences.length) {
+    const g = document.createElement('optgroup'); g.label = 'Sequences';
+    for (const s of library.sequences) g.appendChild(new Option(s.name, 'seq:' + s.id));
+    sel.appendChild(g);
+  }
+  if (library.motions.length) {
+    const g = document.createElement('optgroup'); g.label = 'Motions';
+    for (const m of library.motions) g.appendChild(new Option(m.name, 'motion:' + m.id));
+    sel.appendChild(g);
+  }
+  if (!sel.options.length) sel.appendChild(new Option('— library empty —', ''));
+}
+
+fetch('./library.json', { cache: 'no-store' })
+  .then(r => r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status)))
+  .then(lib => { adoptLibrary(lib); log(`library.json — ${library.motions.length} motions, ${library.sequences.length} sequences`); })
+  .catch(err => { $('clipSel').innerHTML = '<option value="">— library.json not found —</option>'; log('! ' + err.message + ' — use Load file…'); });
+
+/* boot — after every declaration above is initialised */
+openBus();
+syncSlidersFromTarget();
+setDc(0);
+resize();
+animate();
+</script>
+</body>
+</html>

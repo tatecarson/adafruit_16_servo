@@ -131,6 +131,86 @@ The page is organized into numbered sections:
   `MOTION` command.
 - **`// 07 Firmware Upload`** — OTA flash one board or all of them (see below).
 
+## 3D simulator
+
+`sculpture_3d.html` renders the sculpture in 3D and drives it from exactly what the
+dashboard can command: the three winch servos as percent-down (0 = fully up, 100 = fully
+down, unpowered rest) and the DC motor as signed speed. Serve it from the same helper and
+open <http://127.0.0.1:4173/sculpture_3d.html>. `three.js` is vendored in `vendor/` so the
+page works offline in the gallery.
+
+**Board 3's mechanism.** A ceiling housing holds the three winch servos and the DC gear
+motor. Three cables run down and out to an inner ring; chains of wooden dowels linked by
+small metal rings hang free from it, over a stationary base whose wooden deck is slightly
+wider than that ring. A second, larger ring is fixed to the ceiling and carries its own
+dowel curtain — it never moves, and it sits just *outside* the base, so its dowels hang
+past the base wall and rest on the floor rather than on the deck. The base is modelled as
+a solid cylinder for that reason: resolving it as a top surface alone would snap the
+outer curtain up onto the deck. The winches set how much dowel piles onto the deck; the
+motor turns the inner curtain only.
+
+The two behaviours are consequences of the simulation, not separate modes:
+
+- **slow** — the piled ends drag across the stationary wood and scrape.
+- **fast** — centrifugal flare lifts them off the deck and throws them out against the
+  outer ring's dowels, and they clack.
+
+Rotation is calibrated against the real installation, where the inner curtain starts
+tangling with the outer ring at about `ROTATE 22` — the practical ceiling. Full scale is
+set so that lands on the threshold rather than being a speed nobody uses:
+
+| `ROTATE` | rpm | s/rev | contact |
+|---|---|---|---|
+| 10–18 | 2.5–4.5 | 24–13 | clear |
+| **22** | **5.5** | **10.9** | **42 clacks/s — starting to tangle** |
+| 25–30 | 6.2–7.5 | 9.7–8.0 | 80–105 |
+| 50 | 12.5 | 4.8 | 696 — unusable |
+
+That threshold falls out of the ring gap, so it is only as right as the geometry. If
+`ROTATE 22` looks too slow, the real gap between the two rings is wider than the modelled
+7 cm — raise `Outer ring m`, which pushes the knee up, then raise `Max RPM @100` to put it
+back on 22.
+
+- The dowel chains are simulated, not posed — Verlet particles with distance constraints,
+  frictional deck contact, and segment-to-segment collision between the two curtains
+  (joint-only tests thread straight through the ~12 cm gaps between chains). Pile-up,
+  buckling, drag, flare and swing all fall out of that.
+- The deck accumulates the scrape marks the dowels leave, which is the pattern the piece
+  draws; **Clear marks** resets it and `μ` sets deck friction.
+- **Settle 5 s** runs five seconds of physics in one go and reports where it landed —
+  clacks/s, scrape, ring height, joints on the deck. Flare takes seconds to develop, so
+  this answers "does this height and speed clack, or just scrape?" without waiting.
+- **Sound** is synthesised from those same contacts, nothing sampled or sequenced: a
+  noise-based scrape voice driven by how fast the contacting dowels slide, and one
+  wooden-bar resonance per strike. Above ~45 strikes/s the discrete voices give way to a
+  clatter bed — at full speed the rig really does produce several hundred impacts a
+  second, which is a roar rather than a sequence of taps. Audio needs one click to start
+  (browser autoplay policy).
+- Cable payout converts to ring height through the cable's real geometry, so percent-down
+  is slightly non-linear in ring height, as on the rig. Differential winch values tilt the
+  ring on the plane through its three anchors.
+- The slew limiter uses the measured `77ms/%` mechanical floor, so a Motion asking for
+  travel the winches cannot deliver visibly lags its commanded position.
+- **Library playback** loads `library.json` and plays any Motion or Sequence, including
+  `ROTATE`, `STOP`, and per-board DC lanes. Authoring form only — bake pre-rolls
+  (`MOTION … PREP`) are not simulated.
+- **Dashboard link** mirrors the dashboard itself. `servo_controller.html` publishes
+  every command it dispatches on a same-origin `BroadcastChannel`, so opening both pages
+  from the same server makes the 3D rig follow the real control surface — Motor Test,
+  Master Command, live Motion play, `RUN` — **with no boards connected at all**, because
+  the tap sits in front of the HTTP request rather than behind a reply. The simulator
+  applies the firmware's own mirroring rule: `RUN`, `ROTATE`, bare `STOP` and `MOTION`
+  are cluster-wide and always apply; `UP`/`DOWN`/`DMOVE`/`S<n>`/`STOP <n>` are
+  board-local and apply only when addressed to the selected board.
+- **Live telemetry** polls a board's `/status.json` at 2 Hz and mirrors its real pulses,
+  inverted through the `servo_setup.h` calibration. Overrides the dashboard link.
+- **Geometry** panel exposes every dimension. The mechanism is taken from the firmware;
+  the dimensions are scaled off a reference render and are meant to be corrected against
+  the real build.
+
+Only board 3's rig exists so far. Boards 1 and 2 draw a placeholder until their designs
+land — add them to the `RIGS` registry near the top of the module.
+
 ## Content model: Motions, Sequences, Setlists
 
 - A **Motion** is a keyframed timeline of servo (percent-of-travel) and DC (signed

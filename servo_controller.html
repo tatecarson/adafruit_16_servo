@@ -2407,7 +2407,23 @@ async function sendCommand(ip, cmd) {
   return sendCommandNow(ip, cmd);
 }
 
+// ── 3D simulator bridge ──────────────────────────────────────────────────
+// Every command dispatched to a board is also published on a same-origin
+// BroadcastChannel so sculpture_3d.html can mirror the rig. This is a tap,
+// not a transport: it never affects what is sent, it costs nothing when the
+// simulator isn't open, and it fires whether or not any board answers — so
+// the 3D model follows the dashboard with no hardware present at all.
+const simBus = (() => {
+  try { return new BroadcastChannel("servo-sim"); } catch { return null; }
+})();
+function publishToSim(ip, cmd) {
+  if (!simBus) return;
+  const boardId = boardIdByIp.get(ip) || (boards.indexOf(ip) + 1) || null;
+  try { simBus.postMessage({ ts: Date.now(), ip, boardId, cmd: String(cmd) }); } catch {}
+}
+
 async function sendCommandNow(ip, cmd) {
+  publishToSim(ip, cmd);
   const url = `http://${ip}/cmd?c=${encodeURIComponent(cmd)}&t=${Date.now().toString(36)}`;
   try {
     await fetch(url, { method: "GET", mode: "no-cors", cache: "no-store" });
@@ -4923,6 +4939,7 @@ function sendMotionCommand(ip, cmd, signal) {
     return;
   }
   motionInflightIps.add(ip);
+  publishToSim(ip, cmd);
   const url = `http://${ip}/cmd?c=${encodeURIComponent(cmd)}&t=${Date.now().toString(36)}`;
   fetch(url, { method: "GET", mode: "no-cors", cache: "no-store", signal })
     .then(() => { lastCmd.set(ip, { cmd, ts: Date.now() }); })
