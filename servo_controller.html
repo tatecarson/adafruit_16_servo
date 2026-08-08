@@ -710,6 +710,11 @@
     border-color: var(--amber);
     color: var(--amber);
   }
+  .seq-dc-in { display: inline-grid; justify-items: center; gap: 1px; }
+  .seq-dc-rpm { font: 500 8px/1 var(--mono); color: var(--ink-mute); white-space: nowrap; }
+  .seq-dc-heads { display: grid; grid-auto-flow: column; gap: 4px; margin-top: 3px;
+                  font: 700 7px/1 var(--label); letter-spacing: .1em;
+                  text-transform: uppercase; color: var(--ink-mute); }
   .seq-dc-help {
     cursor: help;
     color: var(--ink-mute);
@@ -1997,7 +2002,7 @@
             <th>cmd <span id="seqCmdHelp" title="" style="cursor:help;color:var(--ink-mute);font-weight:400">&#9432;</span></th>
             <th>duration</th>
             <th>target</th>
-            <th>dc <span class="seq-dc-help" title="Motor speed per board, -50..50. Blank = unchanged (the motor holds its last speed); 0 = stop. Each change costs one firmware step.">&#9432;</span></th>
+            <th>dc <span class="seq-dc-help" title="Motor speed per machine, -50..50. Blank = unchanged (the motor holds its last speed); 0 = stop. Each change costs one firmware step. The same number is a different speed on each machine — see the rpm under each box.">&#9432;</span><span class="seq-dc-heads" id="seqDcHeads"></span></th>
             <th>label</th>
             <th>hold</th>
             <th>preview</th>
@@ -6452,13 +6457,13 @@ function renderDcLanes(displaySteps, layout, trackWidth) {
       const magnitude = Math.min(100, Math.abs(value) / DC_LANE_SPEED_LIMIT * 100);
       const dir = value > 0 ? "fwd" : value < 0 ? "rev" : "stop";
       return `<span class="seq-dc-cell ${dir}" style="width:${geometry.widthPx.toFixed(2)}px"
-          title="B${boardId} · ${value === 0 ? "stopped" : `${value} spd`}">
+          title="${machineOf(boardId)?.name ?? `board ${boardId}`} · ${value === 0 ? "stopped" : `${value} spd · ${formatRpm(rpmForSpeed(boardId, value))}`}">
         <span class="fill" style="height:${magnitude.toFixed(1)}%"></span>
         ${geometry.widthPx > 42 && value !== 0 ? `<span class="v">${value}</span>` : ""}
       </span>`;
     }).join("");
     return `<div class="seq-dc-lane${idle ? " idle" : ""}">
-      <span class="seq-dc-lane-label">B${boardId}.DC</span>
+      <span class="seq-dc-lane-label" title="${escapeHtml(machineOf(boardId)?.drive ?? "")}">B${boardId} · ${escapeHtml(machineOf(boardId)?.short ?? "dc")}</span>
       <div class="seq-dc-lane-cells" style="width:${trackWidth.toFixed(2)}px">${cells}</div>
     </div>`;
   }).join("");
@@ -6605,6 +6610,13 @@ function renderSequencer() {
   // Refresh the step-command suggestions (baked motions) + the hover help.
   const cmdSuggestEl = $("#seqCmdSuggest");
   if (cmdSuggestEl) cmdSuggestEl.innerHTML = cmdSuggestOptions();
+  // Label the three unmarked DC boxes with the machines they drive.
+  const dcHeads = $("#seqDcHeads");
+  if (dcHeads) {
+    dcHeads.innerHTML = DC_LANE_BOARD_IDS
+      .map(id => `<span title="${escapeHtml(machineOf(id)?.drive ?? "")}">${escapeHtml(machineOf(id)?.short ?? id)}</span>`)
+      .join("");
+  }
   const cmdHelpEl = $("#seqCmdHelp");
   if (cmdHelpEl) cmdHelpEl.title = CMD_HELP;
   seqSelectEl.innerHTML = lib.sequences.map(s =>
@@ -6636,7 +6648,17 @@ function renderSequencer() {
       <td><input data-field="cmd" type="text" list="seqCmdSuggest" spellcheck="false" autocomplete="off" value="${escapeHtml(step.cmd)}" title="${escapeHtml(CMD_HELP)}"></td>
       <td class="seq-dur${short ? " short" : ""}"><input data-field="durationMs" type="number" min="0" step="100" value="${step.durationMs}"${short ? ` title="Motion ${escapeHtml(short.motionId)} needs ${short.need}ms to finish — this step cuts it off by ${short.shortMs}ms"` : ""}>${short ? `<button class="cmd compact alert seq-fit" data-fit="${index}" data-fit-ms="${short.need}" title="Set duration to the motion's length (${formatMs(short.need)}) so the move completes">fit ${formatMs(short.need)}</button>` : ""}</td>
       <td><select data-field="target">${targetOptions(step.target)}</select></td>
-      <td class="seq-dc">${DC_LANE_BOARD_IDS.map(boardId => `<input data-dc-board="${boardId}" type="number" min="${-DC_LANE_SPEED_LIMIT}" max="${DC_LANE_SPEED_LIMIT}" step="5" placeholder="–" title="B${boardId} motor speed · blank = unchanged, 0 = stop" value="${step.dc[boardId] != null ? step.dc[boardId] : ""}">`).join("")}</td>
+      <td class="seq-dc">${DC_LANE_BOARD_IDS.map(boardId => {
+        const v = step.dc[boardId];
+        const m = machineOf(boardId);
+        // ±50 means a different thing on every machine, so the input says which
+        // machine it is and what its own limit is worth.
+        const tip = `${m?.name ?? `board ${boardId}`} motor · ±${DC_LANE_SPEED_LIMIT} is `
+          + `${formatRpm(rpmForSpeed(boardId, DC_LANE_SPEED_LIMIT))} · blank = unchanged, 0 = stop`;
+        const rpm = (v != null && v !== "" && Number(v) !== 0)
+          ? `<span class="seq-dc-rpm">${escapeHtml(formatRpm(rpmForSpeed(boardId, v)))}</span>` : "";
+        return `<span class="seq-dc-in"><input data-dc-board="${boardId}" type="number" min="${-DC_LANE_SPEED_LIMIT}" max="${DC_LANE_SPEED_LIMIT}" step="5" placeholder="–" title="${escapeHtml(tip)}" value="${v != null ? v : ""}">${rpm}</span>`;
+      }).join("")}</td>
       <td><input data-field="label" type="text" value="${escapeHtml(step.label)}" spellcheck="false"></td>
       <td class="seq-hold"><input data-field="hold" type="checkbox"${step.hold ? " checked" : ""}></td>
       <td><button class="cmd compact" data-preview="${index}">Preview</button></td>
