@@ -1023,6 +1023,34 @@ const audio = {
 const _earA = new THREE.Vector3();
 const _earF = new THREE.Vector3();
 
+/* ── level of detail ──────────────────────────────────────────────────────
+   Three machines solving at full rate is more than a laptop wants to do, and
+   from six metres away nobody can see which. So detail scales with how far
+   the ear is from each machine.
+
+   The rule that keeps the room honest: budget scales with distance, gain
+   never does. Distance belongs entirely to the panners' inverse rolloff.
+   Nothing here touches a gain, a panner, or a continuous voice — a machine
+   at level 2 is still fully audible, just solved more coarsely. Violate that
+   and walking across the room starts mixing the piece for you. */
+const LOD_NEAR = 3.0, LOD_FAR = 7.0, LOD_HYST = 0.5;
+function updateLod() {
+  const ear = listenerPos(_earA);
+  for (const rg of rigs) {
+    if (!rg.setLod) continue;
+    const d = Math.hypot(ear.x - rg.group.position.x, ear.z - rg.group.position.z);
+    // widen whichever boundary we are already past, so standing on one does
+    // not flicker the solver between two costs
+    const cur = rg.lodLevel ?? 0;
+    let next = cur;
+    if (d < LOD_NEAR - (cur > 0 ? 0 : LOD_HYST)) next = 0;
+    else if (d < LOD_FAR - (cur > 1 ? 0 : LOD_HYST)) next = 1;
+    else if (d > LOD_FAR + (cur < 2 ? LOD_HYST : 0)) next = 2;
+    else if (d > LOD_NEAR + (cur < 1 ? LOD_HYST : 0)) next = Math.max(next, 1);
+    if (next !== cur) { rg.lodLevel = next; rg.setLod(next); }
+  }
+}
+
 /* ════════════════════════════════════════════════════════════════════════
    SCENE
    ════════════════════════════════════════════════════════════════════════ */
@@ -1203,6 +1231,26 @@ function createBoard3Rig() {
   // rotation under group, ring carries the winched position and tilt, so
   // spinner.matrix · ring.matrix is that anchor frame with the rig's own
   // placement left out of it.
+  /* What gets cheaper with distance is detail, never sound. Constraint
+     iterations and the collision broad phase degrade; the substep cap is the
+     last thing touched and never below two, because draining the accumulator
+     would slow the rig down audibly rather than just making it coarser. The
+     collision pass itself is never skipped — that is where the clacks come
+     from, and clacks are the instrument. */
+  const LOD = { iters: 8, substeps: 5, spread: 1, marks: true };
+  const LOD_LEVELS = [
+    { iters: 8, substeps: 5, spread: 1, marks: true },
+    { iters: 5, substeps: 3, spread: 1, marks: true },
+    { iters: 3, substeps: 2, spread: 1, marks: false },
+  ];
+  /* spread stays 1 at every level. Narrowing the collision broad phase to a
+     single angular bin looks like a cheap win and is not: measured over a
+     fixed 5 s run it takes the strike count from 439 to 108, which is the
+     machine going quiet as you walk away — distance counted twice, once by
+     the panners and again by the solver. Iterations are the safe knob; going
+     below three is not safe either, in the other direction, because the
+     chains start sagging through each other and over-strike (602). */
+
   const ringLocal = new THREE.Matrix4();
   function refreshRingLocal() {
     spinner.updateMatrix();
@@ -1327,7 +1375,7 @@ function createBoard3Rig() {
         p.set(p.x + vx, p.y + vy + gh2, p.z + vz);
       }
 
-      for (let it = 0; it < 8; it++) {
+      for (let it = 0; it < LOD.iters; it++) {
         ch.pos[0].copy(anchor);
         for (let i = 1; i <= M; i++) {
           const a = ch.pos[i - 1], b = ch.pos[i];
@@ -1428,7 +1476,7 @@ function createBoard3Rig() {
 
         const mx = (a.x + b.x) * 0.5, mz = (a.z + b.z) * 0.5;
         const base = Math.round(Math.atan2(mz, mx) / dphi);
-        for (let dj = -1; dj <= 1; dj++) {
+        for (let dj = -LOD.spread; dj <= LOD.spread; dj++) {
           const co = fixed[((base + dj) % fixed.length + fixed.length) % fixed.length];
           for (let k = 0; k < co.M; k++) {
             const c = co.pos[k], d2 = co.pos[k + 1];
@@ -1497,7 +1545,7 @@ function createBoard3Rig() {
     let di = 0, doi = 0, li = 0, contacts = 0, slide = 0;
     const markR = TEX / 2 / G.baseR;
 
-    if (st.showTrails) { deckCtx.globalAlpha = 0.012; deckCtx.drawImage(woodCv, 0, 0); }
+    if (st.showTrails && LOD.marks) { deckCtx.globalAlpha = 0.012; deckCtx.drawImage(woodCv, 0, 0); }
 
     for (const ch of chains) {
       const mesh = ch.moving ? dowelMesh : dowelMeshO;
@@ -1592,7 +1640,7 @@ function createBoard3Rig() {
     pendingClacks.length = 0;
     acc = Math.min(acc + dt, 0.1);
     let n = 0;
-    while (acc >= PHYS_H && n++ < 5) { stepPhysics(PHYS_H, st); acc -= PHYS_H; }
+    while (acc >= PHYS_H && n++ < LOD.substeps) { stepPhysics(PHYS_H, st); acc -= PHYS_H; }
 
     writeInstances(st);
 
@@ -1647,7 +1695,11 @@ function createBoard3Rig() {
     return strikes;
   }
 
-  return { group, update, info, clearTrails, fastForward };
+  return {
+    group, update, info, clearTrails, fastForward,
+    setLod(n) { Object.assign(LOD, LOD_LEVELS[clamp(n | 0, 0, 2)]); },
+    lod: () => LOD,
+  };
 }
 
 /* ════════════════════════════════════════════════════════════════════════
@@ -2838,6 +2890,8 @@ function animate() {
     }
   }
 
+  updateLod();
+
   // The motor lag is real on every board; how spin turns into motion is the
   // rig's own business, so board 3 keeps its rpm scale here until the other
   // two arrive with theirs.
@@ -2894,7 +2948,8 @@ function drawReadout() {
     const servos = rg.noServos
       ? '  —  no servos'
       : `${fmt(st.target[0])} ${fmt(st.target[1])} ${fmt(st.target[2])} %down`;
-    lines.push(`${mark}b${rg.id} ${rg.name.padEnd(14).slice(0, 14)} ${servos}  dc ${String(Math.round(st.dcActual)).padStart(4)}%`);
+    const lod = rg.setLod ? `  lod${rg.lodLevel ?? 0}` : '';
+    lines.push(`${mark}b${rg.id} ${rg.name.padEnd(14).slice(0, 14)} ${servos}  dc ${String(Math.round(st.dcActual)).padStart(4)}%${lod}`);
     if (rg.detail) lines.push('        ' + rg.detail());
   }
   const f = focusRig();
