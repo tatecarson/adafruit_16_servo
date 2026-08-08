@@ -171,6 +171,26 @@
   </section>
 
   <section>
+    <h2>Board 2 — field</h2>
+    <div class="grid2">
+      <div class="field"><label>Deck</label><select id="b2deck"></select></div>
+      <div class="field"><label>Ball</label><select id="b2ball"></select></div>
+      <div class="field"><label>Teeth</label><select id="b2pat"></select></div>
+      <div class="field"><label>Belt</label><select id="b2belt"></select></div>
+    </div>
+    <div class="row"><label>Balls</label><input id="b2n" type="range" min="1" max="60" value="22"><output id="b2nv">22</output></div>
+    <div class="row"><label>Cut µm</label><input id="b2w" type="range" min="20" max="400" value="60"><output id="b2wv">60</output></div>
+    <div class="row"><label>Plough</label><input id="b2rake" type="range" min="0" max="100" value="34"><output id="b2rakev">34</output></div>
+    <div id="b2chord" class="note"></div>
+    <div class="note"><b>No servos.</b> This machine is one DC motor; everything
+      else here is a build parameter, not a channel. Servo commands addressed to
+      board 2 report themselves rather than moving anything, and it ignores the
+      servo tracks in a Motion. The deck and ball choices change how it looks and
+      how it sounds from the same numbers — thickness and stiffness set the plate
+      modes, ball mass sets how hard the contact drives them.</div>
+  </section>
+
+  <section>
     <h2>Winch servos — percent down</h2>
     <div class="row"><label>S0</label><input type="range" id="s0" min="0" max="100" step="1" value="100"><output id="s0v">100</output></div>
     <div class="row"><label>S1</label><input type="range" id="s1" min="0" max="100" step="1" value="100"><output id="s1v">100</output></div>
@@ -330,6 +350,11 @@ import { PointerLockControls } from 'https://cdn.jsdelivr.net/npm/three@0.169.0/
    The dowel chains are simulated, not posed: Verlet particles with distance
    constraints, frictional deck contact, and curtain-to-curtain collision.
    ──────────────────────────────────────────────────────────────────────────── */
+
+/* Used while the rigs are being built, not just while they run — board 2
+   precomputes its plate modes at construction — so it has to be declared
+   before any factory does. */
+const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 
 /* The seed jitter in reseed() is the only randomness in the solver, so pinning
    it makes a run repeatable. That is what lets a refactor be checked by diffing
@@ -794,6 +819,165 @@ const audio = {
       m.voiceCount--;
       try { src.disconnect(); lp.disconnect(); g.disconnect(); } catch {}
     };
+  },
+
+  /* ── board 2's voice set ─────────────────────────────────────────────── */
+
+  /* This machine has no events. It drones: five band voices whose pitch is
+     teeth × revolutions, amplitude set by how many balls are sitting in each
+     band, timbre set by the plate the teeth are cut into.
+
+     Each band drives the plate through a modal bank rather than being heard
+     directly. A periodic pulse train only excites a resonator where its
+     harmonics happen to land, and a ball bouncing across cuts is not a
+     metronome — its flight time depends on how it came off the last ridge —
+     so noise through the same modes is most of what a washboard actually
+     sounds like, and it is what makes the plate ring at its own pitches
+     rather than at the tooth rate's harmonics. */
+  fieldVoices(rg) {
+    if (!this.on || !this.ctx) return null;
+    const m = this.model(rg.id);
+    if (m.built) return m;
+    const ctx = this.ctx;
+    const y = rg.deckY();
+
+    // three sectors of the deck rim, plus the cabinet below for the gearbox
+    m.sect = [];
+    for (let i = 0; i < 3; i++) {
+      const a = i * 2 * Math.PI / 3 + Math.PI / 3;
+      m.sect.push(this.panner(rg.id, 'sect' + i,
+        new THREE.Vector3(Math.cos(a) * 0.10, y + 0.03, Math.sin(a) * 0.10), rg.group,
+        { refDistance: 0.55 }));
+    }
+    m.mech = this.panner(rg.id, 'mech', new THREE.Vector3(0.082, y - 0.09, -0.026), rg.group,
+      { refDistance: 0.5 });
+
+    const noise = () => {
+      const s = ctx.createBufferSource(); s.buffer = this.noiseBuf; s.loop = true; s.start(); return s;
+    };
+    // a band-limited impulse train: 42 equal cosine partials
+    if (!this._pulse) {
+      const N = 42;
+      const re = new Float32Array(N + 1), im = new Float32Array(N + 1);
+      for (let k = 1; k <= N; k++) re[k] = 1 / N;
+      this._pulse = ctx.createPeriodicWave(re, im, { disableNormalization: false });
+    }
+    const modal = (dest) => {
+      const nodes = [];
+      for (let i = 0; i < 4; i++) {
+        const b = ctx.createBiquadFilter(); b.type = 'bandpass';
+        b.frequency.value = 400; b.Q.value = 12;
+        const g = ctx.createGain(); g.gain.value = 0.4;
+        b.connect(g); g.connect(dest);
+        nodes.push({ b, g });
+      }
+      return nodes;
+    };
+
+    m.band = [];
+    for (let b = 0; b < 5; b++) {
+      const o = ctx.createOscillator();
+      o.setPeriodicWave(this._pulse);
+      o.frequency.value = 200;
+      const gg = ctx.createGain(); gg.gain.value = 0;
+      const res = modal(gg);
+      for (const r of res) o.connect(r.b);
+      const nz = noise();
+      const ng = ctx.createGain(); ng.gain.value = 0;
+      nz.connect(ng);
+      for (const r of res) ng.connect(r.b);
+      // a little raw contact past the modes, so the top does not vanish
+      const air = ctx.createBiquadFilter(); air.type = 'highpass'; air.frequency.value = 2600;
+      const ag = ctx.createGain(); ag.gain.value = 0.12;
+      o.connect(air); air.connect(ag); ag.connect(gg);
+      gg.connect(m.sect[b % 3]);
+      o.start();
+      m.band.push({ o, res, g: gg, n: ng });
+    }
+
+    // the rattle: broadband, driven by how far past f_skip the bands are
+    const rn = noise();
+    const rbp = ctx.createBiquadFilter(); rbp.type = 'bandpass'; rbp.frequency.value = 800; rbp.Q.value = 0.6;
+    const rg2 = ctx.createGain(); rg2.gain.value = 0;
+    const rres = modal(rg2);
+    rn.connect(rbp);
+    for (const r of rres) rbp.connect(r.b);
+    rg2.connect(m.sect[2]);
+    m.ratG = rg2; m.ratBP = rbp; m.ratRes = rres;
+
+    // the gearbox, under the deck rather than on it
+    const hn = noise();
+    const hbp = ctx.createBiquadFilter(); hbp.type = 'bandpass'; hbp.frequency.value = 240; hbp.Q.value = 2.2;
+    const hg = ctx.createGain(); hg.gain.value = 0;
+    hn.connect(hbp); hbp.connect(hg); hg.connect(m.mech);
+    m.humG = hg; m.humBP = hbp;
+
+    m.built = true;
+    return m;
+  },
+
+  tuneBank(nodes, D, now, qScale) {
+    /* Q comes out of the modal decay as π·f·τ, which for 12 mm ply is ~90 —
+       the Q of a plate hanging in air with nothing on it. Loaded with twenty
+       bearings and bolted through a hub it is nothing like that free, and
+       leaving it that sharp also breaks the excitation: a 10 Hz-wide passband
+       that none of the drive's harmonics land in receives nothing, and the
+       machine goes quiet for reasons that are purely an artefact. */
+    const qs = qScale || 1;
+    if (nodes.tuned === D && nodes.qs === qs) return;
+    nodes.tuned = D; nodes.qs = qs;
+    for (let i = 0; i < nodes.length; i++) {
+      const mo = D.modes[i]; if (!mo) continue;
+      nodes[i].b.frequency.setTargetAtTime(mo[0], now, 0.05);
+      nodes[i].b.Q.setTargetAtTime(clamp(Math.PI * mo[0] * mo[2] * qs, 1.2, 16), now, 0.05);
+      nodes[i].g.gain.setTargetAtTime(mo[1] * 0.5, now, 0.05);
+    }
+  },
+
+  setField(rg) {
+    const m = this.fieldVoices(rg);
+    if (!m) return;
+    const i = rg.info;
+    const ctx = this.ctx, now = ctx.currentTime;
+    const D = rg.deckTable[rg.ctl.deck];
+    const B = rg.ballTable[rg.ctl.ball];
+    const T = rg.teethTable[rg.ctl.pattern];
+    const rev = i.rev || 0, drop = i.drop || 1e-5;
+    const cnt = i.bandCounts || [0, 0, 0, 0, 0];
+    const mRef = rg.ballTable.steel10.m;
+
+    const fSkip = Math.sqrt(9.81 / (2 * drop));
+    let rattle = 0;
+
+    for (let b = 0; b < 5; b++) {
+      const V = m.band[b];
+      const f = clamp(T.n[b] * rev, 18, 7000);
+      const alive = cnt[b] > 0 && rev > 0.02;
+      if (alive) {
+        this.tuneBank(V.res, D, now, 0.22);
+        // the fraction of its own weight the contact is worth, saturating
+        // where the ball has left the surface and the transfer stops growing
+        const bounce = clamp(drop * Math.pow(2 * Math.PI * f, 2) / 9.81, 0, 1);
+        const over = f / fSkip;
+        if (over > 1) rattle += cnt[b] * (over - 1);
+        V.o.frequency.setTargetAtTime(Math.min(f, fSkip), now, 0.03);
+        // the further past f_skip, the less of the landing pattern is
+        // periodic and the more of it is scatter
+        V.n.gain.setTargetAtTime(clamp(0.22 + 0.5 * Math.max(0, over - 1), 0, 0.8), now, 0.06);
+        V.g.gain.setTargetAtTime(
+          clamp(0.34 * Math.sqrt(cnt[b]) * (B.m / mRef) * bounce / (1 + 0.5 * Math.max(0, over - 1)), 0, 0.75),
+          now, 0.06);
+      } else {
+        V.g.gain.setTargetAtTime(0, now, 0.07);
+        V.n.gain.setTargetAtTime(0, now, 0.07);
+      }
+    }
+
+    this.tuneBank(m.ratRes, D, now, 0.16);
+    m.ratG.gain.setTargetAtTime(clamp(rattle * 0.012 * (B.m / mRef), 0, 0.13), now, 0.07);
+    m.ratBP.frequency.setTargetAtTime(clamp(D.f1 * 1.6, 300, 7000), now, 0.09);
+    m.humG.gain.setTargetAtTime(clamp(Math.abs(rev) * 0.03, 0, 0.05), now, 0.12);
+    m.humBP.frequency.setTargetAtTime(clamp(120 + Math.abs(rev) * 46 * 2, 80, 900), now, 0.12);
   },
 
   /* x/z are the strike point in rig-local space; they pick which sector of the
@@ -1748,6 +1932,327 @@ function createBoard1Rig() {
   };
 }
 
+/* ════════════════════════════════════════════════════════════════════════
+   BOARD 2 — FIELD
+
+   A 300 mm disc turned by one gearmotor through a belt, with five concentric
+   bands of teeth cut into it and loose bearings sitting on top. A ball on a
+   spinning disc does not fly off and does not go round with the deck: it
+   rolls, and a rolling ball's centre orbits at two sevenths of the disc's
+   rate. So the ball very nearly stays put while the deck runs underneath it
+   at five sevenths of surface speed, and that relative speed across the cut
+   teeth is the note. Where the balls happen to be sitting is the chord.
+
+   No servos. This machine is one DC motor and nothing else — its rake, ball
+   count and cut width are build parameters, not actuated channels.
+
+   Ported from drift-bell-models/slow-disc.html (machine M), continuous band
+   layer only: the discrete plate strikes from ball landings are a separate
+   piece of work and the band layer is the instrument.
+
+   It stands on a table. The deck is 140 mm tall on its own, which next to a
+   3 m curtain reads as a coin on the floor, and its dimensions cannot be
+   scaled without retuning it — R_DECK sets the plate modes and the tooth
+   pitch. A 300 mm tone wheel in a room is on a stand anyway.
+   ════════════════════════════════════════════════════════════════════════ */
+function createBoard2Rig() {
+  const TAU     = Math.PI * 2;
+  const GRAV    = 9.81;
+  const R_DECK  = 0.150;
+  const R_HUB   = 0.050;
+  const R_CAB   = 0.170;
+  const H_CAB   = 0.110;
+  const Y_TOP   = H_CAB + 0.012;
+  const Y_SUSAN = Y_TOP + 0.010;
+  const MOT_RPM = 128;
+  const TABLE_Y = 0.78;          // bench height: you look down at the balls
+
+  const BELT = [
+    { nm: '1:2 slow', r: 0.50 }, { nm: '2:3', r: 0.667 },
+    { nm: '1:1', r: 1 }, { nm: '3:2', r: 1.5 }, { nm: '2:1 fast', r: 2 },
+  ];
+
+  /* Five bands, and the tooth counts are the tuning: f = teeth × rev. At
+     128 rpm and 1:1 these are D4 E4 G4 A4 D5. */
+  const BANDS = [[0.048, 0.070], [0.070, 0.091], [0.091, 0.111], [0.111, 0.130], [0.130, 0.148]];
+  const TEETH = {
+    tuned: { nm: 'Pentatonic — five bands', n: [138, 155, 184, 207, 276] },
+    harm:  { nm: 'Harmonic series',         n: [69, 138, 207, 276, 345] },
+    flat:  { nm: 'One note, whole deck',    n: [184, 184, 184, 184, 184] },
+    wide:  { nm: 'Two octaves',             n: [69, 97, 138, 195, 276] },
+  };
+
+  /* Plate eigenvalues for a free disc. The modes, their decays and the wave
+     speed are all computed from the material, so changing a thickness moves
+     the pitch and the ring-down together rather than being two dials. */
+  const LAM    = [5.253, 9.084, 12.23, 20.52];
+  const LAMAMP = [1, 0.72, 0.60, 0.40];
+  const DECK = {
+    ply12:   { nm: '12 mm birch ply',    h: 0.012,  E: 8.0e9, rho: 680,  nu: 0.30, Q: 90,   tone: '#c1a273' },
+    mdf18:   { nm: '18 mm MDF',          h: 0.018,  E: 3.6e9, rho: 750,  nu: 0.30, Q: 26,   tone: '#8b7660' },
+    alu3:    { nm: '3 mm aluminium',     h: 0.003,  E: 69e9,  rho: 2700, nu: 0.33, Q: 700,  tone: '#a8b2b3' },
+    steel15: { nm: '1.5 mm steel sheet', h: 0.0015, E: 200e9, rho: 7850, nu: 0.30, Q: 2200, tone: '#8e9a9c' },
+  };
+  for (const k in DECK) {
+    const D = DECK[k];
+    const c = Math.sqrt(D.E / (12 * (1 - D.nu * D.nu) * D.rho));
+    const s = D.h / (TAU * R_DECK * R_DECK) * c;
+    D.modes = LAM.map((l, i) => {
+      // Q falls with frequency: a disc bolted to a hub loses its high modes
+      // into the bearing first. The exponent is a shape, not a measurement.
+      const f = l * s;
+      const q = D.Q * Math.pow(LAM[0] / l, 0.35);
+      return [f, LAMAMP[i], clamp(q / (Math.PI * f), 0.004, 9)];
+    });
+    D.f1 = D.modes[0][0];
+  }
+
+  const BALL = {
+    steel10: { nm: '10 mm steel bearing', d: 0.010, rho: 7850, col: 0xa4b0b2, met: 0.95, rgh: 0.16 },
+    glass16: { nm: '16 mm glass marble',  d: 0.016, rho: 2500, col: 0x9fd8cc, met: 0.10, rgh: 0.05 },
+    nylon12: { nm: '12 mm nylon ball',    d: 0.012, rho: 1150, col: 0xd9d4c6, met: 0.03, rgh: 0.55 },
+    wood18:  { nm: '18 mm maple ball',    d: 0.018, rho: 700,  col: 0xb9905a, met: 0.03, rgh: 0.78 },
+  };
+  for (const k in BALL) { const B = BALL[k]; B.a = B.d / 2; B.m = B.rho * (4 / 3) * Math.PI * B.a ** 3; }
+
+  // how far a ball drops into a cut of width w — microns, and it sets everything
+  const grooveDrop = (a, w) => { const hw = Math.min(w * 0.5, a * 0.999); return a - Math.sqrt(a * a - hw * hw); };
+  const bandOf = (r) => { for (let b = 0; b < BANDS.length; b++) if (r >= BANDS[b][0] && r < BANDS[b][1]) return b; return -1; };
+
+  const ctl = { belt: 2, pattern: 'tuned', deck: 'ply12', ball: 'steel10', n: 22, w: 60, rake: 34 };
+
+  const matAlu   = new THREE.MeshStandardMaterial({ color: 0xa8b2b3, metalness: 0.82, roughness: 0.34 });
+  const matSteel = new THREE.MeshStandardMaterial({ color: 0x8e9a9c, metalness: 0.9,  roughness: 0.3 });
+  const matBlack = new THREE.MeshStandardMaterial({ color: 0x161a1b, metalness: 0.05, roughness: 0.9 });
+  const matBrass = new THREE.MeshStandardMaterial({ color: 0xc79a4a, metalness: 0.9,  roughness: 0.3 });
+  const matPly   = new THREE.MeshStandardMaterial({ color: 0x6b5842, metalness: 0.02, roughness: 0.88 });
+  const matNylon = new THREE.MeshStandardMaterial({ color: 0xd9d4c6, metalness: 0.02, roughness: 0.6 });
+
+  const group = new THREE.Group();
+
+  // ── the table ──
+  const legs = new THREE.Group(); group.add(legs);
+  for (let i = 0; i < 3; i++) {
+    const a = i * TAU / 3 + 0.5;
+    const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.022, TABLE_Y, 10), matPly);
+    leg.position.set(Math.cos(a) * 0.30, TABLE_Y / 2, Math.sin(a) * 0.30);
+    leg.castShadow = true; legs.add(leg);
+  }
+  const top = new THREE.Mesh(new THREE.CylinderGeometry(0.40, 0.42, 0.030, 56), matPly);
+  top.position.y = TABLE_Y + 0.015; top.castShadow = true; top.receiveShadow = true; group.add(top);
+
+  // everything above the table rides in one group, so the table height is a
+  // single number rather than an offset smeared through the machine
+  const deckRoot = new THREE.Group();
+  deckRoot.position.y = TABLE_Y + 0.030;
+  group.add(deckRoot);
+
+  // ── cabinet: ply drum, gearmotor on sorbothane, belt to the deck pulley ──
+  const shell = new THREE.Mesh(new THREE.CylinderGeometry(R_CAB, R_CAB, H_CAB, 56, 1, true), matPly);
+  shell.material.side = THREE.DoubleSide;
+  shell.position.y = H_CAB / 2; shell.castShadow = true; shell.receiveShadow = true; deckRoot.add(shell);
+  const topRing = new THREE.Mesh(new THREE.CylinderGeometry(R_CAB, R_CAB, 0.012, 56), matPly);
+  topRing.position.y = H_CAB + 0.006; deckRoot.add(topRing);
+  for (const y of [Y_TOP + 0.002, Y_TOP + 0.008]) {
+    const race = new THREE.Mesh(new THREE.CylinderGeometry(R_HUB, R_HUB, 0.004, 40), matSteel);
+    race.position.y = y; deckRoot.add(race);
+  }
+  const motor = new THREE.Group();
+  motor.position.set(0.082, 0.040, -0.026); motor.rotation.z = Math.PI / 2; deckRoot.add(motor);
+  const can = new THREE.Mesh(new THREE.CylinderGeometry(0.0175, 0.0175, 0.058, 20), matBlack);
+  can.castShadow = true; motor.add(can);
+  const gearbox = new THREE.Mesh(new THREE.BoxGeometry(0.032, 0.030, 0.038), matAlu);
+  gearbox.position.y = 0.042; motor.add(gearbox);
+  const pulleyM = new THREE.Mesh(new THREE.CylinderGeometry(0.0064, 0.0064, 0.007, 20), matBlack);
+  pulleyM.position.set(0.082, 0.094, -0.026); deckRoot.add(pulleyM);
+  const pulleyD = new THREE.Mesh(new THREE.CylinderGeometry(0.0192, 0.0192, 0.007, 32), matBlack);
+  pulleyD.position.y = 0.094; deckRoot.add(pulleyD);
+
+  // ── the deck ──
+  const deck = new THREE.Group(); deck.position.y = Y_SUSAN; deckRoot.add(deck);
+  const deckMat = new THREE.MeshStandardMaterial({ roughness: 0.62, metalness: 0.24, side: THREE.DoubleSide });
+  const face = new THREE.Mesh(new THREE.CircleGeometry(R_DECK, 96), deckMat);
+  face.rotation.x = -Math.PI / 2; face.receiveShadow = true; deck.add(face);
+  const rim = new THREE.Mesh(new THREE.CylinderGeometry(R_DECK, R_DECK, 0.012, 96, 1, true), matPly);
+  rim.material.side = THREE.DoubleSide; rim.position.y = -0.006; deck.add(rim);
+  const kerb = new THREE.Mesh(new THREE.TorusGeometry(R_DECK, 0.0035, 8, 96), matBrass);
+  kerb.rotation.x = Math.PI / 2; deck.add(kerb);
+  // a low wall so nothing walks off; it turns with the deck, so it only bounces
+  const wall = new THREE.Mesh(new THREE.CylinderGeometry(R_DECK, R_DECK, 0.016, 96, 1, true),
+    new THREE.MeshStandardMaterial({ color: 0x2c383a, metalness: 0.4, roughness: 0.6, side: THREE.DoubleSide }));
+  wall.position.y = 0.008; deck.add(wall);
+  const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 0.005, 48), matAlu);
+  hub.position.y = 0.0025; deck.add(hub);
+
+  /* The teeth are a texture, not geometry — 138 cuts in a 300 mm band are
+     0.3 mm apart and no mesh is going to carry that honestly. What matters
+     acoustically is the count, and that lives in TEETH. */
+  let teethTex = null;
+  function paintTeeth() {
+    const W = 2048, H = 512;
+    const c = document.createElement('canvas'); c.width = W; c.height = H;
+    const g = c.getContext('2d');
+    const D = DECK[ctl.deck];
+    g.fillStyle = D.tone; g.fillRect(0, 0, W, H);
+    const T = TEETH[ctl.pattern];
+    for (let b = 0; b < BANDS.length; b++) {
+      // radius runs down the canvas: v is 0 at the rim
+      const y0 = H * (1 - BANDS[b][1] / R_DECK), y1 = H * (1 - BANDS[b][0] / R_DECK);
+      g.save(); g.beginPath(); g.rect(0, y0, W, y1 - y0); g.clip();
+      const n = T.n[b];
+      const step = W / n;
+      g.strokeStyle = 'rgba(0,0,0,.34)';
+      g.lineWidth = Math.max(0.6, step * 0.35);
+      for (let x = 0; x < W; x += step) { g.beginPath(); g.moveTo(x, y0); g.lineTo(x, y1); g.stroke(); }
+      g.restore();
+      g.strokeStyle = 'rgba(255,255,255,.06)';
+      g.lineWidth = 1;
+      g.beginPath(); g.moveTo(0, y0); g.lineTo(W, y0); g.stroke();
+    }
+    if (teethTex) teethTex.dispose();
+    teethTex = new THREE.CanvasTexture(c);
+    teethTex.colorSpace = THREE.SRGBColorSpace;   // r169: was .encoding
+    teethTex.wrapS = THREE.RepeatWrapping;
+    deckMat.map = teethTex;
+    deckMat.color.set(0xffffff);
+    deckMat.needsUpdate = true;
+  }
+  paintTeeth();
+
+  // ── the balls ──
+  const BMAX = 60;
+  const ballGeo = new THREE.SphereGeometry(1, 14, 12);
+  const ballMat = new THREE.MeshStandardMaterial({ color: 0xa4b0b2, metalness: 0.95, roughness: 0.16 });
+  const balls = new THREE.InstancedMesh(ballGeo, ballMat, BMAX);
+  balls.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  balls.castShadow = true;
+  deck.add(balls);          // sit on the deck, but do NOT turn with it
+  const P = { r: [], phi: [], n: 0 };
+  const _m = new THREE.Matrix4(), _q = new THREE.Quaternion(), _s = new THREE.Vector3();
+  const _p = new THREE.Vector3();
+
+  function seedBalls() {
+    const n = Math.min(BMAX, Math.max(1, Math.round(ctl.n)));
+    P.n = n;
+    for (let i = 0; i < n; i++) {
+      if (P.r[i] == null) {
+        // spread across the cut bands, not the bare middle
+        P.r[i] = 0.050 + Math.random() * (0.148 - 0.050);
+        P.phi[i] = Math.random() * TAU;
+      }
+    }
+    balls.count = n;
+  }
+  seedBalls();
+
+  // ── the plough: an alu bar on a nylon shoe, sweeping the balls inward ──
+  const plough = new THREE.Group(); plough.position.y = Y_SUSAN; deckRoot.add(plough);
+  const post = new THREE.Mesh(new THREE.CylinderGeometry(0.006, 0.006, 0.075, 10), matAlu);
+  post.position.set(0.175, -0.030, 0); plough.add(post);
+  const arm = new THREE.Mesh(new THREE.BoxGeometry(1, 0.010, 0.006), matAlu);
+  plough.add(arm);
+  const shoe = new THREE.Mesh(new THREE.BoxGeometry(1, 0.014, 0.004), matNylon);
+  plough.add(shoe);
+
+  const info = { ringY: 0, tiltDeg: 0, contacts: 0, chainDown: 0, scrape: 0, strikes: 0,
+                 rpm: 0, chord: 'silent', window: '' };
+  let deckAng = 0;
+
+  const deckRpm = (st) => MOT_RPM * (st.dcActual / 100) * BELT[ctl.belt].r;
+
+  function update(st, dt) {
+    const rpm = deckRpm(st);
+    const rev = rpm / 60;                  // revolutions/sec — the tooth clock
+    const om  = rev * TAU;
+    deckAng += om * dt;
+    deck.rotation.y = deckAng;
+    info.rpm = rpm;
+
+    /* A rolling ball's centre orbits at two sevenths of the deck rate, so it
+       very nearly stays put while the deck runs under it. That is why the
+       machine sings at all — the contact is almost pure sliding. */
+    const B = BALL[ctl.ball];
+    const rake = ctl.rake / 100;
+    for (let i = 0; i < P.n; i++) {
+      P.phi[i] += om * (2 / 7) * dt;
+      // the plough walks them slowly inward, and the wall stops them leaving
+      P.r[i] -= rake * 0.004 * dt * Math.abs(rev);
+      if (P.r[i] < 0.050) P.r[i] = 0.148;
+      const a = P.phi[i];
+      _p.set(Math.cos(a) * P.r[i], B.a, Math.sin(a) * P.r[i]);
+      _m.compose(_p, _q, _s.setScalar(B.a));
+      balls.setMatrixAt(i, _m);
+    }
+    balls.instanceMatrix.needsUpdate = true;
+
+    // the plough bar, drawn across the chord it actually sweeps
+    const px = Math.cos(rake * 1.2) * R_DECK, pz = Math.sin(rake * 1.2) * R_DECK;
+    arm.position.set(px * 0.5, 0.014, pz * 0.5);
+    arm.rotation.y = -Math.atan2(pz, px);
+    arm.scale.x = Math.hypot(px, pz);
+    shoe.position.copy(arm.position); shoe.position.y = 0.007;
+    shoe.rotation.y = arm.rotation.y; shoe.scale.x = arm.scale.x;
+
+    // What the bands are doing is a readout of where the balls are sitting.
+    const T = TEETH[ctl.pattern];
+    const cnt = [0, 0, 0, 0, 0];
+    for (let i = 0; i < P.n; i++) { const b = bandOf(P.r[i]); if (b >= 0) cnt[b]++; }
+
+    const drop  = grooveDrop(B.a, ctl.w / 100000);
+    const fSkip = Math.sqrt(GRAV / (2 * drop));
+    const chord = [];
+    for (let b = 0; b < 5; b++) {
+      const f = clamp(T.n[b] * rev, 18, 7000);
+      // A ball cannot land more often than it can fall the depth of a cut, so
+      // above f_skip the note stalls and the excess becomes rattle — the
+      // instrument coming apart at the top rather than transposing there.
+      if (cnt[b] > 0 && rev > 0.02) chord.push(Math.round(Math.min(f, fSkip)));
+    }
+    info.chord = chord.length ? chord.join(' ') : 'silent';
+    info.window = `${Math.round(Math.sqrt(GRAV / drop) / TAU)}–${Math.round(fSkip)} Hz`;
+    info.contacts = cnt.reduce((a, b) => a + b, 0);
+    info.bandCounts = cnt;
+    info.rev = rev;
+    info.drop = drop;
+    return [];      // this machine has no discrete events; it drones
+  }
+
+  function setMaterial(which, key) {
+    if (which === 'deck') { ctl.deck = key; paintTeeth(); }
+    else {
+      ctl.ball = key;
+      const B = BALL[key];
+      ballMat.color.setHex(B.col);     // r169 converts on its own — no convertSRGBToLinear
+      ballMat.metalness = B.met;
+      ballMat.roughness = B.rgh;
+    }
+  }
+
+  return {
+    group, update, info,
+    noServos: true,                    // one DC motor, and nothing else
+    clearTrails() {},
+    fastForward(seconds, st) {
+      const h = 1 / 120;
+      for (let i = 0; i < Math.round(seconds / h); i++) {
+        st.dcActual += (st.dcTarget - st.dcActual) * (1 - Math.exp(-h / DC_LAG_S));
+        update(st, h);
+      }
+      return 0;
+    },
+    detail: () => `${info.rpm.toFixed(0)} rpm deck · ${P.n} balls · ${info.chord} Hz`,
+    deckTable: DECK, ballTable: BALL, teethTable: TEETH, beltTable: BELT, ctl,
+    deckY: () => TABLE_Y + 0.030 + Y_SUSAN,
+    deckR: R_DECK,
+    setMaterial,
+    setPattern(k) { ctl.pattern = k; paintTeeth(); },
+    setBelt(i) { ctl.belt = clamp(i | 0, 0, BELT.length - 1); },
+    setCount(n) { ctl.n = clamp(n | 0, 1, BMAX); seedBalls(); },
+    setWidth(w) { ctl.w = clamp(w, 20, 400); },
+    setRake(r) { ctl.rake = clamp(r, 0, 100); },
+  };
+}
+
 function createPlaceholderRig() {
   const group = new THREE.Group();
   const box = new THREE.Mesh(
@@ -1764,7 +2269,7 @@ function createPlaceholderRig() {
 
 RIGS[3] = createBoard3Rig;
 RIGS[1] = createBoard1Rig;
-RIGS[2] = createPlaceholderRig;
+RIGS[2] = createBoard2Rig;
 
 /* All three stand in the room at once. A rig owns its group, its drive state
    and its readout; the shell owns where it stands and who is addressing it.
@@ -1785,7 +2290,7 @@ function buildRig(id) {
   r.clackRate = 0;
   // Which voice set the shell should drive for this machine. Boards 1 and 2
   // get their own when their designs land; a placeholder makes no sound.
-  r.voices = { 3: 'curtain', 1: 'wands' }[id] || null;
+  r.voices = { 3: 'curtain', 1: 'wands', 2: 'field' }[id] || null;
   r.group.position.set(spot.x, 0, spot.z);
   scene.add(r.group);
   return r;
@@ -2355,6 +2860,8 @@ function animate() {
       for (const c of clacks) audio.clack(rg, c.v, c.x, c.z);
     } else if (rg.voices === 'wands') {
       for (const h of clacks) audio.tubeStrike(rg, h.idx, h.x, h.str, h.bearing);
+    } else if (rg.voices === 'field') {
+      audio.setField(rg);
     }
   }
   figure.visible = state.showHuman;
@@ -2397,6 +2904,10 @@ function drawReadout() {
     lines.push(`dowel  ${(i.chainDown * 100).toFixed(0)} cm past the deck   ${i.contacts} joints on it   scrape ${i.scrape.toFixed(2)} m/s`);
   }
   lines.push(`strike ${clackRate.toFixed(0)} clacks/s across the room`);
+  const b2 = rigById.get(2);
+  if (b2 && b2.info.window) {
+    $('b2chord').textContent = `chord ${b2.info.chord} Hz · sings between ${b2.info.window}`;
+  }
   document.getElementById('readout').textContent = lines.join('\n');
 }
 const fmt = (v) => String(Math.round(v)).padStart(3, ' ');
@@ -2424,7 +2935,6 @@ new ResizeObserver(resize).observe(stage);
 /* ════════════════════════════════════════════════════════════════════════
    UI
    ════════════════════════════════════════════════════════════════════════ */
-const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 const $ = (id) => document.getElementById(id);
 
 /* The servo and DC panels address one board at a time — the one named in the
@@ -2484,6 +2994,29 @@ $('b1spread').addEventListener('input', e => {
   rigById.get(1).setSpread(+e.target.value / 100);
 });
 $('b1invert').addEventListener('change', e => state.invertWands = e.target.checked);
+
+// board 2 — the pickers are populated from the rig's own tables, so adding a
+// material there is enough to make it appear here
+{
+  const b2 = rigById.get(2);
+  const fill = (id, table, cur, label) => {
+    $(id).innerHTML = Object.entries(table)
+      .map(([k, v]) => `<option value="${k}"${k === cur ? ' selected' : ''}>${label(v)}</option>`).join('');
+  };
+  fill('b2deck', b2.deckTable, b2.ctl.deck, v => v.nm);
+  fill('b2ball', b2.ballTable, b2.ctl.ball, v => v.nm);
+  fill('b2pat',  b2.teethTable, b2.ctl.pattern, v => v.nm);
+  $('b2belt').innerHTML = b2.beltTable
+    .map((v, i) => `<option value="${i}"${i === b2.ctl.belt ? ' selected' : ''}>${v.nm}</option>`).join('');
+
+  $('b2deck').addEventListener('change', e => b2.setMaterial('deck', e.target.value));
+  $('b2ball').addEventListener('change', e => b2.setMaterial('ball', e.target.value));
+  $('b2pat').addEventListener('change',  e => b2.setPattern(e.target.value));
+  $('b2belt').addEventListener('change', e => b2.setBelt(+e.target.value));
+  $('b2n').addEventListener('input',    e => { $('b2nv').textContent = e.target.value; b2.setCount(+e.target.value); });
+  $('b2w').addEventListener('input',    e => { $('b2wv').textContent = e.target.value; b2.setWidth(+e.target.value); });
+  $('b2rake').addEventListener('input', e => { $('b2rakev').textContent = e.target.value; b2.setRake(+e.target.value); });
+}
 
 document.querySelectorAll('[data-solo]').forEach(b => b.addEventListener('click', () => {
   const rg = rigById.get(+b.dataset.solo);
