@@ -156,6 +156,18 @@
     </div>
     <div class="note">Solo and mute are a gain on everything that machine makes,
       drones included — so a soloed machine really is the only thing in the room.</div>
+    <div id="bankState" class="note"></div>
+  </section>
+
+  <section>
+    <h2>Board 1 — centre wands</h2>
+    <div class="row"><label>Spread</label><input id="b1spread" type="range" min="0" max="100" value="100"><output id="b1spreadv">100</output></div>
+    <label class="check"><input type="checkbox" id="b1invert" checked> wands rest clear</label>
+    <div class="note">S0–S2 are the three wand throws and the motor turns the ring.
+      Spread fans the wands apart; at 0 all three sit on one bearing and the tubes
+      get struck in a flam. <b>Wands rest clear</b> reads 100&nbsp;%down (the
+      unpowered rest) as fully raised — without it the machine idles with every
+      wand buried in the orbit, hammering.</div>
   </section>
 
   <section>
@@ -367,6 +379,9 @@ const WINCH_ANGLES = [Math.PI / 2, Math.PI / 2 + 2 * Math.PI / 3, Math.PI / 2 + 
 const state = {
   focusId: 3,          // which board the servo/DC panel is addressing
   slewLimit: true,
+  // Board 1's wands rest clear of the tubes rather than buried in them; see
+  // the note in createBoard1Rig. Off if a board is wired the other way.
+  invertWands: true,
   mu: 0.45,
   showHuman: true, showCables: true, showTrails: true,
 };
@@ -646,6 +661,139 @@ const audio = {
     const x = Math.min(1, Math.max(0, (rate - 35) / 450));
     m.clatterGain.gain.setTargetAtTime(0.26 * x, t, 0.07);
     m.clatterBp.frequency.setTargetAtTime(780 + 950 * x, t, 0.12);
+  },
+
+  /* ── board 1's voice set ─────────────────────────────────────────────── */
+
+  /* A struck tube is a free-free bar: six inharmonic modes, each weighted by
+     the mode shape at the point it was hit, so a graze near the top is bright
+     and a strike further down is hollow. Rendered offline once per (pitch,
+     position) rather than synthesised per event — 30 short buffers is far
+     cheaper than 30 oscillator banks, and the strike position is the whole
+     character of the instrument. */
+  renderTube(f0, x) {
+    const ctx = this.ctx, sr = ctx.sampleRate;
+    const MODE_RATIO = [1, 2.756, 5.404, 8.933, 13.344, 18.647];
+    const MODE_AMP   = [1, 0.62, 0.40, 0.24, 0.15, 0.09];
+    const T1 = Math.min(5.2, Math.max(1.9, 3.7 * (400 / f0)));
+    const dur = Math.min(2.7, T1), len = Math.floor(sr * dur);
+    const buf = ctx.createBuffer(1, len, sr), d = buf.getChannelData(0);
+    for (let m = 0; m < MODE_RATIO.length; m++) {
+      const f = f0 * MODE_RATIO[m];
+      if (f > sr * 0.46) break;
+      const shape = Math.abs(Math.cos((m + 1) * Math.PI * x));
+      const amp = MODE_AMP[m] * (0.12 + 0.88 * shape);
+      if (amp < 0.012) continue;
+      const tau = (T1 / Math.pow(MODE_RATIO[m], 0.62)) / 6.9;
+      // a detuned twin per mode, so the tube beats instead of sitting still
+      for (let tw = 0; tw < 2; tw++) {
+        const ff = f * (1 + (tw ? 0.0022 * (1 + m * 0.35) : 0));
+        const w = 2 * Math.PI * ff / sr, ph = Math.random() * Math.PI * 2;
+        const dec = Math.exp(-1 / (tau * sr));
+        let a = amp * (tw ? 0.85 : 1);
+        for (let i = 0; i < len; i++) { d[i] += a * Math.sin(w * i + ph); a *= dec; if (a < 1e-5) break; }
+      }
+    }
+    // the mallet: two lowpassed noise bursts in the first 50 ms
+    let lp1 = 0, lp2 = 0; const nT = Math.floor(sr * 0.05);
+    for (let i = 0; i < nT; i++) {
+      const n = Math.random() * 2 - 1;
+      lp1 += (n - lp1) * 0.75; lp2 += (n - lp2) * 0.12;
+      d[i] += lp1 * Math.exp(-i / (sr * 0.0016)) * 0.42 + lp2 * Math.exp(-i / (sr * 0.011)) * 0.30;
+    }
+    let pk = 0; for (let i = 0; i < len; i++) { const v = Math.abs(d[i]); if (v > pk) pk = v; }
+    const g = pk > 0 ? 0.88 / pk : 0, fade = Math.floor(len * 0.13);
+    for (let i = 0; i < len; i++) { let v = d[i] * g; if (i > len - fade) v *= (len - i) / fade; d[i] = v; }
+    return buf;
+  },
+
+  /* Panners sit around the orbit rather than one per pitch: the tubes move,
+     so where a note comes from is where its tube was when it was struck, not
+     which note it happened to be. */
+  wandVoices(rg) {
+    if (!this.on || !this.ctx) return null;
+    const m = this.model(rg.id);
+    if (m.built) return m;
+    m.rim = [];
+    for (let k = 0; k < RIM_SECTORS; k++) {
+      const a = k * 2 * Math.PI / RIM_SECTORS;
+      m.rim.push(this.panner(rg.id, 'orbit' + k,
+        new THREE.Vector3(Math.cos(a) * rg.orbitR, rg.hangY - 0.35, Math.sin(a) * rg.orbitR), rg.group,
+        { refDistance: 0.7 }));
+    }
+    m.buffers = null;
+    m.lastHit = new Array(8).fill(0);
+    m.voiceCount = 0;
+    m.built = true;
+    this.renderTubeBank(rg, m);
+    return m;
+  },
+
+  /* 30 buffers is a visible hitch if rendered in one go, so spread it out in
+     time-budgeted chunks. Until it lands the machine is silent rather than
+     wrong. Scheduled on a timer rather than on frames: a hidden or throttled
+     tab still animates rarely or not at all, and a bank that only finishes
+     when the page is in the foreground is a bank that never finishes. */
+  renderTubeBank(rg, m) {
+    const X_POS = [0.04, 0.18, 0.36, 0.56, 0.80];
+    const freqs = rg.tubeFreqs;
+    const out = freqs.map(() => []);
+    let i = 0, j = 0;
+    setBankState(`casting tubes… 0/${freqs.length * X_POS.length}`);
+    const step = () => {
+      const t0 = performance.now();
+      while (i < freqs.length && performance.now() - t0 < 18) {
+        out[i].push(this.renderTube(freqs[i], X_POS[j]));
+        if (++j >= X_POS.length) { j = 0; i++; }
+      }
+      const done = i * X_POS.length + j;
+      if (i < freqs.length) {
+        setBankState(`casting tubes… ${done}/${freqs.length * X_POS.length}`);
+        setTimeout(step, 0);
+      } else {
+        m.buffers = out;
+        m.xpos = X_POS;
+        setBankState('');
+      }
+    };
+    setTimeout(step, 0);
+  },
+
+  /* idx picks the tube, x is where along it the wand landed, bearing is where
+     it was on the orbit at that moment. */
+  tubeStrike(rg, idx, x, strength, bearing) {
+    const m = this.wandVoices(rg);
+    if (!m || !m.buffers || strength <= 0.012) return;
+    const ctx = this.ctx;
+    const when = ctx.currentTime + 0.018;
+    // one tube cannot be re-struck faster than it can ring in
+    if (when - m.lastHit[idx] < 0.028) return;
+    if (m.voiceCount > 24) return;
+    m.lastHit[idx] = when;
+
+    let pi = 0, best = 1e9;
+    for (let p = 0; p < m.xpos.length; p++) {
+      const d = Math.abs(m.xpos[p] - x);
+      if (d < best) { best = d; pi = p; }
+    }
+
+    const src = ctx.createBufferSource();
+    src.buffer = m.buffers[idx][pi];
+    src.playbackRate.value = 1 + (Math.random() - 0.5) * 0.012;
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass'; lp.Q.value = 0.45;
+    lp.frequency.value = 620 + 13000 * Math.pow(strength, 0.65);
+    const g = ctx.createGain();
+    g.gain.value = 0.055 + 0.5 * Math.pow(strength, 1.25);
+
+    const k = ((Math.round(bearing / (2 * Math.PI) * RIM_SECTORS) % RIM_SECTORS) + RIM_SECTORS) % RIM_SECTORS;
+    src.connect(lp).connect(g).connect(m.rim[k]);
+    src.start(when);
+    m.voiceCount++;
+    src.onended = () => {
+      m.voiceCount--;
+      try { src.disconnect(); lp.disconnect(); g.disconnect(); } catch {}
+    };
   },
 
   /* x/z are the strike point in rig-local space; they pick which sector of the
@@ -1318,6 +1466,288 @@ function createBoard3Rig() {
   return { group, update, info, clearTrails, fastForward };
 }
 
+/* ════════════════════════════════════════════════════════════════════════
+   BOARD 1 — CENTRE WANDS
+
+   A stationary centre column carries three servos on a fixed inner ring;
+   each servo shaft *is* a wand pivot, so the wand bolts straight to the horn
+   with no linkage. Around it a brass outer ring rides on three rollers,
+   belt-driven at its rim by the DC motor, carrying six tubes that orbit at
+   R. The centre never turns. The tubes come round and the wands dip into
+   their path.
+
+   Ported from drift-bell-models/chime-gallery.html (machine C), with the
+   wand geometry re-solved — see WAND/THMAX below — and the audio rebuilt
+   onto this page's spatial bus.
+   ════════════════════════════════════════════════════════════════════════ */
+function createBoard1Rig() {
+  const N       = 6;
+  const R       = 0.18;            // tube orbit radius
+  const HANG_Y  = 1.36;            // the plane the tubes hang from
+  const CORD    = 0.04;
+  const TOP     = HANG_Y - CORD;   // top of every tube
+  const TUBE_R  = 0.011;           // 22 mm OD
+  const PIV_R   = 0.045;           // pivot circle — the servo shafts
+  const PIV_Y   = 1.350;
+  const OUT_R   = 0.235;           // the rotating outer ring
+
+  /* The source wand was 260 mm from a 45 mm pivot, which puts its tip at
+     305 mm — past the tubes at 180 mm and straight through the outer ring at
+     235 mm. It was that long only because a 58° throw needs
+     (R−PIV_R)/cos(θ) to still reach. Length and throw are one problem, so
+     solve them together:
+
+        reach at full dip:  WAND ≥ (R − PIV_R) / cos(THMAX)
+        no overshoot:       WAND ≤ (R + TUBE_R + clearance) − PIV_R
+
+     20 mm of clearance gives this pair. The tip now sits at 211 mm at rest,
+     inside the ring, and still crosses the orbit at full throw. The cost is
+     a shallower strike — the contact band is the top 66 mm of each tube
+     rather than 190 mm down — so it rings brighter than the original. */
+  const WAND    = 0.166;
+  const THMAX   = 0.62;
+
+  const RING_ORDER = [0, 3, 1, 5, 2, 4];   // scrambled so a revolution is a melody
+  const FREQS = [293.66, 329.63, 392.00, 440.00, 523.25, 587.33];   // D E G A C D
+  const tubeLength = f => 14.93 / Math.sqrt(f);
+
+  const wrapPi = a => { while (a > Math.PI) a -= Math.PI * 2; while (a < -Math.PI) a += Math.PI * 2; return a; };
+  /* did a tube pass this wand between frames? A sign change, plus a guard so
+     a wrap-around is not mistaken for a crossing. */
+  const crossed = (p, d) => {
+    if (p === 0) return false;
+    if (!((p < 0 && d >= 0) || (p > 0 && d <= 0))) return false;
+    return Math.abs(p) + Math.abs(d) <= 1.2;
+  };
+
+  const matBrass = new THREE.MeshStandardMaterial({ color: 0xc79a4a, metalness: 0.96, roughness: 0.26 });
+  const matSteel = new THREE.MeshStandardMaterial({ color: 0x8e9a9c, metalness: 0.9,  roughness: 0.34 });
+  const matDark  = new THREE.MeshStandardMaterial({ color: 0x2a3538, metalness: 0.55, roughness: 0.55 });
+  const matBlack = new THREE.MeshStandardMaterial({ color: 0x14191b, metalness: 0.3,  roughness: 0.75 });
+  const matCord  = new THREE.MeshStandardMaterial({ color: 0x59504a, metalness: 0.1,  roughness: 0.9 });
+  const matFelt  = new THREE.MeshStandardMaterial({ color: 0x8f3f34, metalness: 0.05, roughness: 0.95 });
+  const matFix   = new THREE.MeshStandardMaterial({ color: 0x3d5a56, metalness: 0.4,  roughness: 0.6 });
+
+  const geoTube = new THREE.CylinderGeometry(TUBE_R, TUBE_R, 1, 20, 1, true);
+  const geoCord = new THREE.CylinderGeometry(0.0015, 0.0015, 1, 6);
+  const geoCap  = new THREE.CylinderGeometry(TUBE_R * 1.15, TUBE_R * 1.15, 0.004, 20);
+
+  let glowTexCache = null;
+  function glowTex() {
+    if (glowTexCache) return glowTexCache;
+    const c = document.createElement('canvas'); c.width = c.height = 128;
+    const g = c.getContext('2d');
+    const rg = g.createRadialGradient(64, 64, 0, 64, 64, 64);
+    rg.addColorStop(0, 'rgba(255,255,255,1)');
+    rg.addColorStop(0.25, 'rgba(255,215,150,.55)');
+    rg.addColorStop(1, 'rgba(255,180,90,0)');
+    g.fillStyle = rg; g.fillRect(0, 0, 128, 128);
+    glowTexCache = new THREE.CanvasTexture(c);
+    glowTexCache.colorSpace = THREE.SRGBColorSpace;   // r169: was .encoding
+    return glowTexCache;
+  }
+
+  const group = new THREE.Group();
+
+  const base = new THREE.Mesh(new THREE.CylinderGeometry(0.40, 0.40, 0.014, 48), matDark);
+  base.position.y = 0.007; base.receiveShadow = true; group.add(base);
+
+  // ── stationary centre: column, inner ring, servo plate ──
+  const post = new THREE.Mesh(new THREE.CylinderGeometry(0.020, 0.024, PIV_Y - 0.02, 16), matFix);
+  post.position.y = (PIV_Y - 0.02) / 2; post.castShadow = true; group.add(post);
+  const inner = new THREE.Mesh(new THREE.TorusGeometry(PIV_R, 0.005, 8, 36), matFix);
+  inner.rotation.x = Math.PI / 2; inner.position.y = PIV_Y; group.add(inner);
+  const plate = new THREE.Mesh(new THREE.CylinderGeometry(PIV_R, PIV_R, 0.006, 32), matDark);
+  plate.position.y = PIV_Y - 0.012; group.add(plate);
+
+  // ── the rotating outer ring, on three rollers, driven at the rim ──
+  const arm = new THREE.Group(); group.add(arm);
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(OUT_R, 0.009, 10, 64), matBrass);
+  ring.rotation.x = Math.PI / 2; ring.position.y = HANG_Y; ring.castShadow = true; arm.add(ring);
+  // an annulus, not a disc — the centre has to stay open for the wands
+  const web = new THREE.Mesh(new THREE.RingGeometry(0.145, OUT_R, 48, 1),
+    new THREE.MeshStandardMaterial({ color: 0x2a3538, metalness: 0.55, roughness: 0.55, side: THREE.DoubleSide }));
+  web.rotation.x = -Math.PI / 2; web.position.y = HANG_Y; arm.add(web);
+
+  for (let i = 0; i < 3; i++) {
+    const a = i * Math.PI * 2 / 3 + 0.6;
+    const rp = new THREE.Mesh(new THREE.BoxGeometry(0.020, HANG_Y - 0.04, 0.020), matDark);
+    rp.position.set(Math.cos(a) * (OUT_R + 0.035), (HANG_Y - 0.04) / 2, Math.sin(a) * (OUT_R + 0.035));
+    rp.castShadow = true; group.add(rp);
+    const roller = new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.014, 0.016, 16), matSteel);
+    roller.rotation.z = Math.PI / 2;
+    roller.position.set(Math.cos(a) * (OUT_R + 0.020), HANG_Y, Math.sin(a) * (OUT_R + 0.020));
+    roller.rotation.y = -a; group.add(roller);
+  }
+
+  // the gearmotor, lying against the ring, and the belt it drives it with
+  const motor = new THREE.Group();
+  motor.position.set(OUT_R + 0.055, HANG_Y - 0.075, 0.10); group.add(motor);
+  const mBody = new THREE.Mesh(new THREE.CylinderGeometry(0.021, 0.021, 0.058, 20), matBlack);
+  mBody.rotation.z = Math.PI / 2; mBody.castShadow = true; motor.add(mBody);
+  const mCan = new THREE.Mesh(new THREE.CylinderGeometry(0.0215, 0.0215, 0.010, 20), matSteel);
+  mCan.rotation.z = Math.PI / 2; mCan.position.x = 0.030; motor.add(mCan);
+  const belt = new THREE.Mesh(new THREE.TorusGeometry(OUT_R + 0.004, 0.0018, 6, 64), matBlack);
+  belt.rotation.x = Math.PI / 2; belt.position.y = HANG_Y - 0.010; group.add(belt);
+
+  // ── six tubes, hung from the ring ──
+  const tubes = [];
+  for (let k = 0; k < N; k++) {
+    const pv = new THREE.Group(); pv.rotation.y = k * Math.PI * 2 / N; arm.add(pv);
+    const swing = new THREE.Group(); pv.add(swing);
+    swing.position.set(R, HANG_Y, 0);
+    const cord = new THREE.Mesh(geoCord, matCord);
+    cord.scale.y = CORD; cord.position.y = -CORD / 2; swing.add(cord);
+    const mesh = new THREE.Mesh(geoTube, matBrass);
+    mesh.castShadow = true; mesh.receiveShadow = true; swing.add(mesh);
+    const cap = new THREE.Mesh(geoCap, matSteel);
+    cap.position.y = -CORD + 0.002; swing.add(cap);
+    const glow = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: glowTex(), color: 0xffd79a, transparent: true, opacity: 0,
+      blending: THREE.AdditiveBlending, depthWrite: false }));
+    glow.scale.setScalar(0.11); swing.add(glow);
+
+    const idx = RING_ORDER[k];
+    const len = tubeLength(FREQS[idx]);
+    mesh.scale.y = len; mesh.position.y = -CORD - len / 2;
+    tubes.push({ k, idx, swing, mesh, glow, len, cordLen: CORD,
+                 ringAngle: k * Math.PI * 2 / N,
+                 rx: 0, vrx: 0, rz: 0, vrz: 0, flash: 0, prev: [0, 0, 0] });
+  }
+
+  // ── three wands, bolted straight to the servo horns ──
+  const wands = [];
+  for (let i = 0; i < 3; i++) {
+    const yaw = new THREE.Group(); group.add(yaw);
+    // servo body sits on the inner ring, its shaft on the pivot circle
+    const s = new THREE.Group();
+    s.position.set(PIV_R - 0.014, PIV_Y + 0.012, 0); yaw.add(s);
+    const b = new THREE.Mesh(new THREE.BoxGeometry(0.040, 0.038, 0.020), matBlack);
+    b.castShadow = true; s.add(b);
+    const e = new THREE.Mesh(new THREE.BoxGeometry(0.054, 0.0035, 0.020), matBlack);
+    e.position.y = 0.012; s.add(e);
+    const boss = new THREE.Mesh(new THREE.CylinderGeometry(0.0075, 0.0075, 0.026, 14), matSteel);
+    boss.rotation.x = Math.PI / 2; boss.position.set(0.011, 0.019, 0); s.add(boss);
+
+    const tilt = new THREE.Group(); tilt.position.set(PIV_R, PIV_Y, 0); yaw.add(tilt);
+    const rod = new THREE.Mesh(new THREE.CylinderGeometry(0.005, 0.004, WAND, 10), matSteel);
+    rod.rotation.z = -Math.PI / 2; rod.position.x = WAND / 2; rod.castShadow = true; tilt.add(rod);
+    // the contact point slides along the wand as it dips, so the felt covers
+    // that whole span rather than sitting as a pad on the tip
+    const pad = new THREE.Mesh(new THREE.BoxGeometry(WAND * 0.48, 0.008, 0.014), matFelt);
+    pad.position.set(WAND * 0.76, -0.006, 0); pad.castShadow = true; tilt.add(pad);
+    const tip = new THREE.Mesh(new THREE.SphereGeometry(0.008, 12, 10), matSteel);
+    tip.position.x = WAND; tilt.add(tip);
+    wands.push({ yaw, tilt });
+  }
+
+  let ang = 0;
+  let spread = 1;                  // 0 collapses all three wands onto one bearing
+  const info = { ringY: HANG_Y, tiltDeg: 0, contacts: 0, chainDown: 0, scrape: 0, strikes: 0, rpm: 0, rate: 0 };
+  const _w = new THREE.Vector3();
+
+  /* A felt blade barely disturbs a hung tube, so the swing is a light damped
+     spring: a little outward tilt from the orbit, a little lag against
+     travel, and whatever the strikes put in. */
+  function swingTubes(om, dt) {
+    const tiltTarget = Math.min(0.13, 0.09 * om * om * R / 9.81);
+    const lagTarget  = -Math.sign(om) * Math.min(0.10, Math.abs(om) * 0.016);
+    const c = 2.4;
+    for (const t of tubes) {
+      const k = 42 * (0.45 / (t.cordLen + t.len * 0.5));
+      t.vrz += (-(t.rz - tiltTarget) * k - c * t.vrz) * dt;
+      t.rz = clamp(t.rz + t.vrz * dt, -0.26, 0.26);
+      t.vrx += (-(t.rx - lagTarget) * k - c * t.vrx) * dt;
+      t.rx = clamp(t.rx + t.vrx * dt, -0.26, 0.26);
+      t.swing.rotation.z = t.rz;
+      t.swing.rotation.x = t.rx;
+    }
+  }
+
+  function update(st, dt) {
+    // percent-down is the page's unit and its unpowered rest is 100. On this
+    // machine that would mean all three wands buried in the orbit, hammering
+    // from the moment it powers up, so rest reads as "clear" instead. Flip
+    // invertServos if a board is wired the other way.
+    const throwOf = (pct) => (state.invertWands ? (100 - pct) : pct) / 100 * THMAX;
+
+    const rpm = (st.dcActual / 100) * 200;      // 0..100 maps to 0..200 rpm
+    const om = rpm / 60 * Math.PI * 2;
+    ang += om * dt;
+    arm.rotation.y = ang;
+    info.rpm = rpm;
+
+    swingTubes(om, dt);
+
+    const th = [0, 0, 0];
+    for (let i = 0; i < 3; i++) {
+      th[i] = throwOf(st.target[i]);
+      wands[i].yaw.rotation.y = i * Math.PI * 2 / 3 * spread;
+      wands[i].tilt.rotation.z = -th[i];
+    }
+
+    // Strength is tangential speed: the ring carries the tube into the felt,
+    // so a faster ring hits harder and a stopped one cannot sound at all.
+    const gain = clamp(Math.abs(om) * R / 0.55, 0.10, 1);
+    const hits = [];
+    for (const t of tubes) {
+      // the tube's bearing, corrected for how far its swing has lagged it
+      const aEff = ang + t.ringAngle - (-Math.sin(t.rx) * (CORD + t.len * 0.5)) / R;
+      for (let j = 0; j < 3; j++) {
+        const d = wrapPi(aEff - wands[j].yaw.rotation.y), p = t.prev[j];
+        t.prev[j] = d;
+        if (!crossed(p, d)) continue;
+        const rad = R + Math.sin(t.rz) * CORD;
+        const dr = rad - PIV_R;
+        if (dr <= 0) continue;
+        const s = dr / Math.cos(th[j]);        // how far out along the wand
+        if (s > WAND) continue;                // the tube is past the tip
+        const yAtR = PIV_Y - dr * Math.tan(th[j]);
+        const h = TOP - yAtR;                  // how far down the tube it lands
+        if (h < 0 || h > t.len) continue;
+        const str = gain * (0.85 + Math.random() * 0.15);
+        t.flash = Math.min(1, 0.45 + str * 0.7);
+        t.glow.position.y = -(CORD + h);
+        t.glow.scale.setScalar(0.06 + str * 0.075);
+        t.vrx -= Math.sign(om) * str * 0.45;
+        t.vrz += str * 0.10;
+        hits.push({ idx: t.idx, x: h / t.len, str, bearing: aEff });
+      }
+    }
+
+    for (const t of tubes) {
+      if (t.flash > 0) { t.flash = Math.max(0, t.flash - dt * 3.2); t.glow.material.opacity = t.flash; }
+    }
+
+    // A strike is a rare event — a few a second against 60 frames — so the
+    // readout carries a smoothed rate rather than this frame's count, which
+    // is almost always zero even while the machine is playing.
+    info.strikes = hits.length;
+    info.contacts = hits.length;
+    info.rate += (hits.length / Math.max(dt, 1e-3) - info.rate) * 0.15;
+    return hits;
+  }
+
+  function clearTrails() { /* nothing accumulates on this machine */ }
+  function fastForward(seconds, st) {
+    const h = 1 / 120;
+    let n = 0;
+    for (let i = 0; i < Math.round(seconds / h); i++) {
+      st.dcActual += (st.dcTarget - st.dcActual) * (1 - Math.exp(-h / DC_LAG_S));
+      n += update(st, h).length;
+    }
+    return n;
+  }
+
+  return {
+    group, update, info, clearTrails, fastForward,
+    tubeFreqs: RING_ORDER.map(i => FREQS[i]),
+    orbitR: R, hangY: HANG_Y,
+    detail: () => `${info.rpm.toFixed(0)} rpm ring · ${tubes.length} tubes · ${info.rate.toFixed(1)} strikes/s`,
+    setSpread(v) { spread = clamp(v, 0, 1); },
+  };
+}
+
 function createPlaceholderRig() {
   const group = new THREE.Group();
   const box = new THREE.Mesh(
@@ -1333,7 +1763,7 @@ function createPlaceholderRig() {
 }
 
 RIGS[3] = createBoard3Rig;
-RIGS[1] = createPlaceholderRig;
+RIGS[1] = createBoard1Rig;
 RIGS[2] = createPlaceholderRig;
 
 /* All three stand in the room at once. A rig owns its group, its drive state
@@ -1355,7 +1785,7 @@ function buildRig(id) {
   r.clackRate = 0;
   // Which voice set the shell should drive for this machine. Boards 1 and 2
   // get their own when their designs land; a placeholder makes no sound.
-  r.voices = (id === 3) ? 'curtain' : null;
+  r.voices = { 3: 'curtain', 1: 'wands' }[id] || null;
   r.group.position.set(spot.x, 0, spot.z);
   scene.add(r.group);
   return r;
@@ -1923,6 +2353,8 @@ function animate() {
       audio.setScrape(rg, rg.info.scrape || 0);
       audio.setClatter(rg, rg.clackRate);
       for (const c of clacks) audio.clack(rg, c.v, c.x, c.z);
+    } else if (rg.voices === 'wands') {
+      for (const h of clacks) audio.tubeStrike(rg, h.idx, h.x, h.str, h.bearing);
     }
   }
   figure.visible = state.showHuman;
@@ -2045,6 +2477,13 @@ $('gang').addEventListener('change', e => {
   if (e.target.checked && !rg.noServos) { const v = +sliders[0].value; rg.st.target = [v, v, v]; syncSlidersFromTarget(); }
 });
 $('walkBtn').addEventListener('click', () => setWalk(!walk.on));
+
+const setBankState = (s) => { $('bankState').textContent = s; };
+$('b1spread').addEventListener('input', e => {
+  $('b1spreadv').textContent = e.target.value;
+  rigById.get(1).setSpread(+e.target.value / 100);
+});
+$('b1invert').addEventListener('change', e => state.invertWands = e.target.checked);
 
 document.querySelectorAll('[data-solo]').forEach(b => b.addEventListener('click', () => {
   const rg = rigById.get(+b.dataset.solo);
@@ -2198,6 +2637,7 @@ resize();
    a panner — so this is how you check where a machine's voices ended up and
    what solo/mute did to its gain. */
 window.__audio = audio;
+window.__rigs = rigs;
 window.__mix = () => rigs.map(r => {
   const m = audio.models.get(r.id);
   const w = new THREE.Vector3();
