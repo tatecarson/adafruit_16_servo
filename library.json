@@ -94,7 +94,7 @@
             },
             {
               "atMs": 7500,
-              "value": 70
+              "value": 50
             }
           ]
         },
@@ -110,7 +110,7 @@
             },
             {
               "atMs": 7500,
-              "value": 70
+              "value": 50
             }
           ]
         },
@@ -126,7 +126,7 @@
             },
             {
               "atMs": 7500,
-              "value": 70
+              "value": 50
             }
           ]
         }
@@ -221,7 +221,7 @@
           "keyframes": [
             {
               "atMs": 0,
-              "value": 70
+              "value": 50
             },
             {
               "atMs": 6160,
@@ -237,11 +237,11 @@
           "keyframes": [
             {
               "atMs": 0,
-              "value": 70
+              "value": 50
             },
             {
               "atMs": 6200,
-              "value": 70
+              "value": 50
             }
           ]
         },
@@ -253,11 +253,11 @@
           "keyframes": [
             {
               "atMs": 0,
-              "value": 70
+              "value": 50
             },
             {
               "atMs": 6200,
-              "value": 70
+              "value": 50
             }
           ]
         }
@@ -364,7 +364,7 @@
           "keyframes": [
             {
               "atMs": 0,
-              "value": 70
+              "value": 50
             },
             {
               "atMs": 6000,
@@ -499,7 +499,7 @@
           "keyframes": [
             {
               "atMs": 0,
-              "value": 70
+              "value": 50
             },
             {
               "atMs": 6160,
@@ -725,7 +725,7 @@
           "keyframes": [
             {
               "atMs": 0,
-              "value": 70
+              "value": 50
             },
             {
               "atMs": 7500,
@@ -741,7 +741,7 @@
           "keyframes": [
             {
               "atMs": 0,
-              "value": 70
+              "value": 50
             },
             {
               "atMs": 7500,
@@ -757,7 +757,7 @@
           "keyframes": [
             {
               "atMs": 0,
-              "value": 70
+              "value": 50
             },
             {
               "atMs": 7500,
@@ -861,7 +861,7 @@
             },
             {
               "atMs": 2500,
-              "value": 88
+              "value": 75
             },
             {
               "atMs": 5000,
@@ -881,7 +881,7 @@
             },
             {
               "atMs": 2500,
-              "value": 88
+              "value": 70
             },
             {
               "atMs": 5000,
@@ -901,7 +901,7 @@
             },
             {
               "atMs": 2500,
-              "value": 88
+              "value": 70
             },
             {
               "atMs": 5000,
@@ -926,7 +926,8 @@
           "hold": false,
           "dc": {
             "3": 7
-          }
+          },
+          "noPrep": true
         }
       ]
     },

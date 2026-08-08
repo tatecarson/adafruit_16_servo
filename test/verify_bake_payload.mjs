@@ -124,4 +124,19 @@ check(!refs.ok && refs.errors.some(e => e.code === "missing-motion") &&
   refs.errors.some(e => e.code === "missing-active-setlist"),
   "dangling Motion, Sequence, and active Setlist references are detected");
 
+// servo-vp8: winch-direction compensation inverts servo values for reversed
+// boards (board 3) at the device bake boundary, and undoes it on pull-back.
+const b3rise = core.sliceForBoard(baked, 3).motions.find(m => m.id === "rise")
+  .tracks.find(t => t.channel === 0);
+check(b3rise.keyframes[0].value === 0 && b3rise.keyframes[1].value === 10,
+  "reversed board 3 servo values are inverted at bake (100→0, 90→10)");
+const b1rise = core.sliceForBoard(baked, 1).motions.find(m => m.id === "rise")
+  .tracks.find(t => t.channel === 0);
+check(b1rise.keyframes[0].value === 100 && b1rise.keyframes[1].value === 90,
+  "non-reversed board 1 servo values are left untouched at bake");
+const rehydrated = core.hydrateDeviceLibraryForEditor(core.sliceForBoard(baked, 3))
+  .motions.find(m => m.id === "rise").tracks.find(t => t.channel === 0);
+check(rehydrated.keyframes[0].value === 100 && rehydrated.keyframes[1].value === 90,
+  "pull-back restores board 3's authored values (0→100, 10→90)");
+
 console.log(`\n${passed} bake-payload checks passed`);

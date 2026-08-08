@@ -3866,7 +3866,10 @@ async function sendBakedMotionWithPreRoll(originIp, motionId) {
     const sends = [];
     for (const move of plan.moves) {
       const ip = ipForBoardId(move.boardId);
-      if (ip) sends.push(sendCommandNow(ip, `DMOVE ${move.channel} ${move.toValue} ${move.durationMs}`));
+      // Match the winch-direction compensation baked into the motion itself, so
+      // this pre-position glide lands on the motion's real first-keyframe pose.
+      const toValue = deviceServoValue(move.boardId, move.toValue);
+      if (ip) sends.push(sendCommandNow(ip, `DMOVE ${move.channel} ${toValue} ${move.durationMs}`));
     }
     await Promise.all(sends);
     await new Promise(resolve => setTimeout(resolve, plan.durationMs));
@@ -7299,18 +7302,35 @@ function bakeStorageTier(byteCount) {
   return { mode:"dual", capacity:STORAGE_DUAL_PAYLOAD_MAX, rollbackSafe:true };
 }
 
+// Hardware winch-direction compensation (servo-vp8). On some boards the winch is
+// wound/wired so a higher value% RAISES the ring instead of lowering it — value 0
+// drives it fully DOWN, not up. The real fix is the firmware reverseDir flag, but
+// until a board can be re-flashed we invert the servo value for the affected board
+// here, at the single device-facing bake boundary, so baked playback moves the
+// right way. Authoring stays in the true schema convention (0 = up, 100 = down);
+// only the deployed number is flipped, and the inverse is symmetric so pull-back
+// (hydrateDeviceLibraryForEditor) restores the authored value exactly.
+const SERVO_REVERSED_BOARD_IDS = new Set([3]);
+function deviceServoValue(boardId, value) {
+  const v = Number(value) || 0;
+  return SERVO_REVERSED_BOARD_IDS.has(Number(boardId)) ? (100 - v) : v;
+}
+
 // Emit only fields the schema-v1 firmware actually reads. The editor keeps the
 // full authoring model in library.json; EEPROM is a deploy artifact, so names,
 // tags, labels, hold/bridge flags, reserved v2 controls, and default values do
 // not belong in its operational payload.
 function compactTrackForDevice(track) {
+  const boardId = Number(track.boardId);
   return {
     kind: track.kind,
-    boardId: Number(track.boardId),
+    boardId,
     channel: Number(track.channel),
     keyframes: (track.keyframes || []).map(kf => ({
       atMs: Math.max(0, parseInt(kf.atMs, 10) || 0),
-      value: Number(kf.value) || 0,
+      value: track.kind === "servo"
+        ? deviceServoValue(boardId, kf.value)
+        : (Number(kf.value) || 0),
     })),
   };
 }
@@ -7385,6 +7405,11 @@ function hydrateDeviceLibraryForEditor(input) {
       tracks: (m.tracks || []).map(t => ({
         ...t,
         label: t.label || `B${t.boardId}.S${t.channel}`,
+        // Undo the deploy-time winch-direction compensation so the editor sees
+        // the true schema value again (deviceServoValue is its own inverse).
+        keyframes: t.kind === "servo"
+          ? (t.keyframes || []).map(kf => ({ ...kf, value: deviceServoValue(t.boardId, kf.value) }))
+          : t.keyframes,
       })),
     })),
     sequences: (lib.sequences || []).map(s => ({
