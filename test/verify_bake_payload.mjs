@@ -114,6 +114,32 @@ check(boardPayloads.every(payload =>
   payload.sequences.every(seq => !Object.hasOwn(seq, "machine"))),
   "the machine label never reaches the device");
 
+// A board that only sits at rest in a motion does not get that motion baked to
+// it — a curtain piece should not carry wand tracks commanding the wands to
+// where they already are. But a flat track at a NON-rest value is a hold, and
+// holds have to survive: "lower one arm, keep the other two up" is a real
+// piece and dropping its flat tracks would let those arms fall.
+const holdLib = structuredClone(library);
+holdLib.motions = [{
+  id: "hold", name: "one moves, one holds high, one idles", tags: [], scope: "cluster",
+  durationMs: 1000,
+  tracks: [
+    { kind:"servo", boardId:1, channel:0, label:"B1.S0", keyframes:[{atMs:0,value:100},{atMs:1000,value:40}] },
+    { kind:"servo", boardId:1, channel:1, label:"B1.S1", keyframes:[{atMs:0,value:50},{atMs:1000,value:50}] },
+    { kind:"servo", boardId:3, channel:0, label:"B3.S0", keyframes:[{atMs:0,value:100},{atMs:1000,value:100}] },
+  ],
+}];
+holdLib.sequences = [{ id:"s", name:"s", tags:[], steps:[{ cmd:"MOTION hold", durationMs:1000, target:"all" }] }];
+holdLib.setlists = [{ id:"show", name:"", mode:"ordered", entries:[{seqId:"s",repeat:1,gapMs:0,weight:1}],
+  shuffleRules:{avoidSameTag:false,minGapEntries:0,moodArc:"random",seed:0} }];
+const holdBaked = core.buildBakeLibrary(holdLib);
+check(core.sliceForBoard(holdBaked, 1).motions.length === 1,
+  "a board that moves in a motion still gets it");
+check(core.sliceForBoard(holdBaked, 1).motions[0].tracks.length === 2,
+  "and keeps its flat hold track alongside the moving one");
+check(core.sliceForBoard(holdBaked, 3).motions.length === 0,
+  "a board that only sits at rest does not get the motion at all");
+
 const hydrated = core.hydrateDeviceLibraryForEditor(boardPayloads[0]);
 check(hydrated.motions.every(m => m.name && Array.isArray(m.tags) &&
   m.tracks.every(t => t.label)),

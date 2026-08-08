@@ -7828,11 +7828,30 @@ function hydrateDeviceLibraryForEditor(input) {
   };
 }
 
+/* Does this board do anything in this motion, or is it just being told to sit
+   still? A flat track is NOT automatically nothing — "Lower Arm 1" holds the
+   other two winches at 50 while the first one drops, and that hold is the
+   whole point of the piece. What is genuinely nothing is a board whose every
+   track is flat AT REST: that is the shape normalizeMotion materializes for a
+   machine the author never touched, and baking it means a curtain motion
+   carries three wand tracks that command the wands to where they already are.
+
+   Dropping those is not just smaller, it is more honest: a motion authored for
+   one sculpture should not reach into another. It is the same rule the field
+   board already gets for free by having no tracks at all. */
+function boardIsIdleIn(tracks) {
+  return tracks.every(t => {
+    const values = (t.keyframes || []).map(k => k.value);
+    return values.length > 0 && values.every(v => v === MOTION_SERVO_REST_PERCENT);
+  });
+}
+
 function sliceForBoard(lib, boardId) {
   const motions = [];
   for (const m of lib.motions || []) {
     const tracks = (m.tracks || []).filter(t => t.boardId === boardId);
     if (tracks.length === 0) continue;
+    if (boardIsIdleIn(tracks)) continue;
     const durationMs = Math.max(100, parseInt(m.durationMs, 10) || 8000);
     const conformedTracks = tracks.map(t => conformTrackForBake(t, durationMs));
     motions.push(compactMotionForDevice(m, conformedTracks));
