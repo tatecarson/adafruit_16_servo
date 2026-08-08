@@ -2314,7 +2314,7 @@
         <button class="cmd alert" data-mtest="STOP">STOP ALL</button>
       </div>
 
-      <div class="mtest-row">
+      <div class="mtest-row" id="motorTestAllRow">
         <span class="rname">All<span class="sub">servos</span></span>
         <div class="mtest-btns">
           <button class="cmd" data-mtest-all="0">All Down</button>
@@ -2922,6 +2922,12 @@ $("#freeCmd").addEventListener("keydown", e => { if (e.key === "Enter") $("#free
     const id = boardIdByIp.get(targetEl.value);
     renderServoRows(id);
     renderMachineNote(id);
+    /* The All row is a sibling of #motorTestServos, not a child, so
+       renderServoRows returning early for a machine with no servos never
+       reached it — the buttons stayed live and fired three UP commands at a
+       board that has none. Hide the row with the rows it commands. */
+    const allRow = $("#motorTestAllRow");
+    if (allRow) allRow.hidden = machineOf(id)?.servos === null;
   }
   targetEl.addEventListener("change", refreshForBoard);
   refreshForBoard();

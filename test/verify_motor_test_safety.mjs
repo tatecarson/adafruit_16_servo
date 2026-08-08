@@ -26,4 +26,13 @@ check(!/>Sweep<\/button>/.test(setup), "Motor Test no longer renders a Sweep but
 check(/data-mtest-all="0"/.test(drawer), "All Down remains at 0%");
 check(/UP \$\{n\} 50/.test(setup), "Mid remains at 50%");
 
-console.log(`\n${passed}/11 Motor Test safety checks passed.`);
+// A machine with no servos must not be offered servo commands. The per-channel
+// rows return early for it; the All row is a SIBLING of #motorTestServos, so it
+// needs gating of its own or it stays live and fires three UP commands at a
+// board that has none.
+check(/id="motorTestAllRow"/.test(drawer), "the All row is addressable");
+check(/allRow\.hidden\s*=\s*machineOf\(id\)\?\.servos === null/.test(setup),
+      "the All row is hidden for a machine with no servos");
+check(/m\.servos === null/.test(setup), "per-servo rows still refuse a machine with no servos");
+
+console.log(`\n${passed}/14 Motor Test safety checks passed.`);
