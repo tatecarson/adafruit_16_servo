@@ -168,15 +168,17 @@
   <section>
     <h2>Board 1 — centre wands</h2>
     <div class="row"><label>Spread</label><input id="b1spread" type="range" min="0" max="100" value="100"><output id="b1spreadv">100</output></div>
-    <label class="check"><input type="checkbox" id="b1invert" checked> wands rest clear</label>
+    <label class="check"><input type="checkbox" id="b1invert"> invert wand travel</label>
     <div class="note"><b>4:1 reduction on the motor</b> — ROTATE 100 turns this ring a
       quarter as fast as board 3's, about 6 rpm. Strike strength is tangential speed, so
       this machine taps where the curtain hammers.
       S0–S2 are the three wand throws and the motor turns the ring.
       Spread fans the wands apart; at 0 all three sit on one bearing and the tubes
-      get struck in a flam. <b>Wands rest clear</b> reads 100&nbsp;%down (the
-      unpowered rest) as fully raised — without it the machine idles with every
-      wand buried in the orbit, hammering.</div>
+      get struck in a flam. The wands <b>hang down at rest</b>: 100&nbsp;%down is
+      both the unpowered position and where gravity puts a wand with no torque on
+      it, the same as the winches. Nothing sounds until the ring turns, so resting
+      down is not resting loud. <b>Invert wand travel</b> is there for a board
+      wired the other way round.</div>
   </section>
 
   <section>
@@ -413,9 +415,9 @@ const WINCH_ANGLES = [Math.PI / 2, Math.PI / 2 + 2 * Math.PI / 3, Math.PI / 2 + 
 const state = {
   focusId: 3,          // which board the servo/DC panel is addressing
   slewLimit: true,
-  // Board 1's wands rest clear of the tubes rather than buried in them; see
-  // the note in createBoard1Rig. Off if a board is wired the other way.
-  invertWands: true,
+  // Board 1's wands hang down at rest, like the winches drop at rest — see
+  // the note in createBoard1Rig. On if a board is wired the other way.
+  invertWands: false,
   mu: 0.45,
   showHuman: true, showCables: true, showTrails: true,
 };
@@ -1916,10 +1918,15 @@ function createBoard1Rig() {
   }
 
   function update(st, dt) {
-    // percent-down is the page's unit and its unpowered rest is 100. On this
-    // machine that would mean all three wands buried in the orbit, hammering
-    // from the moment it powers up, so rest reads as "clear" instead. Flip
-    // invertServos if a board is wired the other way.
+    /* percent-down means the same thing here as on the winches: 100 is fully
+       down and it is where an unpowered servo ends up, because gravity puts it
+       there. A wand with no torque on it falls into the orbit, so that is where
+       this machine sits at rest and where it starts. It only sounds if the ring
+       is also turning, so resting down is not resting loud.
+
+       The inversion stays available for a board wired the other way, but it is
+       off: making this one machine read percent-down backwards was fighting the
+       schema rather than describing the hardware. */
     const throwOf = (pct) => (state.invertWands ? (100 - pct) : pct) / 100 * THMAX;
 
     // Same motor and same duty scale as board 3, then through this machine's
