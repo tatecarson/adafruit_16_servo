@@ -19,12 +19,13 @@ function block(start, end) {
   return html.slice(a + start.length, b);
 }
 
-const core = block("// === SEQ-DURATION-GUARD START ===", "// === SEQ-DURATION-GUARD END ===");
+const core = block("// === MACHINE-CORE START ===", "// === MACHINE-CORE END ===")
+  + block("// === SEQ-DURATION-GUARD START ===", "// === SEQ-DURATION-GUARD END ===");
 const dir = mkdtempSync(join(tmpdir(), "seq-dur-guard-"));
 const modulePath = join(dir, "core.mjs");
 writeFileSync(modulePath,
-  `${core}\nexport { seqStepMotionId, motionStepDurationShortfall };\n`, "utf8");
-const { seqStepMotionId, motionStepDurationShortfall } = await import(pathToFileURL(modulePath).href);
+  `${core}\nexport { seqStepMotionId, motionStepDurationShortfall, stepMachineMismatch };\n`, "utf8");
+const { seqStepMotionId, motionStepDurationShortfall, stepMachineMismatch } = await import(pathToFileURL(modulePath).href);
 
 let passed = 0;
 function check(condition, message) {
@@ -62,5 +63,22 @@ check(seqStepMotionId("  motion MT-ALLUP ") === "MT-ALLUP",
   "seqStepMotionId is case-insensitive and trims whitespace");
 check(shortfall("motion mt-allup", 4000) !== null,
   "a lowercase 'motion' command is still guarded");
+
+// A step aimed at a machine that cannot carry out its command. A MOTION sent
+// to a machine with no servos is the worst kind of authoring mistake: the
+// board accepts it, runs the clock, and moves nothing.
+const mmMotions = [{ id: "mt-curtain", durationMs: 4000, tracks: [
+  { boardId: 3, channel: 0, keyframes: [{ atMs: 0, value: 100 }, { atMs: 4000, value: 40 }] },
+  { boardId: 1, channel: 0, keyframes: [{ atMs: 0, value: 100 }] },
+]}];
+const mism = (target, cmd) => stepMachineMismatch({ target, cmd }, mmMotions);
+
+check(mism(2, "MOTION mt-curtain") !== null, "a MOTION at the machine with no servos is flagged");
+check(mism(2, "MOTION mt-curtain").fixTo === 3, "and it offers the machine the motion actually moves");
+check(mism(3, "MOTION mt-curtain") === null, "the same MOTION at a machine with servos is fine");
+check(mism(1, "MOTION mt-curtain") === null, "a machine with servos is never flagged, even if unused");
+check(mism("all", "MOTION mt-curtain") === null, "an untargeted step is not a mismatch");
+check(mism(2, "ROTATE 30") === null, "ROTATE at the DC-only machine is exactly what it is for");
+check(mism(2, "STOP") === null, "STOP is not a mismatch anywhere");
 
 console.log(`\n${passed} sequence duration-guard checks passed`);

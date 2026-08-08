@@ -685,6 +685,10 @@
   .seq-dur input { flex: 1 1 auto; min-width: 0; }
   .seq-dur.short input { border-color: var(--alert); background: rgba(241, 90, 58, 0.10); }
   .seq-fit { flex: 0 0 auto; padding: 3px 6px; font-size: 9px; white-space: nowrap; }
+  .seq-target { display: flex; align-items: center; gap: 4px; }
+  .seq-target select { flex: 1 1 auto; min-width: 0; }
+  .seq-target.mismatch select { border-color: var(--alert); background: rgba(241, 90, 58, 0.10); }
+  .seq-fix { flex: 0 0 auto; padding: 3px 6px; font-size: 9px; white-space: nowrap; }
   /* Per-board DC lane inputs (servo-i0v). Three narrow cells; an empty one
      means "unchanged", which is why the placeholder is a dash rather than 0. */
   .seq-dc {
@@ -2456,6 +2460,17 @@ function travelLabel(boardId) {
   if (deg == null) return "no servos";
   return deg >= 720 ? `${(deg / 360).toFixed(0)} turns` : `${deg}°`;
 }
+/* Which machines a motion actually moves, from its keyframes rather than its
+   label. This is what lets the filter be useful before anything is tagged: an
+   untagged motion still shows up under the machine it demonstrably drives. */
+function inferredMachineIds(motion) {
+  const out = new Set();
+  for (const t of motion?.tracks || []) {
+    const values = new Set((t.keyframes || []).map(k => k.value));
+    if (values.size > 1) out.add(Number(t.boardId));
+  }
+  return [...out];
+}
 // === MACHINE-CORE END ===
 
 function ipLabel(ip) {
@@ -3968,17 +3983,6 @@ const motionCollapsedBoards = new Set();
    view filter — it never changes what a motion contains. */
 let motionMachineFilter = "all";
 
-/* Which machines a motion actually moves, from its keyframes rather than its
-   label. This is what lets the filter be useful before anything is tagged: an
-   untagged motion still shows up under the machine it demonstrably drives. */
-function inferredMachineIds(motion) {
-  const out = new Set();
-  for (const t of motion?.tracks || []) {
-    const values = new Set((t.keyframes || []).map(k => k.value));
-    if (values.size > 1) out.add(Number(t.boardId));
-  }
-  return [...out];
-}
 function motionMatchesMachine(motion, filter) {
   if (filter === "all") return true;
   const want = Number(filter);
@@ -6642,7 +6646,37 @@ function motionStepDurationShortfall(step, motions) {
   if (need <= 0 || have >= need) return null;
   return { motionId: id, need, have, shortMs: need - have };
 }
+/* Which commands the firmware re-broadcasts when they arrive over HTTP.
+   Mirrors shouldMirrorCommand() in command_interface.h — RUN, ROTATE and a
+   bare STOP. MOTION is absent there: it goes out as a synchronized
+   MOTION_START instead, and each board still honours its own tracks. */
+function isMirroredLiveCmd(cmd) {
+  const c = String(cmd || "").trim().toUpperCase();
+  return /^ROTATE\b/.test(c) || /^RUN\b/.test(c) || c === "STOP";
+}
+
+/* A step aimed at a machine that cannot carry out its command. The obvious
+   case is a MOTION sent to a machine with no servos: it is accepted by the
+   board, runs its clock, and moves nothing — the most confusing kind of
+   failure, because nothing reports an error. Returns the board that could
+   run it, when exactly one can, so the fix can be offered as a button. */
+function stepMachineMismatch(step, motions) {
+  const target = Number(step?.target);
+  if (!MACHINE_IDS.includes(target)) return null;          // "all" is not a mismatch
+  const motionId = seqStepMotionId(step?.cmd);
+  if (!motionId) return null;                              // ROTATE/STOP reach any machine
+  if (machineOf(target)?.servos !== null) return null;     // it has servos; fine
+
+  const motion = (motions || []).find(m => m.id === motionId);
+  const movers = motion ? inferredMachineIds(motion) : [];
+  return {
+    motionId,
+    machine: machineOf(target).name,
+    fixTo: movers.length === 1 ? movers[0] : null,
+  };
+}
 // === SEQ-DURATION-GUARD END ===
+
 
 // Build the inner HTML of an expanded step-preview row. MOTION steps that
 // resolve to a library motion render a compact, read-only per-track strip
@@ -6738,6 +6772,7 @@ function renderSequencer() {
   seqStepsEl.innerHTML = (seq.steps || []).map((raw, index) => {
     const step = normalizeStep(raw);
     const short = motionStepDurationShortfall(step, lib.motions || []);
+    const mismatch = stepMachineMismatch(step, lib.motions || []);
     const active = activeIdx === index;
     const expanded = seqExpandedSteps.has(index);
     const row = `<tr data-index="${index}" draggable="true"${active ? ' class="active"' : ''}>
@@ -6745,7 +6780,10 @@ function renderSequencer() {
       <td class="seq-index"><button class="seq-expand${expanded ? " open" : ""}" data-expand="${index}" title="Show/hide keyframe preview">${expanded ? "▾" : "▸"}</button>${pad2(index + 1)}</td>
       <td><input data-field="cmd" type="text" list="seqCmdSuggest" spellcheck="false" autocomplete="off" value="${escapeHtml(step.cmd)}" title="${escapeHtml(CMD_HELP)}"></td>
       <td class="seq-dur${short ? " short" : ""}"><input data-field="durationMs" type="number" min="0" step="100" value="${step.durationMs}"${short ? ` title="Motion ${escapeHtml(short.motionId)} needs ${short.need}ms to finish — this step cuts it off by ${short.shortMs}ms"` : ""}>${short ? `<button class="cmd compact alert seq-fit" data-fit="${index}" data-fit-ms="${short.need}" title="Set duration to the motion's length (${formatMs(short.need)}) so the move completes">fit ${formatMs(short.need)}</button>` : ""}</td>
-      <td><select data-field="target">${targetOptions(step.target)}</select></td>
+      <td class="seq-target${mismatch ? " mismatch" : ""}"><select data-field="target"${mismatch ? ` title="${escapeHtml(`${mismatch.machine} has no servos — MOTION ${mismatch.motionId} runs its clock here and moves nothing`)}"` : ""}>${targetOptions(step.target)}</select>${
+        mismatch && mismatch.fixTo
+          ? `<button class="cmd compact alert seq-fix" data-retarget="${index}" data-retarget-to="${mismatch.fixTo}" title="${escapeHtml(`Send it to ${machineOf(mismatch.fixTo).name}, the machine this motion actually moves`)}">→ ${escapeHtml(machineOf(mismatch.fixTo).short)}</button>`
+          : ""}</td>
       <td class="seq-dc">${DC_LANE_BOARD_IDS.map(boardId => {
         const v = step.dc[boardId];
         const m = machineOf(boardId);
@@ -6860,6 +6898,22 @@ async function playSequenceFrom(index = 0, dryRun = false) {
   seqLogEl.innerHTML = "";
   seqLog(`run ${runId} start${dryRun ? " · dry-run" : ""} · ${seq.steps.length} steps`, "ok");
   if (seqPlayer.broadcastIp) seqLog(`broadcast origin pinned · ${seqPlayer.broadcastIp}`, "ok");
+
+  /* Targeting isolates a step when the sequence runs BAKED on the boards —
+     each runner filters on target and calls its command directly. Streaming
+     from here does not: a ROTATE sent over HTTP is re-broadcast to the whole
+     cluster by the receiving board, because the firmware cannot tell a
+     targeted step from someone typing a command. So browser Play spins every
+     motor where the bake would spin one. Say so rather than let the two
+     disagree quietly. */
+  if (!dryRun) {
+    const mirrored = (seq.steps || []).filter(st =>
+      MACHINE_IDS.includes(Number(st.target)) && isMirroredLiveCmd(st.cmd)).length;
+    if (mirrored) {
+      seqLog(`${mirrored} targeted ROTATE step${mirrored > 1 ? "s" : ""} will reach every machine from here — the bake targets them correctly`, "warn");
+      setSeqStatus(`playing · ${mirrored} rotate step${mirrored > 1 ? "s" : ""} fan out from the browser, not from the bake`, "amber");
+    }
+  }
   seqPlayEl.disabled = true;
   seqPauseEl.disabled = false;
   seqStopEl.disabled = false;
@@ -8599,6 +8653,18 @@ seqStepsEl.addEventListener("click", async e => {
     if (seq.steps[idx]) seq.steps[idx].durationMs = ms;
     saveCurrentSequence(seq);
     setSeqStatus(`step ${pad2(idx + 1)} fit to motion · ${formatMs(ms)}`, "amber");
+    return;
+  }
+  // Same shape as "fit": a detected authoring mistake with the one correction
+  // that fixes it, offered where the mistake is.
+  const retarget = e.target.dataset.retarget;
+  if (retarget != null) {
+    const idx = parseInt(retarget, 10);
+    const to = parseInt(e.target.dataset.retargetTo, 10);
+    const seq = readSequenceFromDom();
+    if (seq.steps[idx]) seq.steps[idx].target = String(to);
+    saveCurrentSequence(seq);
+    setSeqStatus(`step ${pad2(idx + 1)} → ${machineOf(to)?.name ?? `board ${to}`}`, "amber");
     return;
   }
   const editMotion = e.target.dataset.editMotion;
