@@ -124,10 +124,12 @@
     <h2>Rig</h2>
     <select id="boardSel">
       <option value="3" selected>Board 3 — dowel curtain, winched ring</option>
-      <option value="1">Board 1 — not designed yet</option>
-      <option value="2">Board 2 — not designed yet</option>
+      <option value="1">Board 1 — centre wands</option>
+      <option value="2">Board 2 — field</option>
     </select>
-    <div class="note">Boards 1 &amp; 2 render a placeholder until their designs land. Add them in <code>RIGS</code>.</div>
+    <div class="note">All three stand in the room at once. This picks which board the
+      servo and motor controls below are addressing — it does not change what is on
+      screen. Boards 1 &amp; 2 render a placeholder until their designs land.</div>
   </section>
 
   <section>
@@ -203,16 +205,15 @@
     <h2>Dashboard link</h2>
     <div class="btns">
       <button id="busBtn" aria-pressed="true">Listening</button>
-      <button id="busAny" aria-pressed="false" title="Accept board-local commands sent to any board">This board</button>
     </div>
     <div id="busState">waiting for servo_controller.html…</div>
     <div class="note">Mirrors every command the dashboard sends, over a same-origin
       BroadcastChannel. Open both pages from the <b>same origin</b> —
       <code>127.0.0.1</code> and <code>localhost</code> are different origins and will not
       talk. <code>RUN</code>/<code>ROTATE</code>/<code>STOP</code>/<code>MOTION</code> are
-      cluster-wide; <code>UP</code>/<code>DOWN</code>/<code>DMOVE</code> are board-local
-      and only apply when the dashboard is aimed at this rig's board. <b>Any board</b>
-      accepts them whichever board they were sent to.</div>
+      cluster-wide and reach all three machines; <code>UP</code>/<code>DOWN</code>/<code>DMOVE</code>
+      are board-local and reach the board they name. A command the dashboard could not
+      map to a board goes to the whole room.</div>
   </section>
 
   <section>
@@ -332,16 +333,38 @@ const G = {
 };
 const WINCH_ANGLES = [Math.PI / 2, Math.PI / 2 + 2 * Math.PI / 3, Math.PI / 2 + 4 * Math.PI / 3];
 
+/* Settings the whole room shares. Anything that belongs to one machine —
+   commanded and actual winch positions, motor speed, ring angle — lives on that
+   rig's own st instead, which inherits from this. So a rig reads st.mu and gets
+   the room's friction, reads st.target and gets its own. */
 const state = {
-  boardId: 3,
-  target:  [100, 100, 100],
-  actual:  [100, 100, 100],
-  dcTarget: 0, dcActual: 0,
-  spin: 0,
+  focusId: 3,          // which board the servo/DC panel is addressing
   slewLimit: true,
   mu: 0.45,
   showHuman: true, showCables: true, showTrails: true,
 };
+
+function makeRigState(id) {
+  const st = Object.create(state);
+  st.id       = id;
+  st.target   = [100, 100, 100];
+  st.actual   = [100, 100, 100];
+  st.dcTarget = 0;
+  st.dcActual = 0;
+  st.spin     = 0;
+  st.ramps    = [null, null, null];   // timed moves from D/UMOVE
+  return st;
+}
+
+/* Where the three machines stand: a 5 m equilateral triangle, which is far
+   enough that walking up to one clearly favours it and close enough that the
+   middle of the room hears all three. The tallest goes at the back. */
+const LAYOUT = {
+  3: { x:  0.00, z: -2.887, name: 'Dowel curtain',  r: 0.70 },
+  1: { x:  2.50, z:  1.443, name: 'Centre wands',   r: 0.40 },
+  2: { x: -2.50, z:  1.443, name: 'Field',          r: 0.40 },
+};
+const ROOM_R = 7.5;
 
 /* ════════════════════════════════════════════════════════════════════════
    AUDIO
@@ -507,39 +530,43 @@ stage.appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x07070a);
-scene.fog = new THREE.Fog(0x07070a, 9, 24);
+scene.fog = new THREE.FogExp2(0x07070a, 0.055);
 
 const camera = new THREE.PerspectiveCamera(38, 1, 0.05, 100);
-camera.position.set(3.3, 1.9, 4.5);
+camera.position.set(6.2, 3.4, 8.2);
 
 const orbit = new OrbitControls(camera, renderer.domElement);
-orbit.target.set(0, 1.25, 0);
+orbit.target.set(0, 1.05, 0);
 orbit.enableDamping = true;
-orbit.maxDistance = 16;
+orbit.maxDistance = 26;
 orbit.minDistance = 0.7;
 
 scene.add(new THREE.HemisphereLight(0x9fb6c8, 0x1a1712, 0.5));
 const key = new THREE.DirectionalLight(0xfff0d6, 2.2);
 key.position.set(3.2, 4.8, 2.4);
 key.castShadow = true;
-key.shadow.mapSize.set(2048, 2048);
-key.shadow.camera.left = -3; key.shadow.camera.right = 3;
-key.shadow.camera.top = 4.2; key.shadow.camera.bottom = -1;
-key.shadow.camera.far = 15;  key.shadow.bias = -0.0006;
+// the frustum now covers a 5 m triangle rather than one rig, so the texel
+// budget has to grow with it or 13 mm dowels stop casting anything readable
+key.shadow.mapSize.set(4096, 4096);
+key.shadow.camera.left = -4.6; key.shadow.camera.right = 4.6;
+key.shadow.camera.top = 4.6; key.shadow.camera.bottom = -1;
+key.shadow.camera.far = 22;  key.shadow.bias = -0.0006;
+// thin cylinders shadow-acne badly on a widened frustum; normalBias is the knob
+key.shadow.normalBias = 0.02;
 scene.add(key);
 const rim = new THREE.DirectionalLight(0x7fc9ff, 0.65);
 rim.position.set(-3.4, 2.2, -2.8);
 scene.add(rim);
 
 const floor = new THREE.Mesh(
-  new THREE.CircleGeometry(9, 64),
+  new THREE.CircleGeometry(16, 96),
   new THREE.MeshStandardMaterial({ color: 0x17161a, roughness: 0.92 })
 );
 floor.rotation.x = -Math.PI / 2;
 floor.receiveShadow = true;
 scene.add(floor);
 
-const grid = new THREE.GridHelper(12, 24, 0x2a2825, 0x1b1a18);
+const grid = new THREE.GridHelper(20, 40, 0x2a2825, 0x1b1a18);
 grid.position.y = 0.001;
 scene.add(grid);
 
@@ -565,8 +592,11 @@ function makeFigure() {
   const la = add(new THREE.CapsuleGeometry(0.042, 0.5, 4, 10), -0.155, 1.11, 0.02);
   const ra = add(new THREE.CapsuleGeometry(0.042, 0.5, 4, 10),  0.155, 1.11, 0.02);
   la.rotation.z = 0.12; ra.rotation.z = -0.12;
-  g.position.set(-1.55, 0, 0.45);
-  g.rotation.y = 0.5;
+  // Beside the curtain rather than in the middle of the triangle, which is now
+  // floor you stand on. Kept for scale: the machines only read as room-sized
+  // next to something 1.7 m tall.
+  g.position.set(-1.35, 0, -2.30);
+  g.rotation.y = 1.1;
   return g;
 }
 const figure = makeFigure();
@@ -1132,21 +1162,63 @@ RIGS[3] = createBoard3Rig;
 RIGS[1] = createPlaceholderRig;
 RIGS[2] = createPlaceholderRig;
 
-let rig = null;
-function mountRig(boardId) {
-  if (rig) scene.remove(rig.group);
-  rig = RIGS[boardId]();
-  scene.add(rig.group);
-  document.getElementById('hudBoard').textContent =
-    'board ' + boardId + (rig.placeholder ? ' (placeholder)' : '');
+/* All three stand in the room at once. A rig owns its group, its drive state
+   and its readout; the shell owns where it stands and who is addressing it.
+   Board-local commands go to one of these, cluster commands go to all. */
+const rigs = [];
+const rigById = new Map();
+
+function buildRig(id) {
+  const spot = LAYOUT[id];
+  const st = makeRigState(id);
+  const r = RIGS[id]();
+  r.id = id;
+  r.name = spot.name;
+  r.st = st;
+  r.footprint = { r: spot.r };
+  r.group.position.set(spot.x, 0, spot.z);
+  scene.add(r.group);
+  return r;
 }
-mountRig(3);
+
+for (const id of [1, 2, 3]) {
+  const r = buildRig(id);
+  rigs.push(r);
+  rigById.set(id, r);
+}
+
+/* Rebuilding one rig in place, for the geometry panel — the group is thrown
+   away and remade from G, so it has to be re-placed and re-registered while
+   every other machine keeps running. */
+function remountRig(id) {
+  const old = rigById.get(id);
+  const keep = old.st;
+  scene.remove(old.group);
+  const spot = LAYOUT[id];
+  const r = RIGS[id]();
+  r.id = id; r.name = spot.name; r.st = keep;
+  r.footprint = { r: spot.r };
+  r.group.position.set(spot.x, 0, spot.z);
+  scene.add(r.group);
+  rigs[rigs.indexOf(old)] = r;
+  rigById.set(id, r);
+  return r;
+}
+
+const focusRig = () => rigById.get(state.focusId);
+
+function setHudBoard() {
+  const rg = focusRig();
+  document.getElementById('hudBoard').textContent =
+    'board ' + rg.id + (rg.placeholder ? ' (placeholder)' : '');
+}
 
 /* ════════════════════════════════════════════════════════════════════════
    PLAYBACK — Motions and Sequences straight out of library.json
    ════════════════════════════════════════════════════════════════════════ */
 let library = { motions: [], sequences: [] };
-const player = { kind: null, item: null, t: 0, dur: 0, loop: false, stepIdx: -1, sub: null };
+const player = { kind: null, item: null, t: 0, dur: 0, loop: false, stepIdx: -1, sub: null,
+                 targets: null, subTargets: null };
 
 function trackFor(motion, ch, boardId) {
   return (motion.tracks || []).find(t =>
@@ -1173,6 +1245,9 @@ function startClip(value) {
   const item = list.find(x => x.id === id);
   if (!item) return;
   player.kind = kind; player.item = item; player.t = 0; player.stepIdx = -1; player.sub = null;
+  // A clip started from the panel or from a cluster command plays to the room;
+  // sequence steps narrow it per step in enterStep.
+  player.targets = null; player.subTargets = null;
   player.dur = kind === 'seq'
     ? (item.steps || []).reduce((a, s) => a + (s.durationMs || 0), 0)
     : (item.durationMs || 0);
@@ -1198,7 +1273,7 @@ function tickPlayer(dtMs) {
 }
 
 function applyClipAt(t) {
-  if (player.kind === 'motion') return applyMotion(player.item, t);
+  if (player.kind === 'motion') return applyMotion(player.item, t, player.targets);
 
   const steps = player.item.steps || [];
   let acc = 0, idx = -1, into = 0;
@@ -1209,33 +1284,49 @@ function applyClipAt(t) {
   }
   if (idx < 0) return;
   if (idx !== player.stepIdx) { player.stepIdx = idx; enterStep(steps[idx]); }
-  if (player.sub) applyMotion(player.sub, into);
+  if (player.sub) applyMotion(player.sub, into, player.subTargets);
 }
 
 function enterStep(step) {
   // DC lanes are sticky: a board absent from the map holds its last speed.
-  if (step.dc && step.dc[state.boardId] != null) setDc(clamp(step.dc[state.boardId], -50, 50));
-  if (!(step.target === 'all' || step.target === state.boardId)) { log(`· skip (target ${step.target}): ${step.cmd}`); return; }
+  // Each board reads its own lane, so one step can drive all three at once.
+  if (step.dc) {
+    for (const r of rigs) {
+      if (step.dc[r.id] != null) setDcOn(r, clamp(step.dc[r.id], -50, 50));
+    }
+  }
+
+  // The step's own command is addressed: 'all' reaches every machine, a number
+  // reaches that one. The player itself is shared — there is one dashboard
+  // playing one clip — so MOTION/STOP are handled once, not once per rig.
+  const targets = step.target === 'all' ? rigs : rigs.filter(r => r.id === step.target);
+  if (!targets.length) { log(`· skip (target ${step.target}): ${step.cmd}`); return; }
 
   const cmd = (step.cmd || '').trim();
   const m = cmd.match(/^MOTION\s+(\S+)/i);
   if (m) {
     const mo = library.motions.find(x => x.id === m[1]);
     player.sub = mo || null;
+    player.subTargets = targets;
     log(mo ? `  MOTION ${mo.name}` : `  ! unknown motion ${m[1]}`);
     return;
   }
   const r = cmd.match(/^ROTATE\s+(-?\d+)/i);
-  if (r) { setDc(clamp(+r[1], -100, 100)); log(`  ROTATE ${r[1]}`); return; }
-  if (/^STOP$/i.test(cmd)) { player.sub = null; setDc(0); log('  STOP'); return; }
+  if (r) { for (const rg of targets) setDcOn(rg, clamp(+r[1], -100, 100)); log(`  ROTATE ${r[1]}`); return; }
+  if (/^STOP$/i.test(cmd)) { player.sub = null; for (const rg of targets) setDcOn(rg, 0); log('  STOP'); return; }
   log(`  · ${cmd} (not simulated)`);
 }
 
-function applyMotion(motion, t) {
-  for (let ch = 0; ch < 3; ch++) {
-    const tr = trackFor(motion, ch, state.boardId);
-    // Un-authored channels hold at rest (100% — fully down), per schema §2.
-    state.target[ch] = tr ? clamp(sampleTrack(tr, t), 0, 100) : 100;
+function applyMotion(motion, t, targets) {
+  for (const rg of (targets || rigs)) {
+    // A machine with no servos ignores servo tracks entirely — the library
+    // carries tracks for all three boards whether or not the hardware has them.
+    if (rg.noServos) continue;
+    for (let ch = 0; ch < 3; ch++) {
+      const tr = trackFor(motion, ch, rg.id);
+      // Un-authored channels hold at rest (100% — fully down), per schema §2.
+      rg.st.target[ch] = tr ? clamp(sampleTrack(tr, t), 0, 100) : 100;
+    }
   }
   syncSlidersFromTarget();
 }
@@ -1253,29 +1344,34 @@ function applyMotion(motion, t) {
    Percent-down is the native unit here, so UP/UMOVE invert and S/P convert
    through the calibration.
    ════════════════════════════════════════════════════════════════════════ */
-const ramps = [null, null, null];      // per-channel timed moves from D/UMOVE
-let bus = null, busOn = true, busSeen = 0, busAnyBoard = false;
+let bus = null, busOn = true, busSeen = 0;
 
-function rampTo(ch, pct, ms) {
-  if (ch < 0 || ch > 2) return;
+function rampTo(rg, ch, pct, ms) {
+  if (ch < 0 || ch > 2 || rg.noServos) return;
+  const st = rg.st;
   const to = clamp(pct, 0, 100);
-  if (!(ms > 0)) { ramps[ch] = null; state.target[ch] = to; return; }
+  if (!(ms > 0)) { st.ramps[ch] = null; st.target[ch] = to; return; }
   // Ramp the *commanded* position, exactly as the firmware interpolates pulse.
   // The winch still lags it through the slew limiter, which is the point:
   // a DMOVE faster than the mechanism visibly fails to keep up.
-  ramps[ch] = { from: state.target[ch], to, t0: performance.now(), ms };
+  st.ramps[ch] = { from: st.target[ch], to, t0: performance.now(), ms };
 }
 function tickRamps() {
   const now = performance.now();
-  for (let i = 0; i < 3; i++) {
-    const r = ramps[i];
-    if (!r) continue;
-    const u = Math.min(1, (now - r.t0) / r.ms);
-    state.target[i] = r.from + (r.to - r.from) * u;
-    if (u >= 1) ramps[i] = null;
+  for (const rg of rigs) {
+    const st = rg.st;
+    for (let i = 0; i < 3; i++) {
+      const r = st.ramps[i];
+      if (!r) continue;
+      const u = Math.min(1, (now - r.t0) / r.ms);
+      st.target[i] = r.from + (r.to - r.from) * u;
+      if (u >= 1) st.ramps[i] = null;
+    }
   }
 }
-function clearRamps() { ramps[0] = ramps[1] = ramps[2] = null; }
+function clearRamps(rg) {
+  for (const r of (rg ? [rg] : rigs)) r.st.ramps[0] = r.st.ramps[1] = r.st.ramps[2] = null;
+}
 
 function pulseToPercentDownRaw(pulse) { return pulseToPercentDown(pulse); }
 function degreesToPercentDown(deg) {
@@ -1292,43 +1388,68 @@ function isClusterCommand(cmd) {
   return /^RUN\b/.test(c) || /^ROTATE\b/.test(c) || c === 'STOP' || /^MOTION\b/.test(c);
 }
 
-function applyBoardCommand(cmd) {
+/* Board-local commands: applied to one rig. Servo commands aimed at a machine
+   with no servos report themselves rather than silently doing nothing. */
+function applyRigCommand(rg, cmd) {
   const c = String(cmd || '').trim();
   let m;
 
-  if ((m = /^DMOVE\s+(\d+)\s+(-?[\d.]+)\s+(\d+)/i.exec(c)))  { rampTo(+m[1], +m[2], +m[3]); return 'DMOVE'; }
-  if ((m = /^UMOVE\s+(\d+)\s+(-?[\d.]+)\s+(\d+)/i.exec(c)))  { rampTo(+m[1], 100 - +m[2], +m[3]); return 'UMOVE'; }
-  if ((m = /^DOWN\s+(\d+)\s+(-?[\d.]+)/i.exec(c)))           { rampTo(+m[1], +m[2], 0); return 'DOWN'; }
-  if ((m = /^UP\s+(\d+)\s+(-?[\d.]+)/i.exec(c)))             { rampTo(+m[1], 100 - +m[2], 0); return 'UP'; }
-  if ((m = /^S(\d+)\s+(-?[\d.]+)/i.exec(c)))                 { rampTo(+m[1], degreesToPercentDown(+m[2]), 0); return 'S'; }
-  if ((m = /^P(\d+)\s+(-?[\d.]+)/i.exec(c)))                 { rampTo(+m[1], pulseToPercentDownRaw(+m[2]), 0); return 'P'; }
-  if ((m = /^ROTATE\s+(-?\d+)/i.exec(c)))                    { setDc(clamp(+m[1], -100, 100)); return 'ROTATE'; }
+  const servo = /^(DMOVE|UMOVE|DOWN|UP|S\d|P\d)/i.test(c);
+  if (servo && rg.noServos) return null;
+
+  if ((m = /^DMOVE\s+(\d+)\s+(-?[\d.]+)\s+(\d+)/i.exec(c)))  { rampTo(rg, +m[1], +m[2], +m[3]); return 'DMOVE'; }
+  if ((m = /^UMOVE\s+(\d+)\s+(-?[\d.]+)\s+(\d+)/i.exec(c)))  { rampTo(rg, +m[1], 100 - +m[2], +m[3]); return 'UMOVE'; }
+  if ((m = /^DOWN\s+(\d+)\s+(-?[\d.]+)/i.exec(c)))           { rampTo(rg, +m[1], +m[2], 0); return 'DOWN'; }
+  if ((m = /^UP\s+(\d+)\s+(-?[\d.]+)/i.exec(c)))             { rampTo(rg, +m[1], 100 - +m[2], 0); return 'UP'; }
+  if ((m = /^S(\d+)\s+(-?[\d.]+)/i.exec(c)))                 { rampTo(rg, +m[1], degreesToPercentDown(+m[2]), 0); return 'S'; }
+  if ((m = /^P(\d+)\s+(-?[\d.]+)/i.exec(c)))                 { rampTo(rg, +m[1], pulseToPercentDownRaw(+m[2]), 0); return 'P'; }
+  if ((m = /^ROTATE\s+(-?\d+)/i.exec(c)))                    { setDcOn(rg, clamp(+m[1], -100, 100)); return 'ROTATE'; }
 
   if (/^STOP\b/i.test(c)) {
     // Firmware STOP halts motion and holds position; it does not home.
+    const st = rg.st;
     const one = /^STOP\s+(\d+)/i.exec(c);
-    if (one) { ramps[+one[1]] = null; state.target[+one[1]] = state.actual[+one[1]]; }
-    else { clearRamps(); for (let i = 0; i < 3; i++) state.target[i] = state.actual[i]; setDc(0); stopClip('STOP from dashboard'); }
+    if (one) { if (!rg.noServos) { st.ramps[+one[1]] = null; st.target[+one[1]] = st.actual[+one[1]]; } }
+    else {
+      clearRamps(rg);
+      if (!rg.noServos) for (let i = 0; i < 3; i++) st.target[i] = st.actual[i];
+      setDcOn(rg, 0);
+    }
     return 'STOP';
   }
+  return null;    // SWEEP, TPULSE, CAL*, STATUS, GALLERY, BOARDID … not simulated
+}
+
+/* Commands that drive the shared transport rather than a mechanism. There is
+   one dashboard playing one clip, so these run once no matter how many rigs
+   the command reaches — fanning them out would start the clip three times. */
+function applyTransportCommand(cmd, targets) {
+  const c = String(cmd || '').trim();
+  let m;
+
+  if (/^STOP\s*$/i.test(c)) { stopClip('STOP from dashboard'); return true; }
+
   // "MOTION <id>" and the baked "MOTION <id> PREP <ms>" form both land here;
   // the pre-roll glide itself is not simulated.
   if ((m = /^MOTION\s+(\S+)/i.exec(c))) {
-    if (library.motions.some(x => x.id === m[1])) { clearRamps(); startClip('motion:' + m[1]); }
-    else log(`  ! MOTION ${m[1]} not in this library`);
-    return 'MOTION';
+    if (library.motions.some(x => x.id === m[1])) {
+      clearRamps();
+      startClip('motion:' + m[1]);
+      player.targets = targets;
+    } else log(`  ! MOTION ${m[1]} not in this library`);
+    return true;
   }
   if ((m = /^RUN\s+(\S+)(\s+LOOP)?/i.exec(c))) {
-    if (/^AUTO$/i.test(m[1])) { log('  · RUN AUTO (setlist not simulated)'); return 'RUN'; }
+    if (/^AUTO$/i.test(m[1])) { log('  · RUN AUTO (setlist not simulated)'); return true; }
     if (library.sequences.some(x => x.id === m[1])) {
       clearRamps();
       player.loop = !!m[2];
       $('loop').setAttribute('aria-pressed', String(player.loop));
       startClip('seq:' + m[1]);
     } else log(`  ! RUN ${m[1]} not in this library`);
-    return 'RUN';
+    return true;
   }
-  return null;    // SWEEP, TPULSE, CAL*, STATUS, GALLERY, BOARDID … not simulated
+  return false;
 }
 
 function openBus() {
@@ -1349,15 +1470,30 @@ function openBus() {
     // command_interface.h): RUN / ROTATE / bare STOP are re-broadcast over UDP
     // and MOTION goes out as a synchronized MOTION_START, so all of those
     // reach every board whichever one the browser addressed. Everything else —
-    // UP, DOWN, DMOVE, S<n>, STOP <n> — is board-local, and applying another
-    // board's servo tracks here would be wrong.
-    const addressedHere = msg.boardId == null || msg.boardId === state.boardId;
-    if (!isClusterCommand(msg.cmd) && !addressedHere && !busAnyBoard) {
-      setBusState(`${busSeen} cmd · "${msg.cmd.slice(0, 24)}" sent to board ${msg.boardId}, not this rig`, 'bad');
+    // UP, DOWN, DMOVE, S<n>, STOP <n> — is board-local.
+    //
+    // With every board standing in the room this routes rather than filters:
+    // a cluster command reaches all three, a board-local one reaches the board
+    // it names. An unaddressed command (the dashboard could not map the IP)
+    // goes to the room, which is what a filter used to call "addressed here".
+    const cluster = isClusterCommand(msg.cmd);
+    const targets = (cluster || msg.boardId == null)
+      ? rigs
+      : rigs.filter(r => r.id === msg.boardId);
+
+    if (!targets.length) {
+      setBusState(`${busSeen} cmd · "${msg.cmd.slice(0, 24)}" names board ${msg.boardId}, which is not in this room`, 'bad');
       return;
     }
-    const kind = applyBoardCommand(msg.cmd);
-    setBusState(`${busSeen} cmd · ${msg.cmd.slice(0, 34)}${kind ? '' : ' — not simulated'}`, kind ? 'ok' : '');
+
+    const transport = applyTransportCommand(msg.cmd, cluster ? null : targets);
+    const kinds = targets.map(r => applyRigCommand(r, msg.cmd)).filter(Boolean);
+    const kind = transport || kinds.length;
+
+    const where = targets.length === rigs.length ? 'all boards' : 'board ' + targets.map(r => r.id).join('+');
+    setBusState(
+      `${busSeen} cmd · ${msg.cmd.slice(0, 30)} → ${where}${kind ? '' : ' — not simulated'}`,
+      kind ? 'ok' : '');
     if (kind && !/^DMOVE|^UMOVE/i.test(msg.cmd)) log(`⇐ ${msg.cmd}`);
   };
 }
@@ -1378,14 +1514,17 @@ function connect() {
     try {
       const r = await fetch(`http://${ip}/status.json`, { cache: 'no-store' });
       const s = await r.json();
-      if (Array.isArray(s.servos)) {
+      // Telemetry describes one board, so it drives one rig — the selected
+      // one. The rest of the room keeps running off the player and the bus.
+      const rg = focusRig();
+      if (Array.isArray(s.servos) && !rg.noServos) {
         for (let ch = 0; ch < 3; ch++) {
           const e = s.servos.find(x => x.i === ch);
-          if (e) { state.actual[ch] = pulseToPercentDown(e.pulse); state.target[ch] = state.actual[ch]; }
+          if (e) { rg.st.actual[ch] = pulseToPercentDown(e.pulse); rg.st.target[ch] = rg.st.actual[ch]; }
         }
         syncSlidersFromTarget();
       }
-      if (s.motor) setDc(s.motor.speed | 0);
+      if (s.motor) setDcOn(rg, s.motor.speed | 0);
       const playing = s.motion?.active ? `MOTION ${s.motion.id}` : (s.runseq?.active ? `RUN ${s.runseq.id}` : 'idle');
       setLink(`live · ${ip} · ${playing}`, 'ok');
     } catch {
@@ -1412,23 +1551,36 @@ function animate() {
     tickRamps();
     syncSlidersFromTarget();
     const maxStep = state.slewLimit ? (1000 / SLEW_MS_PER_PCT) * dt : 1e6;
-    for (let i = 0; i < 3; i++) {
-      const d = state.target[i] - state.actual[i];
-      state.actual[i] += Math.abs(d) <= maxStep ? d : Math.sign(d) * maxStep;
+    for (const rg of rigs) {
+      if (rg.noServos) continue;
+      const st = rg.st;
+      for (let i = 0; i < 3; i++) {
+        const d = st.target[i] - st.actual[i];
+        st.actual[i] += Math.abs(d) <= maxStep ? d : Math.sign(d) * maxStep;
+      }
     }
   }
 
-  state.dcActual += (state.dcTarget - state.dcActual) * (1 - Math.exp(-dt / DC_LAG_S));
-  state.spin += (state.dcActual / 100) * (G.maxRpm * 2 * Math.PI / 60) * dt;
+  // The motor lag is real on every board; how spin turns into motion is the
+  // rig's own business, so board 3 keeps its rpm scale here until the other
+  // two arrive with theirs.
+  let totalScrape = 0, frameClacks = 0;
+  for (const rg of rigs) {
+    const st = rg.st;
+    st.dcActual += (st.dcTarget - st.dcActual) * (1 - Math.exp(-dt / DC_LAG_S));
+    st.spin += (st.dcActual / 100) * (G.maxRpm * 2 * Math.PI / 60) * dt;
 
-  const clacks = rig.update(state, dt) || [];
+    const clacks = rg.update(st, dt) || [];
+    frameClacks += clacks.length;
+    totalScrape += rg.info.scrape || 0;
+    for (const c of clacks) audio.clack(c.v, c.x);
+  }
   figure.visible = state.showHuman;
 
   // sound is a readout of the physics, not a separate schedule
-  clackRate += (clacks.length / Math.max(dt, 1e-3) - clackRate) * 0.2;
-  audio.setScrape(rig.info.scrape);
+  clackRate += (frameClacks / Math.max(dt, 1e-3) - clackRate) * 0.2;
+  audio.setScrape(totalScrape);
   audio.setClatter(clackRate);
-  for (const c of clacks) audio.clack(c.v, c.x);
 
   orbit.update();
   renderer.render(scene, camera);
@@ -1437,23 +1589,33 @@ function animate() {
 }
 
 function drawReadout() {
-  const i = rig.info;
-  const rpm = (state.dcActual / 100) * G.maxRpm;
-  document.getElementById('readout').textContent =
-`winch  cmd ${fmt(state.target[0])} ${fmt(state.target[1])} ${fmt(state.target[2])}  %down
-       pos ${fmt(state.actual[0])} ${fmt(state.actual[1])} ${fmt(state.actual[2])}
-ring   ${i.ringY.toFixed(2)} m   ${(i.ringY - G.deckY).toFixed(2)} m over deck   tilt ${i.tiltDeg.toFixed(1)}°
-dowel  ${(i.chainDown * 100).toFixed(0)} cm of chain past the deck
-       ${i.contacts} joints on the deck   scrape ${i.scrape.toFixed(2)} m/s
-strike ${clackRate.toFixed(0)} clacks/s against the outer ring
-dc     ${state.dcActual.toFixed(0)}%   ${rpm.toFixed(1)} rpm`;
+  const lines = [];
+  for (const rg of rigs) {
+    const st = rg.st, i = rg.info;
+    const mark = rg.id === state.focusId ? '▸' : ' ';
+    const servos = rg.noServos
+      ? '  —  no servos'
+      : `${fmt(st.target[0])} ${fmt(st.target[1])} ${fmt(st.target[2])} %down`;
+    lines.push(`${mark}b${rg.id} ${rg.name.padEnd(14).slice(0, 14)} ${servos}  dc ${String(Math.round(st.dcActual)).padStart(4)}%`);
+    if (rg.detail) lines.push('        ' + rg.detail());
+  }
+  const f = focusRig();
+  if (!f.placeholder && f.id === 3) {
+    const i = f.info;
+    lines.push(`ring   ${i.ringY.toFixed(2)} m   ${(i.ringY - G.deckY).toFixed(2)} m over deck   tilt ${i.tiltDeg.toFixed(1)}°`);
+    lines.push(`dowel  ${(i.chainDown * 100).toFixed(0)} cm past the deck   ${i.contacts} joints on it   scrape ${i.scrape.toFixed(2)} m/s`);
+  }
+  lines.push(`strike ${clackRate.toFixed(0)} clacks/s across the room`);
+  document.getElementById('readout').textContent = lines.join('\n');
 }
 const fmt = (v) => String(Math.round(v)).padStart(3, ' ');
 
 function drawMeters() {
-  const s = scrapeCurve(rig.info.scrape);
+  let scrape = 0;
+  for (const rg of rigs) scrape += rg.info.scrape || 0;
+  const s = scrapeCurve(scrape);
   document.getElementById('scrapeM').style.width = (s * 100) + '%';
-  document.getElementById('scrapeV').textContent = rig.info.scrape.toFixed(2);
+  document.getElementById('scrapeV').textContent = scrape.toFixed(2);
   const c = Math.min(1, clackRate / 400);
   document.getElementById('clackM').style.width = (c * 100) + '%';
   document.getElementById('clackV').textContent = clackRate.toFixed(0) + '/s';
@@ -1474,47 +1636,71 @@ new ResizeObserver(resize).observe(stage);
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 const $ = (id) => document.getElementById(id);
 
+/* The servo and DC panels address one board at a time — the one named in the
+   Rig selector. Every machine keeps running whichever is selected; the
+   selector moves the controls, not the scene. */
 const sliders = [$('s0'), $('s1'), $('s2')];
 const outs    = [$('s0v'), $('s1v'), $('s2v')];
 sliders.forEach((sl, i) => sl.addEventListener('input', () => {
+  const rg = focusRig();
+  if (rg.noServos) { syncSlidersFromTarget(); return; }
   const v = +sl.value;
-  if ($('gang').checked) state.target = [v, v, v]; else state.target[i] = v;
+  if ($('gang').checked) rg.st.target = [v, v, v]; else rg.st.target[i] = v;
   syncSlidersFromTarget();
   if (player.item) stopClip('manual override');
 }));
 function syncSlidersFromTarget() {
+  const rg = focusRig();
+  const dis = !!rg.noServos;
   for (let i = 0; i < 3; i++) {
-    sliders[i].value = Math.round(state.target[i]);
-    outs[i].textContent = Math.round(state.target[i]);
+    sliders[i].disabled = dis;
+    sliders[i].value = Math.round(rg.st.target[i]);
+    outs[i].textContent = dis ? '—' : Math.round(rg.st.target[i]);
   }
 }
 document.querySelectorAll('[data-all]').forEach(b => b.addEventListener('click', () => {
+  const rg = focusRig();
+  if (rg.noServos) return;
   const v = b.dataset.all;
-  state.target = v === 'tilt' ? [20, 60, 100] : [+v, +v, +v];
+  rg.st.target = v === 'tilt' ? [20, 60, 100] : [+v, +v, +v];
   syncSlidersFromTarget();
   if (player.item) stopClip('manual override');
 }));
 
 const dcSlider = $('dc');
-function setDc(v) {
-  state.dcTarget = clamp(v, -100, 100);
-  dcSlider.value = state.dcTarget;
-  $('dcv').textContent = (state.dcTarget > 0 ? '+' : '') + Math.round(state.dcTarget);
+function setDcOn(rg, v) {
+  rg.st.dcTarget = clamp(v, -100, 100);
+  if (rg.id === state.focusId) syncDcSlider();
 }
+function syncDcSlider() {
+  const t = focusRig().st.dcTarget;
+  dcSlider.value = t;
+  $('dcv').textContent = (t > 0 ? '+' : '') + Math.round(t);
+}
+const setDc = (v) => setDcOn(focusRig(), v);
 dcSlider.addEventListener('input', () => setDc(+dcSlider.value));
 document.querySelectorAll('[data-dc]').forEach(b => b.addEventListener('click', () => setDc(+b.dataset.dc)));
 
-$('gang').addEventListener('change', e => { if (e.target.checked) { const v = +sliders[0].value; state.target = [v, v, v]; syncSlidersFromTarget(); } });
+$('gang').addEventListener('change', e => {
+  const rg = focusRig();
+  if (e.target.checked && !rg.noServos) { const v = +sliders[0].value; rg.st.target = [v, v, v]; syncSlidersFromTarget(); }
+});
 $('slew').addEventListener('change', e => state.slewLimit = e.target.checked);
-$('boardSel').addEventListener('change', e => { state.boardId = +e.target.value; mountRig(state.boardId); });
+$('boardSel').addEventListener('change', e => {
+  state.focusId = +e.target.value;
+  syncSlidersFromTarget();
+  syncDcSlider();
+  setHudBoard();
+});
 
 $('mu').addEventListener('input', e => { state.mu = +e.target.value / 100; $('muv').textContent = state.mu.toFixed(2).slice(1); });
-$('clearTrails').addEventListener('click', () => rig.clearTrails());
+$('clearTrails').addEventListener('click', () => focusRig().clearTrails());
 $('ff').addEventListener('click', () => {
   const secs = 5;
-  const strikes = rig.fastForward(secs, state);
-  const i = rig.info;
-  log(`⏩ ${secs}s @ ${((state.dcActual / 100) * G.maxRpm).toFixed(1)} rpm — `
+  const rg = focusRig();
+  const strikes = rg.fastForward(secs, rg.st);
+  const i = rg.info;
+  log(`⏩ b${rg.id} ${secs}s @ ${((rg.st.dcActual / 100) * G.maxRpm).toFixed(1)} rpm — `
     + `${(strikes / secs).toFixed(0)} clacks/s · scrape ${i.scrape.toFixed(2)} m/s · `
     + `ring ${i.ringY.toFixed(2)} m, ${i.contacts} on deck`);
 });
@@ -1569,11 +1755,6 @@ $('busBtn').addEventListener('click', e => {
   e.target.textContent = busOn ? 'Listening' : 'Ignoring';
   if (!busOn) { clearRamps(); setBusState('not listening', ''); }
 });
-$('busAny').addEventListener('click', e => {
-  busAnyBoard = !busAnyBoard;
-  e.target.setAttribute('aria-pressed', String(busAnyBoard));
-  e.target.textContent = busAnyBoard ? 'Any board' : 'This board';
-});
 
 // geometry — remounting the rig rebuilds every mesh from G
 const geoBind = {
@@ -1586,7 +1767,7 @@ for (const [id, k] of Object.entries(geoBind)) {
     const v = +$(id).value;
     if (!isFinite(v)) return;
     G[k] = (k === 'dowels' || k === 'chainCount' || k === 'outerCount') ? Math.round(v) : v;
-    mountRig(state.boardId);
+    remountRig(3);   // G is board 3's geometry
   });
 }
 $('optHuman').addEventListener('change', e => state.showHuman = e.target.checked);
@@ -1630,7 +1811,8 @@ fetch('./library.json', { cache: 'no-store' })
 /* boot — after every declaration above is initialised */
 openBus();
 syncSlidersFromTarget();
-setDc(0);
+syncDcSlider();
+setHudBoard();
 resize();
 
 /* A repeatable measurement of the solver, for checking that a refactor changed
@@ -1639,21 +1821,22 @@ resize();
    been open, which it otherwise does: spin and the motor lag keep integrating
    while you reach for the mouse. Call __selfTest() from the console and diff
    the object across the change. */
-window.__selfTest = function (seed = 7, seconds = 5) {
+window.__selfTest = function (seed = 7, seconds = 5, id = 3) {
   forcedSeed = seed;
-  mountRig(state.boardId);
-  state.target = [100, 100, 100];
-  state.actual = [100, 100, 100];
-  state.dcTarget = 22; state.dcActual = 22; state.spin = 0;
-  const strikes = rig.fastForward(seconds, state);
+  const rg = remountRig(id);
   forcedSeed = null;
+  const st = rg.st;
+  st.target = [100, 100, 100];
+  st.actual = [100, 100, 100];
+  st.dcTarget = 22; st.dcActual = 22; st.spin = 0;
+  const strikes = rg.fastForward(seconds, st);
   return {
     strikes,
-    ringY: +rig.info.ringY.toFixed(6),
-    chainDown: +rig.info.chainDown.toFixed(6),
-    contacts: rig.info.contacts,
-    scrape: +rig.info.scrape.toFixed(6),
-    spin: +state.spin.toFixed(6),
+    ringY: +rg.info.ringY.toFixed(6),
+    chainDown: +rg.info.chainDown.toFixed(6),
+    contacts: rg.info.contacts,
+    scrape: +rg.info.scrape.toFixed(6),
+    spin: +st.spin.toFixed(6),
   };
 };
 
