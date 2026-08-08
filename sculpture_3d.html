@@ -140,9 +140,11 @@
       <option value="1">Board 1 — centre wands</option>
       <option value="2">Board 2 — field</option>
     </select>
-    <div class="note">All three stand in the room at once. This picks which board the
-      servo and motor controls below are addressing — it does not change what is on
-      screen. Boards 1 &amp; 2 render a placeholder until their designs land.</div>
+    <div class="note">All three machines stand in the room at once and all three keep
+      running whatever is selected here. This only picks which board the
+      <b>Winch servos</b> and <b>DC motor</b> panels below are addressing — think of it
+      as which board you have the controller pointed at, not which sculpture is on
+      screen. Each machine also has its own section further down.</div>
     <div class="mix">
       <div class="mixrow"><b>b1 wands</b>
         <button data-solo="1" aria-pressed="false">Solo</button>
@@ -163,7 +165,10 @@
     <h2>Board 1 — centre wands</h2>
     <div class="row"><label>Spread</label><input id="b1spread" type="range" min="0" max="100" value="100"><output id="b1spreadv">100</output></div>
     <label class="check"><input type="checkbox" id="b1invert" checked> wands rest clear</label>
-    <div class="note">S0–S2 are the three wand throws and the motor turns the ring.
+    <div class="note"><b>4:1 reduction on the motor</b> — ROTATE 100 turns this ring a
+      quarter as fast as board 3's, about 6 rpm. Strike strength is tangential speed, so
+      this machine taps where the curtain hammers.
+      S0–S2 are the three wand throws and the motor turns the ring.
       Spread fans the wands apart; at 0 all three sit on one bearing and the tubes
       get struck in a flam. <b>Wands rest clear</b> reads 100&nbsp;%down (the
       unpowered rest) as fully raised — without it the machine idles with every
@@ -1743,6 +1748,12 @@ function createBoard1Rig() {
   const WAND    = 0.166;
   const THMAX   = 0.62;
 
+  /* The DC motor on this board drives the ring through a 4:1 reduction, so a
+     given ROTATE turns this ring four times slower than board 3's. That is a
+     big deal for how it sounds, not just how it looks: strike strength is
+     tangential speed, so the wands tap this machine rather than hammering it. */
+  const GEAR_RATIO = 4;
+
   const RING_ORDER = [0, 3, 1, 5, 2, 4];   // scrambled so a revolution is a melody
   const FREQS = [293.66, 329.63, 392.00, 440.00, 523.25, 587.33];   // D E G A C D
   const tubeLength = f => 14.93 / Math.sqrt(f);
@@ -1907,7 +1918,10 @@ function createBoard1Rig() {
     // invertServos if a board is wired the other way.
     const throwOf = (pct) => (state.invertWands ? (100 - pct) : pct) / 100 * THMAX;
 
-    const rpm = (st.dcActual / 100) * 200;      // 0..100 maps to 0..200 rpm
+    // Same motor and same duty scale as board 3, then through this machine's
+    // 4:1 reduction — so ROTATE 100 turns this ring a quarter as fast as it
+    // turns board 3's, which is what the gearbox on the bench actually does.
+    const rpm = (st.dcActual / 100) * (G.maxRpm / GEAR_RATIO);
     const om = rpm / 60 * Math.PI * 2;
     ang += om * dt;
     arm.rotation.y = ang;
@@ -1979,7 +1993,8 @@ function createBoard1Rig() {
     group, update, info, clearTrails, fastForward,
     tubeFreqs: RING_ORDER.map(i => FREQS[i]),
     orbitR: R, hangY: HANG_Y,
-    detail: () => `${info.rpm.toFixed(0)} rpm ring · ${tubes.length} tubes · ${info.rate.toFixed(1)} strikes/s`,
+    detail: () => `${info.rpm.toFixed(1)} rpm ring (4:1) · ${tubes.length} tubes · ${info.rate.toFixed(1)} strikes/s`,
+    gearRatio: GEAR_RATIO,
     setSpread(v) { spread = clamp(v, 0, 1); },
   };
 }

@@ -1753,6 +1753,12 @@
   }
   .mtest-close:hover { border-color: var(--alert); color: var(--alert); }
   .mtest-body { padding: 16px 20px 24px; }
+  .mtest-note {
+    font-size: 11px; line-height: 1.55; opacity: .72;
+    margin-top: 10px; padding: 8px 10px;
+    border-left: 2px solid var(--line, #384); border-radius: 2px;
+  }
+  .mtest-note code { font-size: 10px; opacity: .9; }
   .mtest-target-row {
     display: grid; grid-template-columns: auto 1fr; align-items: center;
     gap: 12px; padding-bottom: 14px; margin-bottom: 6px;
@@ -2326,6 +2332,7 @@
           <button class="cmd" data-mtest="ROTATE 30">Fwd 30 ►</button>
         </div>
       </div>
+      <div class="mtest-note" id="motorTestMachine"></div>
     </div>
   </aside>
 </div>
@@ -2350,6 +2357,40 @@ let pollHandle = null;
 const lastSeen = new Map();
 const lastStatus = new Map();
 const boardIdByIp = new Map();
+
+// ── what each board actually drives ──────────────────────────────────────
+// A board id is not a machine. Three boards run the same firmware and the
+// same three servo channels, but the mechanism on the end of them is
+// different on each, and so is what a given command means. Naming them here
+// keeps the dashboard talking about sculptures rather than array indices, and
+// keeps the one number that genuinely differs — the reduction between the DC
+// motor and whatever it turns — in one place instead of in someone's head.
+//
+// rpmAt100 is the ring/deck speed at ROTATE 100, after the reduction. It is
+// what makes "the same command" mean four different speeds on four machines.
+const MACHINES = {
+  1: { name: "centre wands", short: "wands",
+       drive: "3 wands · ring on a 4:1 gearbox", gear: 4, rpmAt100: 6.25,
+       servos: ["Wand I throw", "Wand II throw", "Wand III throw"] },
+  2: { name: "field", short: "field",
+       drive: "tone-wheel deck · DC only", gear: 1, rpmAt100: 128,
+       servos: null },                       // no servos on this machine at all
+  3: { name: "dowel curtain", short: "curtain",
+       drive: "3 winches · ring direct", gear: 1, rpmAt100: 25,
+       servos: ["Winch S0", "Winch S1", "Winch S2"] },
+};
+const machineOf = (boardId) => MACHINES[Number(boardId)] || null;
+function boardLabel(boardId, withDrive) {
+  const m = machineOf(boardId);
+  if (!m) return `board ${boardId}`;
+  return `board ${boardId} · ${m.name}${withDrive ? ` — ${m.drive}` : ""}`;
+}
+function ipLabel(ip) {
+  const id = boardIdByIp.get(ip);
+  const m = machineOf(id);
+  return m ? `${ip} — ${id} · ${m.short}` : ip;
+}
+
 let bakeTargetManuallySelected = false;
 // Track the most recent command we sent to each board, for the audit tail at
 // the bottom of each instrument panel. Value: { cmd, ts }. "broadcast" target
@@ -2525,18 +2566,18 @@ function pad2(n) { return String(n).padStart(2, "0"); }
 // ============================================================
 function renderBoardList() {
   boardListEl.value = boards.join(",");
-  freeTargetEl.innerHTML = boards.map(ip => `<option value="${ip}">${ip}</option>`).join("");
+  freeTargetEl.innerHTML = boards.map(ip => `<option value="${ip}">${ipLabel(ip)}</option>`).join("");
   const bakeTargetEl = $("#bakeTarget");
   if (bakeTargetEl) {
     const selected = bakeTargetEl.value;
-    bakeTargetEl.innerHTML = boards.map(ip => `<option value="${ip}">${ip}</option>`).join("");
+    bakeTargetEl.innerHTML = boards.map(ip => `<option value="${ip}">${ipLabel(ip)}</option>`).join("");
     bakeTargetEl.value = boards.includes(selected) ? selected : (onlineBoardIps()[0] || boards[0] || "");
     bakeTargetEl.disabled = boards.length === 0;
   }
   const mtestTargetEl = $("#motorTestTarget");
   if (mtestTargetEl) {
     const selected = mtestTargetEl.value;
-    mtestTargetEl.innerHTML = boards.map(ip => `<option value="${ip}">${ip}</option>`).join("");
+    mtestTargetEl.innerHTML = boards.map(ip => `<option value="${ip}">${ipLabel(ip)}</option>`).join("");
     mtestTargetEl.value = boards.includes(selected) ? selected : (onlineBoardIps()[0] || boards[0] || "");
     mtestTargetEl.disabled = boards.length === 0;
   }
@@ -2784,21 +2825,59 @@ $("#freeCmd").addEventListener("keydown", e => { if (e.key === "Enter") $("#free
   const servosEl = $("#motorTestServos");
   if (!backdrop || !targetEl || !servosEl) return;
 
-  // One row per wired servo with bounded manual positions. There is deliberately
-  // no full-range sweep here: a test must not drive a winch into its endpoint.
-  servosEl.innerHTML = Array.from({ length: VISIBLE_SERVO_CHANNELS }, (_, n) => `
-    <div class="mtest-row">
-      <span class="rname">Servo<span class="sub">ch ${pad2(n)}</span></span>
-      <div class="mtest-btns">
-        <button class="cmd" data-mtest="UP ${n} 0">Down</button>
-        <button class="cmd" data-mtest="UP ${n} 50">Mid</button>
-        <button class="cmd" data-mtest="UP ${n} ${MOTOR_TEST_SAFE_UP_PCT}" title="Stops 20% short of the upper travel limit">Up ${MOTOR_TEST_SAFE_UP_PCT}%</button>
-      </div>
-    </div>`).join("");
+  /* One row per wired servo with bounded manual positions. There is deliberately
+     no full-range sweep here: a test must not drive a winch into its endpoint.
+
+     Redrawn per board, because the channels are not the same thing on each
+     machine — ch 0 is a winch on board 3 and a wand on board 1 — and board 2
+     has no servos at all, so offering it three of them invites a test that
+     silently does nothing. */
+  function renderServoRows(boardId) {
+    const m = machineOf(boardId);
+    if (m && m.servos === null) {
+      servosEl.innerHTML = `<div class="mtest-note">${m.name} has no servos — this
+        machine is one DC motor. Servo commands sent here will be accepted by the
+        board and move nothing.</div>`;
+      return;
+    }
+    servosEl.innerHTML = Array.from({ length: VISIBLE_SERVO_CHANNELS }, (_, n) => `
+      <div class="mtest-row">
+        <span class="rname">${m && m.servos ? m.servos[n].split(" ")[0] : "Servo"}<span class="sub">ch ${pad2(n)}${m && m.servos ? " · " + m.servos[n] : ""}</span></span>
+        <div class="mtest-btns">
+          <button class="cmd" data-mtest="UP ${n} 0">Down</button>
+          <button class="cmd" data-mtest="UP ${n} 50">Mid</button>
+          <button class="cmd" data-mtest="UP ${n} ${MOTOR_TEST_SAFE_UP_PCT}" title="Stops 20% short of the upper travel limit">Up ${MOTOR_TEST_SAFE_UP_PCT}%</button>
+        </div>
+      </div>`).join("");
+  }
+
+  /* The same ROTATE means a different speed on every machine, because each has
+     a different reduction between the motor and the thing it turns. Saying so
+     is the difference between "30%" and "30% — about 1.9 rpm at the ring". */
+  function renderMachineNote(boardId) {
+    const el = $("#motorTestMachine");
+    if (!el) return;
+    const m = machineOf(boardId);
+    if (!m) { el.textContent = ""; return; }
+    const at30 = (m.rpmAt100 * 0.30).toFixed(m.rpmAt100 < 20 ? 1 : 0);
+    el.innerHTML = `<b>${m.name}</b> — ${m.drive}.
+      ${m.gear > 1 ? `${m.gear}:1 reduction, so ` : ""}<code>ROTATE 30</code> is about
+      ${at30} rpm at the ${boardId === 2 ? "deck" : "ring"}
+      (${m.rpmAt100.toFixed(m.rpmAt100 < 20 ? 2 : 0)} rpm at 100).`;
+  }
+
+  function refreshForBoard() {
+    const id = boardIdByIp.get(targetEl.value);
+    renderServoRows(id);
+    renderMachineNote(id);
+  }
+  targetEl.addEventListener("change", refreshForBoard);
+  refreshForBoard();
 
   function openDrawer() {
     backdrop.classList.add("open");
     backdrop.setAttribute("aria-hidden", "false");
+    refreshForBoard();   // the board list may have re-mapped since last time
   }
   function closeDrawer() {
     backdrop.classList.remove("open");
@@ -3555,7 +3634,7 @@ function renderBakeInventory() {
   const bars = boardBytes.map(({ boardId, bytes, tier, level }) => {
     const pct = Math.min(100, Math.round((bytes / tier.capacity) * 100));
     const mode = tier.rollbackSafe ? "rollback safe" : (tier.mode === "large" ? "large · no rollback" : "over capacity");
-    return `<div class="bb-bar ${level}"><div class="bb-label"><span>board ${boardId} · ${mode}</span><span>${bytes} / ${tier.capacity}B</span></div>`
+    return `<div class="bb-bar ${level}"><div class="bb-label"><span>${boardLabel(boardId)} · ${mode}</span><span>${bytes} / ${tier.capacity}B</span></div>`
       + `<div class="bb-track"><div class="bb-fill" style="width:${pct}%"></div></div></div>`;
   }).join("");
 
@@ -4361,7 +4440,7 @@ function renderMotionEditor() {
     const titleAttr = ip
       ? `Resolved via /boardId to ${ip}`
       : "No responding board currently reports this boardId";
-    html += `<div class="motion-board"><button data-motion-collapse="${boardId}" title="${escapeHtml(titleAttr)}">${collapsed ? "+" : "-"} board ${boardId} ${ipHtml}</button></div>`;
+    html += `<div class="motion-board"><button data-motion-collapse="${boardId}" title="${escapeHtml(titleAttr)}">${collapsed ? "+" : "-"} ${boardLabel(boardId)} ${ipHtml}</button></div>`;
     for (const spec of MOTION_TRACK_SPECS.filter(s => s.boardId === boardId)) {
       const track = findTrack(motion, spec);
       const key = trackSpecKey(spec);
@@ -6375,7 +6454,7 @@ function renderSeqStepPreview(step, lib) {
       `<span class="seq-mini-dot ${strip.kind}" style="left:${p.xPct.toFixed(2)}%;top:${p.yPct.toFixed(2)}%" title="${p.atMs}ms · ${p.value}${escapeHtml(strip.unit)}"></span>`
     ).join("");
     const boardTag = strip.boardId !== lastBoard
-      ? `<div class="seq-mini-board">board ${strip.boardId}</div>` : "";
+      ? `<div class="seq-mini-board">${boardLabel(strip.boardId)}</div>` : "";
     lastBoard = strip.boardId;
     const start = formatSequencePreviewValue(strip.startValue, strip.unit);
     const end = formatSequencePreviewValue(strip.endValue, strip.unit);
