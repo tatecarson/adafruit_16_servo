@@ -113,12 +113,22 @@
 <body>
 
 <div id="stage">
-  <div id="hud">rig <b id="hudBoard">board 3</b> · drag orbit · scroll zoom · right-drag pan</div>
+  <div id="hud">rig <b id="hudBoard">board 3</b> · <span id="hudMode">drag orbit · scroll zoom · right-drag pan</span></div>
   <div id="readout"></div>
 </div>
 
 <div id="panel">
   <h1>// 3D <span>sculpture simulator</span></h1>
+
+  <section>
+    <h2>Room</h2>
+    <div class="btns">
+      <button id="walkBtn" aria-pressed="false">Orbiting</button>
+    </div>
+    <div class="note">Walk (or press <b>V</b>) to stand in the room at head height:
+      <b>WASD</b> to move, mouse to look, <b>shift</b> to hurry, <b>esc</b> back to orbit.
+      The machines are 5 m apart, so what you hear depends on where you stand.</div>
+  </section>
 
   <section>
     <h2>Rig</h2>
@@ -255,6 +265,7 @@
 <script type="module">
 import * as THREE from 'three';
 import { OrbitControls } from 'https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/controls/OrbitControls.js';
+import { PointerLockControls } from 'https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/controls/PointerLockControls.js';
 
 /* ────────────────────────────────────────────────────────────────────────────
    WHAT THIS SIMULATES
@@ -1214,6 +1225,157 @@ function setHudBoard() {
 }
 
 /* ════════════════════════════════════════════════════════════════════════
+   THE WALKER
+
+   Orbiting tells you what the machines look like. It does not tell you what
+   the room sounds like, because the ear is wherever the camera drifted to —
+   usually several metres outside the building. Walking puts a head at head
+   height inside the triangle, and the listener rides it.
+
+   Orbit and pointer-lock both want the same mouse, so exactly one is live.
+   Escape releases the lock, which drops back to orbit — no extra key.
+   ════════════════════════════════════════════════════════════════════════ */
+const EYE_Y   = 1.62;
+const WALK_MS = 1.35;      // m/s, an unhurried gallery pace
+const RUN_MS  = 2.40;
+
+const walk = {
+  on: false,
+  locked: false,     // is the pointer lock actually held (vs. refused)
+  vel: new THREE.Vector3(),
+  keys: new Set(),
+  bob: 0,
+};
+
+const pointer = new PointerLockControls(camera, renderer.domElement);
+scene.add(pointer.object ?? pointer.getObject?.() ?? new THREE.Group());
+
+/* Things you cannot walk through. The machines, plus the standing figure —
+   walking through a person is the one thing that breaks the illusion hardest. */
+function blockers() {
+  const out = rigs.map(r => ({ x: r.group.position.x, z: r.group.position.z, r: r.footprint.r + 0.35 }));
+  if (state.showHuman) out.push({ x: figure.position.x, z: figure.position.z, r: 0.30 });
+  return out;
+}
+
+function setWalk(on) {
+  if (on === walk.on) return;
+  walk.on = on;
+  orbit.enabled = !on;
+  $('walkBtn').setAttribute('aria-pressed', String(on));
+  $('walkBtn').textContent = on ? 'Walking' : 'Orbiting';
+  document.getElementById('hudMode').textContent = on
+    ? 'walk · WASD, shift to hurry, esc to orbit'
+    : 'drag orbit · scroll zoom · right-drag pan';
+
+  if (on) {
+    // Start from where the orbit camera was looking, at head height, facing in.
+    const t = orbit.target;
+    const from = camera.position;
+    const dir = new THREE.Vector3(t.x - from.x, 0, t.z - from.z);
+    if (dir.lengthSq() < 1e-6) dir.set(0, 0, -1);
+    dir.normalize();
+    const p = new THREE.Vector3(t.x - dir.x * 2.2, EYE_Y, t.z - dir.z * 2.2);
+    clampWalker(p);
+    camera.position.copy(p);
+    camera.lookAt(t.x, EYE_Y, t.z);
+    walk.vel.set(0, 0, 0);
+    pointer.lock();
+  } else {
+    pointer.unlock();
+    // Leave the orbit target somewhere sensible: just ahead of where you stood.
+    const fwd = new THREE.Vector3();
+    camera.getWorldDirection(fwd);
+    orbit.target.set(camera.position.x + fwd.x * 2.5, 1.05, camera.position.z + fwd.z * 2.5);
+  }
+}
+/* Escape releases the lock, and that is how you get back to orbit. But a lock
+   request the browser simply refuses also fires unlock, and treating that as
+   "leave" would bounce you straight out of walk mode. So only a lock that was
+   actually held counts as a way out; a refused one leaves you walking, just
+   without mouse-look. */
+pointer.addEventListener('lock',   () => { walk.locked = true; });
+pointer.addEventListener('unlock', () => {
+  if (!walk.locked) return;
+  walk.locked = false;
+  if (walk.on) setWalk(false);
+});
+
+/* Push out of every blocker, then keep inside the room. Done as position
+   repair rather than as forces: at walking speed it is indistinguishable and
+   it cannot tunnel or oscillate. */
+function clampWalker(p) {
+  for (const b of blockers()) {
+    const dx = p.x - b.x, dz = p.z - b.z;
+    const d = Math.hypot(dx, dz);
+    if (d < b.r) {
+      if (d < 1e-6) { p.x = b.x + b.r; continue; }
+      p.x = b.x + (dx / d) * b.r;
+      p.z = b.z + (dz / d) * b.r;
+    }
+  }
+  const rad = Math.hypot(p.x, p.z);
+  if (rad > ROOM_R) { p.x *= ROOM_R / rad; p.z *= ROOM_R / rad; }
+  p.y = EYE_Y + walk.bob;
+}
+
+function stepWalker(dt) {
+  if (!walk.on) return;
+  const k = walk.keys;
+  let ix = (k.has('KeyD') || k.has('ArrowRight') ? 1 : 0) - (k.has('KeyA') || k.has('ArrowLeft') ? 1 : 0);
+  let iz = (k.has('KeyW') || k.has('ArrowUp') ? 1 : 0) - (k.has('KeyS') || k.has('ArrowDown') ? 1 : 0);
+
+  // Translate in the yaw plane only — looking at the ceiling should not stop
+  // you walking forwards.
+  const fwd = new THREE.Vector3();
+  camera.getWorldDirection(fwd);
+  fwd.y = 0;
+  if (fwd.lengthSq() < 1e-6) fwd.set(0, 0, -1);
+  fwd.normalize();
+  const right = new THREE.Vector3(-fwd.z, 0, fwd.x);
+
+  const speed = (k.has('ShiftLeft') || k.has('ShiftRight')) ? RUN_MS : WALK_MS;
+  const want = new THREE.Vector3()
+    .addScaledVector(fwd, iz)
+    .addScaledVector(right, ix);
+  if (want.lengthSq() > 1e-6) want.normalize().multiplyScalar(speed);
+
+  // Critically-ish damped approach: instant enough to feel responsive, soft
+  // enough that the listener is not teleporting between frames.
+  const a = 1 - Math.exp(-8 * dt);
+  walk.vel.x += (want.x - walk.vel.x) * a;
+  walk.vel.z += (want.z - walk.vel.z) * a;
+
+  const moving = walk.vel.lengthSq() > 0.02;
+  walk.bob = moving ? Math.sin(performance.now() * 0.0119) * 0.012 : walk.bob * (1 - a);
+
+  const p = camera.position.clone();
+  p.x += walk.vel.x * dt;
+  p.z += walk.vel.z * dt;
+  clampWalker(p);
+  camera.position.copy(p);
+}
+
+addEventListener('keydown', e => {
+  if (e.code === 'KeyV' && !e.repeat && !/^(INPUT|SELECT|TEXTAREA)$/.test(document.activeElement?.tagName || '')) {
+    setWalk(!walk.on);
+    return;
+  }
+  if (walk.on) { walk.keys.add(e.code); if (e.code.startsWith('Arrow') || e.code === 'Space') e.preventDefault(); }
+});
+addEventListener('keyup', e => walk.keys.delete(e.code));
+addEventListener('blur', () => walk.keys.clear());
+
+/* Where the ear is. Walking, it is the head. Orbiting, it is the point the
+   camera is looking at rather than the camera itself — otherwise pulling the
+   view back to see the whole room would also make the room go quiet and
+   distant, which is a camera artefact, not a fact about the sculpture. */
+const _ear = new THREE.Vector3();
+function listenerPos(out) {
+  return walk.on ? out.copy(camera.position) : out.copy(orbit.target);
+}
+
+/* ════════════════════════════════════════════════════════════════════════
    PLAYBACK — Motions and Sequences straight out of library.json
    ════════════════════════════════════════════════════════════════════════ */
 let library = { motions: [], sequences: [] };
@@ -1582,7 +1744,8 @@ function animate() {
   audio.setScrape(totalScrape);
   audio.setClatter(clackRate);
 
-  orbit.update();
+  stepWalker(dt);
+  if (!walk.on) orbit.update();
   renderer.render(scene, camera);
   drawReadout();
   drawMeters();
@@ -1590,6 +1753,17 @@ function animate() {
 
 function drawReadout() {
   const lines = [];
+  const ear = listenerPos(_ear);
+  let near = null, nearD = Infinity;
+  for (const rg of rigs) {
+    const d = Math.hypot(ear.x - rg.group.position.x, ear.z - rg.group.position.z);
+    if (d < nearD) { nearD = d; near = rg; }
+  }
+  const fwd = new THREE.Vector3();
+  camera.getWorldDirection(fwd);
+  const facing = ((Math.atan2(fwd.x, -fwd.z) * 180 / Math.PI) + 360) % 360;
+  lines.push(`room   ${walk.on ? 'walk' : 'orbit'}  x ${ear.x.toFixed(2).padStart(6)}  z ${ear.z.toFixed(2).padStart(6)}`
+    + `  facing ${facing.toFixed(0).padStart(3)}°   nearest b${near.id} ${nearD.toFixed(1)} m`);
   for (const rg of rigs) {
     const st = rg.st, i = rg.info;
     const mark = rg.id === state.focusId ? '▸' : ' ';
@@ -1685,6 +1859,7 @@ $('gang').addEventListener('change', e => {
   const rg = focusRig();
   if (e.target.checked && !rg.noServos) { const v = +sliders[0].value; rg.st.target = [v, v, v]; syncSlidersFromTarget(); }
 });
+$('walkBtn').addEventListener('click', () => setWalk(!walk.on));
 $('slew').addEventListener('change', e => state.slewLimit = e.target.checked);
 $('boardSel').addEventListener('change', e => {
   state.focusId = +e.target.value;
