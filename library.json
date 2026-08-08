@@ -665,6 +665,600 @@
         }
       ],
       "machine": 3
+    },
+    {
+      "id": "mt-wclear",
+      "name": "Wands · all clear",
+      "tags": [
+        "bench",
+        "wands"
+      ],
+      "scope": "cluster",
+      "machine": 1,
+      "durationMs": 8000,
+      "tracks": [
+        {
+          "kind": "servo",
+          "boardId": 1,
+          "channel": 0,
+          "label": "B1.S0",
+          "keyframes": [
+            {
+              "atMs": 0,
+              "value": 100
+            },
+            {
+              "atMs": 7700,
+              "value": 0
+            }
+          ]
+        },
+        {
+          "kind": "servo",
+          "boardId": 1,
+          "channel": 1,
+          "label": "B1.S1",
+          "keyframes": [
+            {
+              "atMs": 0,
+              "value": 100
+            },
+            {
+              "atMs": 7700,
+              "value": 0
+            }
+          ]
+        },
+        {
+          "kind": "servo",
+          "boardId": 1,
+          "channel": 2,
+          "label": "B1.S2",
+          "keyframes": [
+            {
+              "atMs": 0,
+              "value": 100
+            },
+            {
+              "atMs": 7700,
+              "value": 0
+            }
+          ]
+        },
+        {
+          "kind": "servo",
+          "boardId": 3,
+          "channel": 0,
+          "label": "B3.S0",
+          "keyframes": [
+            {
+              "atMs": 0,
+              "value": 100
+            }
+          ]
+        },
+        {
+          "kind": "servo",
+          "boardId": 3,
+          "channel": 1,
+          "label": "B3.S1",
+          "keyframes": [
+            {
+              "atMs": 0,
+              "value": 100
+            }
+          ]
+        },
+        {
+          "kind": "servo",
+          "boardId": 3,
+          "channel": 2,
+          "label": "B3.S2",
+          "keyframes": [
+            {
+              "atMs": 0,
+              "value": 100
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "mt-wstrike",
+      "name": "Wands · all in",
+      "tags": [
+        "bench",
+        "wands"
+      ],
+      "scope": "cluster",
+      "machine": 1,
+      "durationMs": 8000,
+      "tracks": [
+        {
+          "kind": "servo",
+          "boardId": 1,
+          "channel": 0,
+          "label": "B1.S0",
+          "keyframes": [
+            {
+              "atMs": 0,
+              "value": 0
+            },
+            {
+              "atMs": 7700,
+              "value": 100
+            }
+          ]
+        },
+        {
+          "kind": "servo",
+          "boardId": 1,
+          "channel": 1,
+          "label": "B1.S1",
+          "keyframes": [
+            {
+              "atMs": 0,
+              "value": 0
+            },
+            {
+              "atMs": 7700,
+              "value": 100
+            }
+          ]
+        },
+        {
+          "kind": "servo",
+          "boardId": 1,
+          "channel": 2,
+          "label": "B1.S2",
+          "keyframes": [
+            {
+              "atMs": 0,
+              "value": 0
+            },
+            {
+              "atMs": 7700,
+              "value": 100
+            }
+          ]
+        },
+        {
+          "kind": "servo",
+          "boardId": 3,
+          "channel": 0,
+          "label": "B3.S0",
+          "keyframes": [
+            {
+              "atMs": 0,
+              "value": 100
+            }
+          ]
+        },
+        {
+          "kind": "servo",
+          "boardId": 3,
+          "channel": 1,
+          "label": "B3.S1",
+          "keyframes": [
+            {
+              "atMs": 0,
+              "value": 100
+            }
+          ]
+        },
+        {
+          "kind": "servo",
+          "boardId": 3,
+          "channel": 2,
+          "label": "B3.S2",
+          "keyframes": [
+            {
+              "atMs": 0,
+              "value": 100
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "mt-wcasc",
+      "name": "Wands · cascade in",
+      "tags": [
+        "bench",
+        "wands"
+      ],
+      "scope": "cluster",
+      "machine": 1,
+      "durationMs": 12000,
+      "tracks": [
+        {
+          "kind": "servo",
+          "boardId": 1,
+          "channel": 0,
+          "label": "B1.S0",
+          "keyframes": [
+            {
+              "atMs": 0,
+              "value": 0
+            },
+            {
+              "atMs": 7700,
+              "value": 100
+            }
+          ]
+        },
+        {
+          "kind": "servo",
+          "boardId": 1,
+          "channel": 1,
+          "label": "B1.S1",
+          "keyframes": [
+            {
+              "atMs": 0,
+              "value": 0
+            },
+            {
+              "atMs": 2000,
+              "value": 0
+            },
+            {
+              "atMs": 9700,
+              "value": 100
+            }
+          ]
+        },
+        {
+          "kind": "servo",
+          "boardId": 1,
+          "channel": 2,
+          "label": "B1.S2",
+          "keyframes": [
+            {
+              "atMs": 0,
+              "value": 0
+            },
+            {
+              "atMs": 4000,
+              "value": 0
+            },
+            {
+              "atMs": 11700,
+              "value": 100
+            }
+          ]
+        },
+        {
+          "kind": "servo",
+          "boardId": 3,
+          "channel": 0,
+          "label": "B3.S0",
+          "keyframes": [
+            {
+              "atMs": 0,
+              "value": 100
+            }
+          ]
+        },
+        {
+          "kind": "servo",
+          "boardId": 3,
+          "channel": 1,
+          "label": "B3.S1",
+          "keyframes": [
+            {
+              "atMs": 0,
+              "value": 100
+            }
+          ]
+        },
+        {
+          "kind": "servo",
+          "boardId": 3,
+          "channel": 2,
+          "label": "B3.S2",
+          "keyframes": [
+            {
+              "atMs": 0,
+              "value": 100
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "mt-wsolo",
+      "name": "Wands · one only",
+      "tags": [
+        "bench",
+        "wands"
+      ],
+      "scope": "cluster",
+      "machine": 1,
+      "durationMs": 8000,
+      "tracks": [
+        {
+          "kind": "servo",
+          "boardId": 1,
+          "channel": 0,
+          "label": "B1.S0",
+          "keyframes": [
+            {
+              "atMs": 0,
+              "value": 0
+            },
+            {
+              "atMs": 7700,
+              "value": 100
+            }
+          ]
+        },
+        {
+          "kind": "servo",
+          "boardId": 1,
+          "channel": 1,
+          "label": "B1.S1",
+          "keyframes": [
+            {
+              "atMs": 0,
+              "value": 0
+            }
+          ]
+        },
+        {
+          "kind": "servo",
+          "boardId": 1,
+          "channel": 2,
+          "label": "B1.S2",
+          "keyframes": [
+            {
+              "atMs": 0,
+              "value": 0
+            }
+          ]
+        },
+        {
+          "kind": "servo",
+          "boardId": 3,
+          "channel": 0,
+          "label": "B3.S0",
+          "keyframes": [
+            {
+              "atMs": 0,
+              "value": 100
+            }
+          ]
+        },
+        {
+          "kind": "servo",
+          "boardId": 3,
+          "channel": 1,
+          "label": "B3.S1",
+          "keyframes": [
+            {
+              "atMs": 0,
+              "value": 100
+            }
+          ]
+        },
+        {
+          "kind": "servo",
+          "boardId": 3,
+          "channel": 2,
+          "label": "B3.S2",
+          "keyframes": [
+            {
+              "atMs": 0,
+              "value": 100
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "mt-whalf",
+      "name": "Wands · half depth",
+      "tags": [
+        "bench",
+        "wands"
+      ],
+      "scope": "cluster",
+      "machine": 1,
+      "durationMs": 5000,
+      "tracks": [
+        {
+          "kind": "servo",
+          "boardId": 1,
+          "channel": 0,
+          "label": "B1.S0",
+          "keyframes": [
+            {
+              "atMs": 0,
+              "value": 0
+            },
+            {
+              "atMs": 3850,
+              "value": 50
+            }
+          ]
+        },
+        {
+          "kind": "servo",
+          "boardId": 1,
+          "channel": 1,
+          "label": "B1.S1",
+          "keyframes": [
+            {
+              "atMs": 0,
+              "value": 0
+            },
+            {
+              "atMs": 3850,
+              "value": 50
+            }
+          ]
+        },
+        {
+          "kind": "servo",
+          "boardId": 1,
+          "channel": 2,
+          "label": "B1.S2",
+          "keyframes": [
+            {
+              "atMs": 0,
+              "value": 0
+            },
+            {
+              "atMs": 3850,
+              "value": 50
+            }
+          ]
+        },
+        {
+          "kind": "servo",
+          "boardId": 3,
+          "channel": 0,
+          "label": "B3.S0",
+          "keyframes": [
+            {
+              "atMs": 0,
+              "value": 100
+            }
+          ]
+        },
+        {
+          "kind": "servo",
+          "boardId": 3,
+          "channel": 1,
+          "label": "B3.S1",
+          "keyframes": [
+            {
+              "atMs": 0,
+              "value": 100
+            }
+          ]
+        },
+        {
+          "kind": "servo",
+          "boardId": 3,
+          "channel": 2,
+          "label": "B3.S2",
+          "keyframes": [
+            {
+              "atMs": 0,
+              "value": 100
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "mt-wsweep",
+      "name": "Wands · in and out",
+      "tags": [
+        "bench",
+        "wands"
+      ],
+      "scope": "cluster",
+      "machine": 1,
+      "durationMs": 16000,
+      "tracks": [
+        {
+          "kind": "servo",
+          "boardId": 1,
+          "channel": 0,
+          "label": "B1.S0",
+          "keyframes": [
+            {
+              "atMs": 0,
+              "value": 100
+            },
+            {
+              "atMs": 7700,
+              "value": 0
+            },
+            {
+              "atMs": 15400,
+              "value": 100
+            }
+          ]
+        },
+        {
+          "kind": "servo",
+          "boardId": 1,
+          "channel": 1,
+          "label": "B1.S1",
+          "keyframes": [
+            {
+              "atMs": 0,
+              "value": 100
+            },
+            {
+              "atMs": 7700,
+              "value": 0
+            },
+            {
+              "atMs": 15400,
+              "value": 100
+            }
+          ]
+        },
+        {
+          "kind": "servo",
+          "boardId": 1,
+          "channel": 2,
+          "label": "B1.S2",
+          "keyframes": [
+            {
+              "atMs": 0,
+              "value": 100
+            },
+            {
+              "atMs": 7700,
+              "value": 0
+            },
+            {
+              "atMs": 15400,
+              "value": 100
+            }
+          ]
+        },
+        {
+          "kind": "servo",
+          "boardId": 3,
+          "channel": 0,
+          "label": "B3.S0",
+          "keyframes": [
+            {
+              "atMs": 0,
+              "value": 100
+            }
+          ]
+        },
+        {
+          "kind": "servo",
+          "boardId": 3,
+          "channel": 1,
+          "label": "B3.S1",
+          "keyframes": [
+            {
+              "atMs": 0,
+              "value": 100
+            }
+          ]
+        },
+        {
+          "kind": "servo",
+          "boardId": 3,
+          "channel": 2,
+          "label": "B3.S2",
+          "keyframes": [
+            {
+              "atMs": 0,
+              "value": 100
+            }
+          ]
+        }
+      ]
     }
   ],
   "sequences": [
@@ -860,6 +1454,168 @@
         }
       ],
       "machine": 3
+    },
+    {
+      "id": "sq-benchw",
+      "name": "Bench · wands",
+      "tags": [
+        "bench"
+      ],
+      "machine": 1,
+      "steps": [
+        {
+          "cmd": "MOTION mt-wclear",
+          "durationMs": 8000,
+          "target": "1",
+          "label": "start clear, ring stopped",
+          "hold": false,
+          "dc": {
+            "1": 0
+          }
+        },
+        {
+          "cmd": "MOTION mt-wstrike",
+          "durationMs": 8000,
+          "target": "1",
+          "label": "wands in, ring turning",
+          "hold": false,
+          "dc": {
+            "1": 25
+          }
+        },
+        {
+          "cmd": "MOTION mt-wcasc",
+          "durationMs": 12000,
+          "target": "1",
+          "label": "cascade against a faster ring",
+          "hold": false,
+          "dc": {
+            "1": 40
+          }
+        },
+        {
+          "cmd": "MOTION mt-wclear",
+          "durationMs": 8000,
+          "target": "1",
+          "label": "clear and stop",
+          "hold": false,
+          "dc": {
+            "1": 0
+          }
+        }
+      ]
+    },
+    {
+      "id": "sq-benchf",
+      "name": "Bench · field",
+      "tags": [
+        "bench"
+      ],
+      "machine": 2,
+      "steps": [
+        {
+          "cmd": "ROTATE 12",
+          "durationMs": 6000,
+          "target": "2",
+          "label": "just turning — 15 rpm",
+          "hold": false,
+          "dc": {}
+        },
+        {
+          "cmd": "ROTATE 30",
+          "durationMs": 6000,
+          "target": "2",
+          "label": "38 rpm",
+          "hold": false,
+          "dc": {}
+        },
+        {
+          "cmd": "ROTATE 50",
+          "durationMs": 6000,
+          "target": "2",
+          "label": "64 rpm, the lane's limit",
+          "hold": false,
+          "dc": {}
+        },
+        {
+          "cmd": "ROTATE 0",
+          "durationMs": 4000,
+          "target": "2",
+          "label": "stop",
+          "hold": false,
+          "dc": {}
+        }
+      ]
+    },
+    {
+      "id": "sq-benchall",
+      "name": "Bench · all three",
+      "tags": [
+        "bench"
+      ],
+      "machine": null,
+      "steps": [
+        {
+          "cmd": "MOTION mt-wclear",
+          "durationMs": 8000,
+          "target": "1",
+          "label": "wands clear",
+          "hold": false,
+          "dc": {
+            "1": 0
+          }
+        },
+        {
+          "cmd": "MOTION mt-allup",
+          "durationMs": 8000,
+          "target": "3",
+          "label": "curtain lifts",
+          "hold": false,
+          "dc": {
+            "3": 10
+          }
+        },
+        {
+          "cmd": "ROTATE 30",
+          "durationMs": 6000,
+          "target": "2",
+          "label": "field joins",
+          "hold": false,
+          "dc": {}
+        },
+        {
+          "cmd": "MOTION mt-wstrike",
+          "durationMs": 8000,
+          "target": "1",
+          "label": "wands in",
+          "hold": false,
+          "dc": {
+            "1": 35
+          }
+        },
+        {
+          "cmd": "MOTION mt-low1",
+          "durationMs": 6500,
+          "target": "3",
+          "label": "curtain drags",
+          "hold": false,
+          "dc": {
+            "3": 12
+          }
+        },
+        {
+          "cmd": "MOTION mt-wclear",
+          "durationMs": 8000,
+          "target": "1",
+          "label": "everything clear and stopped",
+          "hold": false,
+          "dc": {
+            "1": 0,
+            "2": 0,
+            "3": 0
+          }
+        }
+      ]
     }
   ],
   "setlists": [
@@ -896,6 +1652,24 @@
           "seqId": "sq-nxy2a1",
           "repeat": 1,
           "gapMs": 0,
+          "weight": 1
+        },
+        {
+          "seqId": "sq-benchw",
+          "repeat": 1,
+          "gapMs": 2000,
+          "weight": 1
+        },
+        {
+          "seqId": "sq-benchf",
+          "repeat": 1,
+          "gapMs": 2000,
+          "weight": 1
+        },
+        {
+          "seqId": "sq-benchall",
+          "repeat": 1,
+          "gapMs": 2000,
           "weight": 1
         }
       ],
