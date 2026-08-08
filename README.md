@@ -76,10 +76,17 @@ motor supply ground and the Arduino ground **must be common**.
 4. **Open the dashboard.** Serve the page from the project folder so authored content
    persists to `library.json`:
    ```bash
-   python3 servo_library_server.py
+   npm start
    ```
-   Then open <http://127.0.0.1:4173/servo_controller.html>. Without the helper the
-   page still runs, falling back to browser `localStorage`.
+   Then open <http://127.0.0.1:4173/servo_controller.html>. No install step — the
+   helper has no dependencies. Without it the page still runs, falling back to
+   browser `localStorage`.
+
+   The 3D simulator is served from the same origin at
+   <http://127.0.0.1:4173/sculpture_3d.html>, which is what lets the dashboard drive
+   it over a BroadcastChannel. Opened as bare files the two are same-origin in some
+   browsers and not in others — Firefox gives every `file://` document its own opaque
+   origin — so serve both if the link will not connect.
 
 On boot each board joins WiFi, prints its IP over Serial (115200 baud), serves its
 HTTP API, and announces itself to the cluster over UDP.
@@ -136,7 +143,9 @@ The page is organized into numbered sections:
 `sculpture_3d.html` puts all three machines in one room and drives them from exactly what
 the dashboard can command: the winch servos as percent-down (0 = fully up, 100 = fully
 down, unpowered rest) and the DC motors as signed speed. Open the file directly — it needs
-no server — or serve it from the helper at <http://127.0.0.1:4173/sculpture_3d.html>.
+no server — or serve it alongside the dashboard with `npm start`, at
+<http://127.0.0.1:4173/sculpture_3d.html>. Serving both is what makes the dashboard
+link work reliably, because a BroadcastChannel is scoped to an origin.
 `three.js` loads from jsDelivr, so the page needs a network the first time it is opened;
 `vendor/` is a leftover of an earlier vendored copy and is no longer used.
 
@@ -376,7 +385,8 @@ adafruit_16_servo/      Firmware (one sketch, modular headers)
   servo_setup.h           Per-channel hardware config
   Secrets.h.example       WiFi + OTA credential template
 servo_controller.html   Browser dashboard (single file)
-servo_library_server.py Local helper: serves the page, persists library.json
+serve.mjs               Local helper: serves both pages on one origin, persists library.json
+package.json            npm start (serve) and npm test (browser-side verifiers)
 compile-firmware.sh     Build the OTA bin (and optionally serve the page)
 ota-all.sh              OTA-flash every board
 docs/sequencer-schema.md  Content data model and interpolation rules

@@ -3,8 +3,8 @@
   "configurations": [
     {
       "name": "servo-controller",
-      "runtimeExecutable": "python3",
-      "runtimeArgs": ["servo_library_server.py", "--port", "4173"],
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["start", "--", "--port", "4173"],
       "port": 4173
     }
   ]

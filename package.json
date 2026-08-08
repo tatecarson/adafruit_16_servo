@@ -1,0 +1,15 @@
+{
+  "name": "adafruit-16-servo",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Servo cluster dashboard, 3D sculpture simulator, and UNO R4 firmware",
+  "type": "module",
+  "scripts": {
+    "start": "node serve.mjs",
+    "serve": "node serve.mjs",
+    "test": "node test/run-all.mjs"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

@@ -265,7 +265,7 @@
     },
     {
       "id": "mt-stg2",
-      "name": "Lower Arm 2 \u00b7 1 held",
+      "name": "Lower Arm 2 · 1 held",
       "tags": [
         "drag"
       ],
@@ -388,7 +388,7 @@
     },
     {
       "id": "mt-stg3",
-      "name": "Lower Arm 3 \u00b7 1-2 held",
+      "name": "Lower Arm 3 · 1-2 held",
       "tags": [
         "drag"
       ],
@@ -769,7 +769,7 @@
     },
     {
       "id": "mt-stir",
-      "name": "All Down \u00b7 Stir",
+      "name": "All Down · Stir",
       "tags": [
         "drag",
         "agitated"
@@ -972,7 +972,7 @@
     },
     {
       "id": "sq-drag01",
-      "name": "Contact Build \u00b7 Slow to Fast",
+      "name": "Contact Build · Slow to Fast",
       "tags": [
         "slow",
         "build"
@@ -982,7 +982,7 @@
           "cmd": "MOTION mt-low1",
           "durationMs": 6500,
           "target": "all",
-          "label": "arm 1 drags \u00b7 slow",
+          "label": "arm 1 drags · slow",
           "hold": false,
           "dc": {
             "3": 10
@@ -1001,7 +1001,7 @@
           "cmd": "MOTION mt-stg2",
           "durationMs": 6500,
           "target": "all",
-          "label": "arm 2 drags \u00b7 slow",
+          "label": "arm 2 drags · slow",
           "hold": false,
           "dc": {
             "3": 10
@@ -1020,7 +1020,7 @@
           "cmd": "MOTION mt-stg3",
           "durationMs": 6500,
           "target": "all",
-          "label": "arm 3 drags \u00b7 all down",
+          "label": "arm 3 drags · all down",
           "hold": false,
           "dc": {
             "3": 10
@@ -1039,7 +1039,7 @@
           "cmd": "MOTION mt-stir",
           "durationMs": 6500,
           "target": "all",
-          "label": "all dragging \u00b7 faster",
+          "label": "all dragging · faster",
           "hold": false,
           "dc": {
             "3": 10

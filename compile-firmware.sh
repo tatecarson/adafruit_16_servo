@@ -91,6 +91,8 @@ echo "Wrote $MANIFEST"
 echo "Firmware: ${FW_BUILD:-unknown} · $(wc -c < "$OUT_BIN" | tr -d ' ') bytes"
 
 if (( SERVE )); then
-  echo "Serving http://127.0.0.1:$PORT/servo_controller.html"
-  python3 -m http.server "$PORT" --bind 127.0.0.1
+  # The project helper rather than a plain static server: it puts the dashboard
+  # and the simulator on one origin and accepts library.json writes, neither of
+  # which `http.server` does.
+  exec node serve.mjs --port "$PORT" --host 127.0.0.1
 fi
