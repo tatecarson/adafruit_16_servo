@@ -116,7 +116,7 @@
 <body>
 
 <div id="stage">
-  <div id="hud">rig <b id="hudBoard">board 3</b> · <span id="hudMode">drag orbit · scroll zoom · right-drag pan</span></div>
+  <div id="hud">rig <b id="hudBoard">board 3</b> · <span id="hudMode">click a machine · drag orbit · scroll zoom</span></div>
   <div id="readout"></div>
 </div>
 
@@ -127,8 +127,12 @@
     <h2>Room</h2>
     <div class="btns">
       <button id="walkBtn" aria-pressed="false">Orbiting</button>
+      <button id="roomBtn">Room view</button>
     </div>
-    <div class="note">Walk (or press <b>V</b>) to stand in the room at head height:
+    <div class="note"><b>Click a sculpture</b> to fly to it — that also points the
+      servo and motor panels at its board. Double-click the floor, or use
+      <b>Room view</b>, to pull back out.
+      Walk (or press <b>V</b>) to stand in the room at head height:
       <b>WASD</b> to move, mouse to look, <b>shift</b> to hurry, <b>esc</b> back to orbit.
       The machines are 5 m apart, so what you hear depends on where you stand.</div>
   </section>
@@ -2444,7 +2448,7 @@ function setWalk(on) {
   $('walkBtn').textContent = on ? 'Walking' : 'Orbiting';
   document.getElementById('hudMode').textContent = on
     ? 'walk · WASD, shift to hurry, esc to orbit'
-    : 'drag orbit · scroll zoom · right-drag pan';
+    : 'click a machine · drag orbit · scroll zoom';
 
   if (on) {
     // Start from where the orbit camera was looking, at head height, facing in.
@@ -2547,6 +2551,137 @@ addEventListener('keydown', e => {
 });
 addEventListener('keyup', e => walk.keys.delete(e.code));
 addEventListener('blur', () => walk.keys.clear());
+
+/* ════════════════════════════════════════════════════════════════════════
+   CLICK A MACHINE TO GO TO IT
+
+   Orbiting to a particular sculpture in a room of three is fiddly — you end
+   up dragging, overshooting and losing which one you were looking at. So
+   click it. It frames that machine and points the servo and motor panels at
+   the same board, because wanting a closer look and wanting to drive it are
+   almost always the same intent.
+
+   Each machine gets its own framing rather than a shared distance: the
+   curtain is three metres tall and the field deck is a dinner plate on a
+   table, and one camera distance cannot flatter both.
+   ════════════════════════════════════════════════════════════════════════ */
+const FRAMING = {
+  3: { y: 1.45, dist: 4.6 },   // the whole tower, ceiling plate to floor
+  1: { y: 1.10, dist: 2.6 },   // ring and tubes, wands readable
+  2: { y: 0.95, dist: 1.5 },   // deck height — close enough to see the balls
+};
+
+const focusAnim = { on: false, t: 0, dur: 0.65,
+                    fromT: new THREE.Vector3(), toT: new THREE.Vector3(),
+                    fromC: new THREE.Vector3(), toC: new THREE.Vector3() };
+
+function frameRig(rg) {
+  if (walk.on) return;                  // on foot you walk to things, not cut to them
+  const f = FRAMING[rg.id] || { y: 1.2, dist: 3 };
+  focusAnim.fromT.copy(orbit.target);
+  focusAnim.fromC.copy(camera.position);
+  focusAnim.toT.set(rg.group.position.x, f.y, rg.group.position.z);
+
+  // Approach from where the camera already is, so the room does not spin
+  // under you — only the distance and the centre change.
+  const dir = _v3a.subVectors(camera.position, focusAnim.toT);
+  dir.y = 0;
+  if (dir.lengthSq() < 1e-4) dir.set(0, 0, 1);
+  dir.normalize();
+  focusAnim.toC.set(
+    focusAnim.toT.x + dir.x * f.dist,
+    f.y + f.dist * 0.42,
+    focusAnim.toT.z + dir.z * f.dist);
+
+  focusAnim.t = 0;
+  focusAnim.on = true;
+
+  state.focusId = rg.id;
+  $('boardSel').value = String(rg.id);
+  syncSlidersFromTarget();
+  syncDcSlider();
+  setHudBoard();
+}
+
+/* Frame all three, for getting back out. */
+function frameRoom() {
+  if (walk.on) return;
+  focusAnim.fromT.copy(orbit.target);
+  focusAnim.fromC.copy(camera.position);
+  focusAnim.toT.set(0, 1.05, 0);
+  focusAnim.toC.set(6.2, 3.4, 8.2);
+  focusAnim.t = 0;
+  focusAnim.on = true;
+}
+
+function stepFocus(dt) {
+  if (!focusAnim.on) return;
+  focusAnim.t = Math.min(1, focusAnim.t + dt / focusAnim.dur);
+  // ease in-out, so it settles rather than arriving at speed
+  const u = focusAnim.t < 0.5
+    ? 4 * focusAnim.t ** 3
+    : 1 - Math.pow(-2 * focusAnim.t + 2, 3) / 2;
+  orbit.target.lerpVectors(focusAnim.fromT, focusAnim.toT, u);
+  camera.position.lerpVectors(focusAnim.fromC, focusAnim.toC, u);
+  if (focusAnim.t >= 1) focusAnim.on = false;
+}
+
+const _v3a = new THREE.Vector3();
+const ray = new THREE.Raycaster();
+const ndc = new THREE.Vector2();
+
+/* Which machine is under this pointer, if any. Sprites are skipped — the
+   strike flashes are billboards the size of a fist and would otherwise be
+   the thing you hit instead of the sculpture behind them. */
+function rigAt(clientX, clientY) {
+  const r = renderer.domElement.getBoundingClientRect();
+  ndc.x = ((clientX - r.left) / r.width) * 2 - 1;
+  ndc.y = -((clientY - r.top) / r.height) * 2 + 1;
+  ray.setFromCamera(ndc, camera);
+  const hits = ray.intersectObjects(rigs.map(x => x.group), true);
+  for (const h of hits) {
+    if (h.object.isSprite || h.object.visible === false) continue;
+    for (let o = h.object; o; o = o.parent) {
+      const rg = rigs.find(x => x.group === o);
+      if (rg) return rg;
+    }
+  }
+  return null;
+}
+
+/* OrbitControls owns dragging, so a click has to be told apart from a drag
+   that happens to start and end near the same place. Distance and time both,
+   because a slow careful drag can be short and a flick can be long. */
+let press = null;
+renderer.domElement.addEventListener('pointerdown', e => {
+  if (walk.on || e.button !== 0) { press = null; return; }
+  focusAnim.on = false;      // taking the mouse means you want manual control
+  press = { x: e.clientX, y: e.clientY, t: performance.now() };
+});
+renderer.domElement.addEventListener('pointerup', e => {
+  if (!press || walk.on) { press = null; return; }
+  const moved = Math.hypot(e.clientX - press.x, e.clientY - press.y);
+  const held = performance.now() - press.t;
+  press = null;
+  if (moved > 5 || held > 400) return;          // that was a drag
+  const rg = rigAt(e.clientX, e.clientY);
+  if (rg) frameRig(rg);
+});
+renderer.domElement.addEventListener('dblclick', e => {
+  if (walk.on) return;
+  if (!rigAt(e.clientX, e.clientY)) frameRoom();   // double-click the floor to back out
+});
+
+/* Hover feedback, or nobody discovers any of this. Throttled — a raycast per
+   mouse-move across three machines is not free. */
+let hoverAt = 0;
+renderer.domElement.addEventListener('pointermove', e => {
+  if (walk.on) { renderer.domElement.style.cursor = ''; return; }
+  const now = performance.now();
+  if (now - hoverAt < 90) return;
+  hoverAt = now;
+  renderer.domElement.style.cursor = rigAt(e.clientX, e.clientY) ? 'pointer' : '';
+});
 
 /* Where the ear is. Walking, it is the head. Orbiting, it is the point the
    camera is looking at rather than the camera itself — otherwise pulling the
@@ -2938,6 +3073,7 @@ function animate() {
   audio.updateListener();
 
   stepWalker(dt);
+  stepFocus(dt);
   if (!walk.on) orbit.update();
   renderer.render(scene, camera);
   drawReadout();
@@ -3057,6 +3193,7 @@ $('gang').addEventListener('change', e => {
   if (e.target.checked && !rg.noServos) { const v = +sliders[0].value; rg.st.target = [v, v, v]; syncSlidersFromTarget(); }
 });
 $('walkBtn').addEventListener('click', () => setWalk(!walk.on));
+$('roomBtn').addEventListener('click', () => frameRoom());
 
 const setBankState = (s) => { $('bankState').textContent = s; };
 $('b1spread').addEventListener('input', e => {
@@ -3241,6 +3378,19 @@ resize();
    what solo/mute did to its gain. */
 window.__audio = audio;
 window.__rigs = rigs;
+// The fly-to runs off the animation loop, which a hidden tab stops entirely.
+// Exposing it means the framing can be checked without waiting on frames.
+window.__focus = {
+  anim: focusAnim,
+  to: (id) => frameRig(rigById.get(id)),
+  room: frameRoom,
+  step: (dt) => stepFocus(dt),
+  where: () => ({
+    target: orbit.target.toArray().map(n => +n.toFixed(3)),
+    camera: camera.position.toArray().map(n => +n.toFixed(3)),
+    dist: +camera.position.distanceTo(orbit.target).toFixed(3),
+  }),
+};
 window.__mix = () => rigs.map(r => {
   const m = audio.models.get(r.id);
   const w = new THREE.Vector3();
