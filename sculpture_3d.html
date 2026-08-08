@@ -79,6 +79,9 @@
   button.hot:hover { border-color: var(--alert); }
   button[aria-pressed=true] { color: var(--bg); background: var(--amber); border-color: var(--amber); }
   .btns { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; }
+  .mix { margin-top: 10px; display: grid; gap: 4px; }
+  .mixrow { display: grid; grid-template-columns: 1fr auto auto; gap: 5px; align-items: center; }
+  .mixrow b { font-weight: 400; color: var(--ink-mute); font-size: 10px; letter-spacing: .06em; }
 
   select, input[type=text], input[type=number] {
     font-family: var(--mono); font-size: 11px; background: var(--bg-deep); color: var(--ink);
@@ -140,6 +143,19 @@
     <div class="note">All three stand in the room at once. This picks which board the
       servo and motor controls below are addressing — it does not change what is on
       screen. Boards 1 &amp; 2 render a placeholder until their designs land.</div>
+    <div class="mix">
+      <div class="mixrow"><b>b1 wands</b>
+        <button data-solo="1" aria-pressed="false">Solo</button>
+        <button data-mute="1" aria-pressed="false">Mute</button></div>
+      <div class="mixrow"><b>b2 field</b>
+        <button data-solo="2" aria-pressed="false">Solo</button>
+        <button data-mute="2" aria-pressed="false">Mute</button></div>
+      <div class="mixrow"><b>b3 curtain</b>
+        <button data-solo="3" aria-pressed="false">Solo</button>
+        <button data-mute="3" aria-pressed="false">Mute</button></div>
+    </div>
+    <div class="note">Solo and mute are a gain on everything that machine makes,
+      drones included — so a soloed machine really is the only thing in the room.</div>
   </section>
 
   <section>
@@ -378,156 +394,302 @@ const LAYOUT = {
 const ROOM_R = 7.5;
 
 /* ════════════════════════════════════════════════════════════════════════
-   AUDIO
-   Two voices, both synthesised — nothing is sampled or scheduled ahead.
+   AUDIO — one room, three machines, one ear
 
+   Every voice ends up at a PannerNode placed where the thing making it
+   actually is, and the listener rides the walker's head. That is the whole
+   point of the room: what you hear is a consequence of where you stand, not a
+   fixed mix. Machines are static, so their panners are positioned once at
+   build time and only the listener moves.
+
+   Each machine owns a gain between its voices and the master. Solo and mute
+   are that gain, which means they silence drones and strikes alike — a solo
+   gate that only stops new events would leave the other machines humming.
+
+   Board 3's voices, all synthesised, nothing sampled or scheduled ahead:
    · scrape — looping noise through a pair of bandpasses, gain and brightness
-     driven by how fast the contacting dowels are actually moving across the
-     deck. Sits somewhere between a brush on a snare and sandpaper.
-   · clack — one short event per curtain strike: a noise burst through two
+     driven by how fast the contacting dowels are sliding across the deck.
+     Panned at the deck, so it is under your feet when you stand at the rig.
+   · clatter — a noise bed that takes over above DISCRETE_MAX strikes/sec,
+     because several hundred impacts a second is a roar, not a sequence of
+     taps. Given a wide refDistance so the whole curtain does not collapse to
+     a point when you walk up to it.
+   · clack — one short event per curtain strike: a noise burst through three
      high-Q resonances an inharmonic ratio apart, which is roughly how a
-     wooden bar rings. Pitch scales with dowel length, gain with impact speed.
+     wooden bar rings. Routed to one of six permanent panners around the outer
+     ring by where on the ring it struck, so the strike field turns around you
+     as the curtain turns. Cheaper than the per-event stereo panner it
+     replaces, and actually spatial.
 
    The context can only start from a user gesture, hence the Audio button.
    ════════════════════════════════════════════════════════════════════════ */
 const DISCRETE_MAX = 45;      // clacks/sec struck individually; the rest become clatter
+const RIM_SECTORS  = 6;
 const scrapeCurve = (v) => 1 - Math.exp(-v / 5);
 
 const audio = {
-  ctx: null, master: null, noiseBuf: null,
-  scrapeGain: null, scrapeBp1: null, scrapeBp2: null,
-  clatterGain: null, clatterBp: null,
+  ctx: null, master: null, limiter: null, conv: null, wet: null, noiseBuf: null,
+  models: new Map(),          // rig id -> { out, send, voices, budget, budgetAt }
   on: false, volume: 0.65,
-  budget: 0, budgetAt: 0,
 
-  // Builds the graph and asks the context to start. Resolves as soon as the
-  // graph exists — resume() is fire-and-forget so a browser that refuses to
+  // Builds the shared graph and asks the context to start. Resolves as soon as
+  // the graph exists — resume() is fire-and-forget so a browser that refuses to
   // start it (no user activation, hidden tab) leaves the UI responsive and
   // reports the real ctx.state instead of hanging on an unresolved promise.
   enable() {
     if (!this.ctx) {
       const AC = window.AudioContext || window.webkitAudioContext;
       if (!AC) throw new Error('no Web Audio in this browser');
-      this.ctx = new AC();
+      const ctx = this.ctx = new AC();
 
-      // 2 s of white noise, reused by both voices
-      const n = Math.floor(this.ctx.sampleRate * 2);
-      this.noiseBuf = this.ctx.createBuffer(1, n, this.ctx.sampleRate);
+      // 2 s of white noise, shared by every noise voice in the room
+      const n = Math.floor(ctx.sampleRate * 2);
+      this.noiseBuf = ctx.createBuffer(1, n, ctx.sampleRate);
       const ch = this.noiseBuf.getChannelData(0);
       for (let i = 0; i < n; i++) ch[i] = Math.random() * 2 - 1;
 
-      this.master = this.ctx.createGain();
+      this.master = ctx.createGain();
       this.master.gain.value = this.volume;
-      this.master.connect(this.ctx.destination);
+      // Three machines at once will occasionally all peak together, and the
+      // sum of three honest mixes is not itself an honest mix without this.
+      this.limiter = ctx.createDynamicsCompressor();
+      this.limiter.threshold.value = -11;
+      this.limiter.knee.value = 8;
+      this.limiter.ratio.value = 12;
+      this.limiter.attack.value = 0.002;
+      this.limiter.release.value = 0.26;
+      this.master.connect(this.limiter).connect(ctx.destination);
 
-      // scrape voice
-      const src = this.ctx.createBufferSource();
-      src.buffer = this.noiseBuf;
-      src.loop = true;
-      this.scrapeBp1 = this.ctx.createBiquadFilter();
-      this.scrapeBp1.type = 'bandpass'; this.scrapeBp1.frequency.value = 1400; this.scrapeBp1.Q.value = 0.8;
-      this.scrapeBp2 = this.ctx.createBiquadFilter();
-      this.scrapeBp2.type = 'bandpass'; this.scrapeBp2.frequency.value = 320; this.scrapeBp2.Q.value = 1.6;
-      this.scrapeGain = this.ctx.createGain();
-      this.scrapeGain.gain.value = 0;
-      src.connect(this.scrapeBp1); src.connect(this.scrapeBp2);
-      this.scrapeBp1.connect(this.scrapeGain); this.scrapeBp2.connect(this.scrapeGain);
-      this.scrapeGain.connect(this.master);
-      src.start();
-
-      // clatter bed — see setClatter()
-      const src2 = this.ctx.createBufferSource();
-      src2.buffer = this.noiseBuf;
-      src2.loop = true;
-      this.clatterBp = this.ctx.createBiquadFilter();
-      this.clatterBp.type = 'bandpass'; this.clatterBp.frequency.value = 900; this.clatterBp.Q.value = 1.4;
-      this.clatterGain = this.ctx.createGain();
-      this.clatterGain.gain.value = 0;
-      src2.connect(this.clatterBp);
-      this.clatterBp.connect(this.clatterGain);
-      this.clatterGain.connect(this.master);
-      src2.start();
+      // A room tone. Shared, because the machines are in the same room.
+      this.conv = ctx.createConvolver();
+      this.conv.buffer = this.makeIR(2.4, 2.2);
+      this.wet = ctx.createGain();
+      this.wet.gain.value = 0.28;
+      this.conv.connect(this.wet).connect(this.master);
     }
     this.on = true;
     this.ctx.resume().catch(() => {});
+    this.applyLevels();
     return this.ctx.state;
+  },
+
+  /* A plain exponential-decay noise impulse. Cheap, and at this size the room
+     only has to stop the machines sounding like they are in free field. */
+  makeIR(seconds, decay) {
+    const ctx = this.ctx, sr = ctx.sampleRate;
+    const len = Math.floor(sr * seconds);
+    const buf = ctx.createBuffer(2, len, sr);
+    for (let c = 0; c < 2; c++) {
+      const d = buf.getChannelData(c);
+      for (let i = 0; i < len; i++) {
+        const t = i / len;
+        d[i] = (Math.random() * 2 - 1) * Math.pow(1 - t, decay);
+      }
+      for (const ms of [17, 29, 41, 63]) {
+        const i = Math.floor(sr * ms / 1000) + (c ? 37 : 0);
+        if (i < len) d[i] += (c ? -0.28 : 0.32);
+      }
+    }
+    return buf;
+  },
+
+  /* One bus per machine. Everything that machine makes goes through its out
+     gain, which is what solo and mute move. */
+  model(id) {
+    let m = this.models.get(id);
+    if (m) return m;
+    const ctx = this.ctx;
+    const out = ctx.createGain();
+    out.gain.value = 1;
+    out.connect(this.master);
+    const send = ctx.createGain();
+    send.gain.value = 0.5;
+    out.connect(send); send.connect(this.conv);
+    m = { out, send, voices: {}, budget: 0, budgetAt: 0 };
+    this.models.set(id, m);
+    return m;
+  },
+
+  /* A panner fixed at a point in the room. Machines do not move, so this is
+     set once — only the listener travels. */
+  panner(id, key, local, group, opts = {}) {
+    const m = this.model(id);
+    if (m.voices[key]) return m.voices[key];
+    const ctx = this.ctx;
+    const p = ctx.createPanner();
+    p.panningModel = 'HRTF';
+    p.distanceModel = 'inverse';
+    p.refDistance = opts.refDistance ?? 0.6;
+    p.rolloffFactor = opts.rolloff ?? 0.9;
+    const w = local.clone();
+    group.localToWorld(w);
+    if (p.positionX) { p.positionX.value = w.x; p.positionY.value = w.y; p.positionZ.value = w.z; }
+    else p.setPosition(w.x, w.y, w.z);
+    p.connect(m.out);
+    m.voices[key] = p;
+    return p;
+  },
+
+  /* The ear. Walking it is the head; orbiting it is the point being looked at
+     rather than the camera, so pulling back to see the whole room does not
+     also make the room go quiet. */
+  updateListener() {
+    if (!this.on || !this.ctx) return;
+    const L = this.ctx.listener;
+    const p = listenerPos(_earA);
+    const fwd = _earF;
+    if (walk.on) camera.getWorldDirection(fwd);
+    else fwd.subVectors(orbit.target, camera.position).normalize();
+    const t = this.ctx.currentTime;
+    if (L.positionX) {
+      L.positionX.setTargetAtTime(p.x, t, 0.02);
+      L.positionY.setTargetAtTime(p.y, t, 0.02);
+      L.positionZ.setTargetAtTime(p.z, t, 0.02);
+      L.forwardX.setTargetAtTime(fwd.x, t, 0.02);
+      L.forwardY.setTargetAtTime(fwd.y, t, 0.02);
+      L.forwardZ.setTargetAtTime(fwd.z, t, 0.02);
+      L.upX.value = 0; L.upY.value = 1; L.upZ.value = 0;
+    } else {
+      L.setPosition(p.x, p.y, p.z);
+      L.setOrientation(fwd.x, fwd.y, fwd.z, 0, 1, 0);
+    }
+  },
+
+  /* Solo wins over nothing, mute wins over solo. Because the gain sits
+     downstream of every voice, silencing a machine silences its drones too. */
+  applyLevels() {
+    if (!this.ctx) return;
+    const anySolo = rigs.some(r => r.solo);
+    const t = this.ctx.currentTime;
+    for (const r of rigs) {
+      const m = this.models.get(r.id);
+      if (!m) continue;
+      const g = (anySolo ? (r.solo ? 1 : 0) : 1) * (r.mute ? 0 : 1);
+      m.out.gain.setTargetAtTime(g, t, 0.03);
+    }
   },
 
   disable() {
     this.on = false;
-    if (this.ctx) {
-      this.scrapeGain.gain.setTargetAtTime(0, this.ctx.currentTime, 0.02);
-      this.clatterGain.gain.setTargetAtTime(0, this.ctx.currentTime, 0.02);
-      this.ctx.suspend();
+    if (!this.ctx) return;
+    for (const m of this.models.values()) {
+      for (const v of Object.values(m.voices)) {
+        if (v.__gain) v.__gain.gain.setTargetAtTime(0, this.ctx.currentTime, 0.02);
+      }
     }
+    this.ctx.suspend();
   },
 
   setVolume(v) { this.volume = v; if (this.master) this.master.gain.setTargetAtTime(v, this.ctx.currentTime, 0.03); },
+
+  /* ── board 3's voice set ─────────────────────────────────────────────── */
+
+  curtainVoices(rg) {
+    if (!this.on || !this.ctx) return null;
+    const m = this.model(rg.id);
+    if (m.built) return m;
+    const ctx = this.ctx;
+
+    const deck = this.panner(rg.id, 'deck', new THREE.Vector3(0, G.deckY, 0), rg.group, { refDistance: 0.8 });
+    const bed  = this.panner(rg.id, 'bed',  new THREE.Vector3(0, (G.ringYDown + G.deckY) / 2, 0), rg.group,
+                             { refDistance: 1.6, rolloff: 0.7 });
+    m.rim = [];
+    for (let k = 0; k < RIM_SECTORS; k++) {
+      const a = k * 2 * Math.PI / RIM_SECTORS;
+      m.rim.push(this.panner(rg.id, 'rim' + k,
+        new THREE.Vector3(Math.cos(a) * G.outerR, G.outerY * 0.55, Math.sin(a) * G.outerR), rg.group,
+        { refDistance: 0.7 }));
+    }
+
+    const loop = () => { const s = ctx.createBufferSource(); s.buffer = this.noiseBuf; s.loop = true; return s; };
+
+    const sSrc = loop();
+    const bp1 = ctx.createBiquadFilter(); bp1.type = 'bandpass'; bp1.frequency.value = 1400; bp1.Q.value = 0.8;
+    const bp2 = ctx.createBiquadFilter(); bp2.type = 'bandpass'; bp2.frequency.value = 320;  bp2.Q.value = 1.6;
+    const sG = ctx.createGain(); sG.gain.value = 0;
+    sSrc.connect(bp1); sSrc.connect(bp2);
+    bp1.connect(sG); bp2.connect(sG);
+    sG.connect(deck);
+    sSrc.start();
+
+    const cSrc = loop();
+    const cBp = ctx.createBiquadFilter(); cBp.type = 'bandpass'; cBp.frequency.value = 900; cBp.Q.value = 1.4;
+    const cG = ctx.createGain(); cG.gain.value = 0;
+    cSrc.connect(cBp); cBp.connect(cG); cG.connect(bed);
+    cSrc.start();
+
+    m.scrapeGain = sG; m.scrapeBp = bp1;
+    m.clatterGain = cG; m.clatterBp = cBp;
+    deck.__gain = sG; bed.__gain = cG;
+    m.built = true;
+    return m;
+  },
 
   /* intensity: metres/second of dowel sliding across the deck, summed over
      every contact. Ranges roughly 0..15 — near zero at rest, ~4 at a slow
      turn with the ring down, ~14 at full speed. Mapped through a soft curve
      rather than a hard clamp so the whole range stays audible instead of
      pinning at maximum the moment it starts moving. */
-  setScrape(intensity) {
-    if (!this.on || !this.ctx) return;
+  setScrape(rg, intensity) {
+    const m = this.curtainVoices(rg);
+    if (!m) return;
     const t = this.ctx.currentTime;
     const x = scrapeCurve(intensity);
-    this.scrapeGain.gain.setTargetAtTime(0.32 * x, t, 0.05);
-    this.scrapeBp1.frequency.setTargetAtTime(900 + 2600 * x, t, 0.08);
+    m.scrapeGain.gain.setTargetAtTime(0.32 * x, t, 0.05);
+    m.scrapeBp.frequency.setTargetAtTime(900 + 2600 * x, t, 0.08);
   },
 
-  /* At full speed the rig really does produce several hundred impacts a
-     second — 30 chains, a few dowels each in range, sweeping past 36 outer
-     chains. That is a wooden roar, not a sequence of taps, and no discrete
-     voice can play it. So DISCRETE_MAX of them are struck individually and
-     everything above that density feeds a noise bed instead. The crossfade is
-     what keeps a slow pass sounding like separate clacks and a fast one
-     sounding like the clatter it is. */
-  setClatter(rate) {
-    if (!this.on || !this.ctx) return;
+  setClatter(rg, rate) {
+    const m = this.curtainVoices(rg);
+    if (!m) return;
     const t = this.ctx.currentTime;
     const x = Math.min(1, Math.max(0, (rate - 35) / 450));
-    this.clatterGain.gain.setTargetAtTime(0.26 * x, t, 0.07);
-    this.clatterBp.frequency.setTargetAtTime(780 + 950 * x, t, 0.12);
+    m.clatterGain.gain.setTargetAtTime(0.26 * x, t, 0.07);
+    m.clatterBp.frequency.setTargetAtTime(780 + 950 * x, t, 0.12);
   },
 
-  clack(vel, panX) {
-    if (!this.on || !this.ctx) return;
-    const t = this.ctx.currentTime;
-    // budget: a dense roll is fine, a machine gun is not
-    if (t - this.budgetAt > 1) { this.budgetAt = t; this.budget = 0; }
-    if (this.budget++ > DISCRETE_MAX) return;
+  /* x/z are the strike point in rig-local space; they pick which sector of the
+     ring the sound comes from. The budget is per machine, so a busy curtain
+     starves itself rather than the room. */
+  clack(rg, vel, x, z) {
+    const m = this.curtainVoices(rg);
+    if (!m) return;
+    const ctx = this.ctx;
+    const t = ctx.currentTime;
+    if (t - m.budgetAt > 1) { m.budgetAt = t; m.budget = 0; }
+    if (m.budget++ > DISCRETE_MAX) return;
 
     const amp = Math.min(0.55, 0.12 + vel * 0.5);
     const dur = 0.05 + Math.random() * 0.07;
     const f0  = (620 + Math.random() * 520) * (0.22 / Math.max(0.08, G.chainLen / G.dowels));
 
-    const src = this.ctx.createBufferSource();
+    const src = ctx.createBufferSource();
     src.buffer = this.noiseBuf;
     src.loop = true;
-    const g = this.ctx.createGain();
+    const g = ctx.createGain();
     g.gain.setValueAtTime(amp, t);
     g.gain.exponentialRampToValueAtTime(0.0006, t + dur);
 
     const mk = (f, q, gain) => {
-      const bp = this.ctx.createBiquadFilter();
+      const bp = ctx.createBiquadFilter();
       bp.type = 'bandpass'; bp.frequency.value = f; bp.Q.value = q;
-      const vg = this.ctx.createGain(); vg.gain.value = gain;
+      const vg = ctx.createGain(); vg.gain.value = gain;
       src.connect(bp); bp.connect(vg); vg.connect(g);
     };
     mk(f0, 11, 1.0);
     mk(f0 * 2.76, 14, 0.45);   // inharmonic partial — reads as a bar, not a drum
     mk(f0 * 5.4, 16, 0.16);
 
-    const pan = this.ctx.createStereoPanner ? this.ctx.createStereoPanner() : null;
-    if (pan) { pan.pan.value = Math.max(-1, Math.min(1, panX / G.outerR)); g.connect(pan); pan.connect(this.master); }
-    else g.connect(this.master);
+    const k = ((Math.round(Math.atan2(z, x) / (2 * Math.PI) * RIM_SECTORS) % RIM_SECTORS) + RIM_SECTORS) % RIM_SECTORS;
+    g.connect(m.rim[k]);
 
     src.start(t);
     src.stop(t + dur + 0.02);
   },
 };
+
+const _earA = new THREE.Vector3();
+const _earF = new THREE.Vector3();
 
 /* ════════════════════════════════════════════════════════════════════════
    SCENE
@@ -969,7 +1131,8 @@ function createBoard3Rig() {
             if (k > 0) { c.x += nx * push * u1 * k2; c.y += ny * push * u1 * k2; c.z += nz * push * u1 * k2; }
             d2.x += nx * push * u2 * k2; d2.y += ny * push * u2 * k2; d2.z += nz * push * u2 * k2;
 
-            if (approach > G.clackV) pendingClacks.push({ v: Math.min(approach, 3), x: b.x });
+            // x/z are rig-local, which is what the rim sectors are indexed by
+            if (approach > G.clackV) pendingClacks.push({ v: Math.min(approach, 3), x: b.x, z: b.z });
           }
         }
       }
@@ -1187,6 +1350,12 @@ function buildRig(id) {
   r.name = spot.name;
   r.st = st;
   r.footprint = { r: spot.r };
+  r.solo = false;
+  r.mute = false;
+  r.clackRate = 0;
+  // Which voice set the shell should drive for this machine. Boards 1 and 2
+  // get their own when their designs land; a placeholder makes no sound.
+  r.voices = (id === 3) ? 'curtain' : null;
   r.group.position.set(spot.x, 0, spot.z);
   scene.add(r.group);
   return r;
@@ -1209,10 +1378,17 @@ function remountRig(id) {
   const r = RIGS[id]();
   r.id = id; r.name = spot.name; r.st = keep;
   r.footprint = { r: spot.r };
+  r.solo = old.solo; r.mute = old.mute;
+  r.clackRate = old.clackRate;
+  r.voices = old.voices;
   r.group.position.set(spot.x, 0, spot.z);
   scene.add(r.group);
   rigs[rigs.indexOf(old)] = r;
   rigById.set(id, r);
+  // The rebuilt group is a new object, so any panner still pointing at the old
+  // one is stale — drop the voice set and let it rebuild in place.
+  const m = audio.models.get(id);
+  if (m) { m.built = false; m.voices = {}; }
   return r;
 }
 
@@ -1280,7 +1456,11 @@ function setWalk(on) {
     camera.position.copy(p);
     camera.lookAt(t.x, EYE_Y, t.z);
     walk.vel.set(0, 0, 0);
-    pointer.lock();
+    // Some hosts refuse the lock outright (an embedded preview pane, a
+    // cross-document iframe). That costs mouse-look and nothing else, so
+    // swallow it rather than letting it surface as an unhandled rejection.
+    try { const p = pointer.lock(); if (p && p.catch) p.catch(() => {}); }
+    catch { /* walk without mouse-look */ }
   } else {
     pointer.unlock();
     // Leave the orbit target somewhere sensible: just ahead of where you stood.
@@ -1726,7 +1906,7 @@ function animate() {
   // The motor lag is real on every board; how spin turns into motion is the
   // rig's own business, so board 3 keeps its rpm scale here until the other
   // two arrive with theirs.
-  let totalScrape = 0, frameClacks = 0;
+  let frameClacks = 0;
   for (const rg of rigs) {
     const st = rg.st;
     st.dcActual += (st.dcTarget - st.dcActual) * (1 - Math.exp(-dt / DC_LAG_S));
@@ -1734,15 +1914,20 @@ function animate() {
 
     const clacks = rg.update(st, dt) || [];
     frameClacks += clacks.length;
-    totalScrape += rg.info.scrape || 0;
-    for (const c of clacks) audio.clack(c.v, c.x);
+
+    // Sound is a readout of the physics, not a separate schedule — and it is
+    // per machine, so the mix you hear is three independent sources rather
+    // than one summed voice pretending to be in three places.
+    if (rg.voices === 'curtain') {
+      rg.clackRate += (clacks.length / Math.max(dt, 1e-3) - rg.clackRate) * 0.2;
+      audio.setScrape(rg, rg.info.scrape || 0);
+      audio.setClatter(rg, rg.clackRate);
+      for (const c of clacks) audio.clack(rg, c.v, c.x, c.z);
+    }
   }
   figure.visible = state.showHuman;
-
-  // sound is a readout of the physics, not a separate schedule
   clackRate += (frameClacks / Math.max(dt, 1e-3) - clackRate) * 0.2;
-  audio.setScrape(totalScrape);
-  audio.setClatter(clackRate);
+  audio.updateListener();
 
   stepWalker(dt);
   if (!walk.on) orbit.update();
@@ -1860,6 +2045,19 @@ $('gang').addEventListener('change', e => {
   if (e.target.checked && !rg.noServos) { const v = +sliders[0].value; rg.st.target = [v, v, v]; syncSlidersFromTarget(); }
 });
 $('walkBtn').addEventListener('click', () => setWalk(!walk.on));
+
+document.querySelectorAll('[data-solo]').forEach(b => b.addEventListener('click', () => {
+  const rg = rigById.get(+b.dataset.solo);
+  rg.solo = !rg.solo;
+  b.setAttribute('aria-pressed', String(rg.solo));
+  audio.applyLevels();
+}));
+document.querySelectorAll('[data-mute]').forEach(b => b.addEventListener('click', () => {
+  const rg = rigById.get(+b.dataset.mute);
+  rg.mute = !rg.mute;
+  b.setAttribute('aria-pressed', String(rg.mute));
+  audio.applyLevels();
+}));
 $('slew').addEventListener('change', e => state.slewLimit = e.target.checked);
 $('boardSel').addEventListener('change', e => {
   state.focusId = +e.target.value;
@@ -1996,6 +2194,21 @@ resize();
    been open, which it otherwise does: spin and the motor lag keep integrating
    while you reach for the mouse. Call __selfTest() from the console and diff
    the object across the change. */
+/* Inspection handles. The audio graph has no visible surface — you cannot see
+   a panner — so this is how you check where a machine's voices ended up and
+   what solo/mute did to its gain. */
+window.__audio = audio;
+window.__mix = () => rigs.map(r => {
+  const m = audio.models.get(r.id);
+  const w = new THREE.Vector3();
+  return {
+    id: r.id, solo: r.solo, mute: r.mute,
+    gain: m ? +m.out.gain.value.toFixed(3) : null,
+    voices: m ? Object.keys(m.voices) : [],
+    at: r.group.getWorldPosition(w).toArray().map(n => +n.toFixed(2)),
+  };
+});
+
 window.__selfTest = function (seed = 7, seconds = 5, id = 3) {
   forcedSeed = seed;
   const rg = remountRig(id);
