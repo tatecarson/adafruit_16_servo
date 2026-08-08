@@ -6412,7 +6412,8 @@ function renderSequenceArrangement() {
     }
     const index = authored++;
     authoredLeftPx[index] = geometry.leftPx;
-    const target = String(step.target) === "all" ? "cluster" : `board ${escapeHtml(String(step.target))}`;
+    const target = String(step.target) === "all" ? "cluster"
+      : escapeHtml(machineOf(step.target)?.short ?? `board ${step.target}`);
     const motionId = seqStepMotionId(step.cmd);
     const motion = motionId ? libMotions.find(item => item.id === motionId) : null;
     const preview = motion ? renderSequenceArrangementPreview(motion) : "";
@@ -6496,13 +6497,21 @@ function cmdSuggestOptions() {
     .join("");
 }
 
+/* Options are the MACHINES, valued by real board id.
+   They used to be valued by position in the configured IP list, which is only
+   the same number by coincidence. The bake path has always emitted real board
+   ids — compactStepForDevice writes Number(target) and the firmware compares it
+   against its own storageBoardId — so a step could dispatch to one board from
+   the browser and a different one once baked. */
 function targetOptions(selected) {
   const opts = [`<option value="all"${selected === "all" ? " selected" : ""}>all</option>`];
-  boards.forEach((ip, idx) => {
-    const boardId = String(idx + 1);
-    const isSelected = String(selected) === boardId || selected === ip;
-    opts.push(`<option value="${boardId}"${isSelected ? " selected" : ""}>${escapeHtml(ip)}</option>`);
-  });
+  for (const boardId of MACHINE_IDS) {
+    const ip = ipForBoardId(boardId);
+    const isSelected = String(selected) === String(boardId) || (ip && selected === ip);
+    const where = ip ? ` — ${ip}` : " — not configured";
+    opts.push(`<option value="${boardId}"${isSelected ? " selected" : ""}>`
+      + `${boardId} · ${escapeHtml(machineOf(boardId).short)}${escapeHtml(where)}</option>`);
+  }
   return opts.join("");
 }
 
@@ -6668,10 +6677,10 @@ async function dispatchSequenceStep(step) {
     if (!ip) return { ok: false, target: "all" };
     return { ok: await sendCommand(ip, cmd), target: `all via pinned ${ip}` };
   }
-  const idx = Math.max(0, (parseInt(step.target, 10) || 1) - 1);
-  const ip = boards[idx];
-  if (!ip) return { ok: false, target: `board ${idx + 1}` };
-  return { ok: await sendCommand(ip, cmd), target: ip };
+  const boardId = parseInt(step.target, 10) || 1;
+  const ip = ipForBoardId(boardId);
+  if (!ip) return { ok: false, target: boardLabel(boardId) };
+  return { ok: await sendCommand(ip, cmd), target: `${ip} · ${machineOf(boardId)?.short ?? boardId}` };
 }
 
 // The player walks the flattened list (authored steps plus generated DC
@@ -6817,7 +6826,7 @@ function appendRecordedStep(cmd) {
   const elapsed = seqRecord.lastAt ? Math.max(0, Math.round(now - seqRecord.lastAt)) : 0;
   seqRecord.lastAt = now;
   const seq = readSequenceFromDom();
-  seq.steps.push({ cmd, durationMs: elapsed, target: freeTargetEl.value ? String(boards.indexOf(freeTargetEl.value) + 1) : "all", label: "", hold: false });
+  seq.steps.push({ cmd, durationMs: elapsed, target: freeTargetEl.value ? String(boardIdByIp.get(freeTargetEl.value) ?? boards.indexOf(freeTargetEl.value) + 1) : "all", label: "", hold: false });
   saveCurrentSequence(seq);
   setSeqStatus(`recorded ${cmd}`, "phosphor");
 }
@@ -9382,10 +9391,10 @@ async function dispatchSetlistStep(step) {
     if (!ip) return { ok: false, target: "all" };
     return { ok: await sendCommand(ip, cmd), target: `all via pinned ${ip}` };
   }
-  const idx = Math.max(0, (parseInt(step.target, 10) || 1) - 1);
-  const ip = boards[idx];
-  if (!ip) return { ok: false, target: `board ${idx + 1}` };
-  return { ok: await sendCommand(ip, cmd), target: ip };
+  const boardId = parseInt(step.target, 10) || 1;
+  const ip = ipForBoardId(boardId);
+  if (!ip) return { ok: false, target: boardLabel(boardId) };
+  return { ok: await sendCommand(ip, cmd), target: `${ip} · ${machineOf(boardId)?.short ?? boardId}` };
 }
 
 function stopSetlistPlayback(sendStop = false) {
