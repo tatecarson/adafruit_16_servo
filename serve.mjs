@@ -21,7 +21,7 @@ import { createServer } from "node:http";
 import { createReadStream } from "node:fs";
 import { rename, stat, writeFile } from "node:fs/promises";
 import { dirname, extname, join, normalize, resolve, sep } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 const LIBRARY_PATH = join(ROOT, "library.json");
@@ -175,14 +175,25 @@ const server = createServer((req, res) => {
   serveFile(req, res, target).catch(e => fail(res, 500, e.message));
 });
 
+/* OSC 8 hyperlinks: terminals that understand them make the text clickable,
+   and the ones that do not are supposed to ignore the escape entirely. Only
+   emitted to a TTY — piping this into a file or a log should give plain text,
+   not escape codes. Local paths get a file:// target so they open too, which
+   plain URL autodetection never does for them. */
+const canLink = process.stdout.isTTY && !process.env.NO_COLOR && process.env.TERM !== "dumb";
+const link = (url, text = url) =>
+  canLink ? `\x1b]8;;${url}\x1b\\${text}\x1b]8;;\x1b\\` : text;
+const dim = (s) => (canLink ? `\x1b[2m${s}\x1b[0m` : s);
+
 server.listen(opts.port, opts.host, () => {
   const base = `http://${opts.host}:${opts.port}`;
-  console.log(`Serving   ${ROOT}`);
-  console.log(`Dashboard ${base}/servo_controller.html`);
-  console.log(`Simulator ${base}/sculpture_3d.html`);
-  console.log(`Library   ${LIBRARY_PATH}`);
-  console.log(`\nOpen both in the same browser — same origin, so the dashboard's`);
-  console.log(`BroadcastChannel reaches the simulator. Ctrl-C to stop.`);
+  const fileLink = (p) => link(pathToFileURL(p).href, p);
+  console.log(`\nServing   ${fileLink(ROOT)}`);
+  console.log(`Dashboard ${link(`${base}/servo_controller.html`)}`);
+  console.log(`Simulator ${link(`${base}/sculpture_3d.html`)}`);
+  console.log(`Library   ${fileLink(LIBRARY_PATH)}`);
+  console.log(dim(`\nOpen both in the same browser — same origin, so the dashboard's`));
+  console.log(dim(`BroadcastChannel reaches the simulator. Ctrl-C to stop.`));
 });
 
 server.on("error", (e) => {
