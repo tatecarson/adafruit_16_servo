@@ -133,11 +133,39 @@ The page is organized into numbered sections:
 
 ## 3D simulator
 
-`sculpture_3d.html` renders the sculpture in 3D and drives it from exactly what the
-dashboard can command: the three winch servos as percent-down (0 = fully up, 100 = fully
-down, unpowered rest) and the DC motor as signed speed. Serve it from the same helper and
-open <http://127.0.0.1:4173/sculpture_3d.html>. `three.js` is vendored in `vendor/` so the
-page works offline in the gallery.
+`sculpture_3d.html` puts all three machines in one room and drives them from exactly what
+the dashboard can command: the winch servos as percent-down (0 = fully up, 100 = fully
+down, unpowered rest) and the DC motors as signed speed. Open the file directly — it needs
+no server — or serve it from the helper at <http://127.0.0.1:4173/sculpture_3d.html>.
+`three.js` loads from jsDelivr, so the page needs a network the first time it is opened;
+`vendor/` is a leftover of an earlier vendored copy and is no longer used.
+
+**The room.** The three boards stand on a 5 m triangle, far enough apart that walking up
+to one clearly favours it and close enough that the middle of the room hears all three.
+
+| Board | Machine | Drive |
+|---|---|---|
+| 1 | Centre wands — three servo-driven wands strike six tubes orbiting on a rim-belt ring | S0–S2 = wand throw, DC = ring speed |
+| 2 | Field — bearings roll on a 300 mm tone wheel cut into five tuned bands | **DC motor only, no servos** |
+| 3 | Dowel curtain — winched ring over a wooden deck | S0–S2 = winches, DC = ring |
+
+Press **Walk** (or `V`) to stand in the room at head height: `WASD` to move, mouse to
+look, shift to hurry, escape back to orbit. This is the point of the page — every voice is
+panned where the thing making it actually is, and the listener rides your head, so what
+you hear is a consequence of where you stand rather than a fixed mix. **Solo** and **mute**
+are a gain on everything a machine makes, drones included.
+
+Board 2 has no servo channels at all: its rake, ball count and cut width are build
+parameters. Servo commands addressed to it report themselves rather than moving something
+invisible, and it ignores the servo tracks a Motion carries for board 2.
+
+Detail scales with distance — constraint iterations and substeps fall off as you walk
+away — but **gain never does**. Distance belongs to the panners alone; anything that
+quietened a far machine here would be counting distance twice.
+
+`__selfTest()` in the console re-mounts board 3 with a pinned seed and runs a fixed
+fast-forward, so a change to the solver can be checked by diffing numbers rather than
+squinting at chains. It reports 1331 strikes at seed 7.
 
 **Board 3's mechanism.** A ceiling housing holds the three winch servos and the DC gear
 motor. Three cables run down and out to an inner ring; chains of wooden dowels linked by
