@@ -291,6 +291,11 @@ import { OrbitControls } from 'https://cdn.jsdelivr.net/npm/three@0.169.0/exampl
    constraints, frictional deck contact, and curtain-to-curtain collision.
    ──────────────────────────────────────────────────────────────────────────── */
 
+/* The seed jitter in reseed() is the only randomness in the solver, so pinning
+   it makes a run repeatable. That is what lets a refactor be checked by diffing
+   numbers instead of squinting at chains. null means "use Math.random". */
+let forcedSeed = null;
+
 const SERVO_CAL = { minPulse: 110, maxPulse: 480, totalDegrees: 1800, downDegrees: 1800, upDegrees: 0, reverseDir: true };
 const SLEW_MS_PER_PCT = 77;
 const DC_LAG_S        = 0.7;
@@ -654,6 +659,21 @@ function createBoard3Rig() {
 
   const ring = new THREE.Group();
   spinner.add(ring);
+
+  // The chain solver runs in rig-local space so the rig can stand anywhere on
+  // the floor. Everything it compares against is already rig-relative — deckY,
+  // baseR, outerR, the floor at y=0 — and the moving chains' anchors were the
+  // one exception, because they were read off ring.matrixWorld. Compose the
+  // same transform from the local matrices instead: spinner is a pure Y
+  // rotation under group, ring carries the winched position and tilt, so
+  // spinner.matrix · ring.matrix is that anchor frame with the rig's own
+  // placement left out of it.
+  const ringLocal = new THREE.Matrix4();
+  function refreshRingLocal() {
+    spinner.updateMatrix();
+    ring.updateMatrix();
+    ringLocal.multiplyMatrices(spinner.matrix, ring.matrix);
+  }
   const ringMesh = new THREE.Mesh(new THREE.TorusGeometry(G.ringR, G.ringTube, 10, 96), matAlu);
   ringMesh.rotation.x = Math.PI / 2;
   ringMesh.castShadow = true;
@@ -743,7 +763,7 @@ function createBoard3Rig() {
 
   function anchorOf(ch, out) {
     if (!ch.moving) return out.set(Math.cos(ch.phi) * ch.R, G.outerY, Math.sin(ch.phi) * ch.R);
-    return out.set(Math.cos(ch.phi) * ch.R, 0, Math.sin(ch.phi) * ch.R).applyMatrix4(ring.matrixWorld);
+    return out.set(Math.cos(ch.phi) * ch.R, 0, Math.sin(ch.phi) * ch.R).applyMatrix4(ringLocal);
   }
 
   function stepPhysics(h, st) {
@@ -919,10 +939,17 @@ function createBoard3Rig() {
      down the chain. A perfectly vertical chain standing on the deck is a
      degenerate equilibrium — it holds as a column instead of buckling — so the
      lean is what lets the excess actually fall over and pile. */
+  // Captured at build time, so remounting the rig re-seeds it — see selfTest().
+  const rnd = (() => {
+    if (forcedSeed == null) return Math.random;
+    let s = forcedSeed >>> 0;
+    return () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; };
+  })();
+
   function reseed() {
     for (const ch of chains) {
       anchorOf(ch, anchor);
-      const jx = (Math.random() - 0.5) * 0.006, jz = (Math.random() - 0.5) * 0.006;
+      const jx = (rnd() - 0.5) * 0.006, jz = (rnd() - 0.5) * 0.006;
       for (let i = 0; i <= ch.M; i++) {
         ch.pos[i].set(anchor.x + jx * i, anchor.y - i * ch.seg, anchor.z + jz * i);
         ch.prev[i].copy(ch.pos[i]);
@@ -1016,7 +1043,7 @@ function createBoard3Rig() {
       }
     } else cables.forEach(c => c.visible = false);
 
-    group.updateMatrixWorld(true);
+    refreshRingLocal();
 
     // Settle once on mount so the first frame shows chains already at rest.
     if (!settled) {
@@ -1068,9 +1095,9 @@ function createBoard3Rig() {
       }
       st.spin += (st.dcActual / 100) * (G.maxRpm * 2 * Math.PI / 60) * PHYS_H;
       placeRing(st);
-      // must refresh from the group: ring hangs off spinner, and updating the
-      // child alone would read a stale spinner.matrixWorld (i.e. no rotation)
-      group.updateMatrixWorld(true);
+      // must recompose: ring hangs off spinner, and reading ring.matrix alone
+      // would miss the spin
+      refreshRingLocal();
       pendingClacks.length = 0;
       stepPhysics(PHYS_H, st);
       strikes += pendingClacks.length;
@@ -1605,6 +1632,31 @@ openBus();
 syncSlidersFromTarget();
 setDc(0);
 resize();
+
+/* A repeatable measurement of the solver, for checking that a refactor changed
+   nothing. Re-mounts the rig with a pinned seed, pins the drive state, and runs
+   one fixed fast-forward — so the answer cannot depend on how long the page has
+   been open, which it otherwise does: spin and the motor lag keep integrating
+   while you reach for the mouse. Call __selfTest() from the console and diff
+   the object across the change. */
+window.__selfTest = function (seed = 7, seconds = 5) {
+  forcedSeed = seed;
+  mountRig(state.boardId);
+  state.target = [100, 100, 100];
+  state.actual = [100, 100, 100];
+  state.dcTarget = 22; state.dcActual = 22; state.spin = 0;
+  const strikes = rig.fastForward(seconds, state);
+  forcedSeed = null;
+  return {
+    strikes,
+    ringY: +rig.info.ringY.toFixed(6),
+    chainDown: +rig.info.chainDown.toFixed(6),
+    contacts: rig.info.contacts,
+    scrape: +rig.info.scrape.toFixed(6),
+    spin: +state.spin.toFixed(6),
+  };
+};
+
 animate();
 </script>
 </body>
