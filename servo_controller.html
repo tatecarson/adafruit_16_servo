@@ -2422,8 +2422,11 @@ function publishToSim(ip, cmd) {
   try { simBus.postMessage({ ts: Date.now(), ip, boardId, cmd: String(cmd) }); } catch {}
 }
 
-async function sendCommandNow(ip, cmd) {
-  publishToSim(ip, cmd);
+// simCmd overrides what the simulator is told, for the one caller that sends a
+// device-compensated value: the simulator models the mechanism, not the wiring,
+// so it wants the authored command. Everywhere else the two are the same.
+async function sendCommandNow(ip, cmd, simCmd) {
+  publishToSim(ip, simCmd === undefined ? cmd : simCmd);
   const url = `http://${ip}/cmd?c=${encodeURIComponent(cmd)}&t=${Date.now().toString(36)}`;
   try {
     await fetch(url, { method: "GET", mode: "no-cors", cache: "no-store" });
@@ -3869,7 +3872,10 @@ async function sendBakedMotionWithPreRoll(originIp, motionId) {
       // Match the winch-direction compensation baked into the motion itself, so
       // this pre-position glide lands on the motion's real first-keyframe pose.
       const toValue = deviceServoValue(move.boardId, move.toValue);
-      if (ip) sends.push(sendCommandNow(ip, `DMOVE ${move.channel} ${toValue} ${move.durationMs}`));
+      if (ip) sends.push(sendCommandNow(
+        ip,
+        `DMOVE ${move.channel} ${toValue} ${move.durationMs}`,
+        `DMOVE ${move.channel} ${move.toValue} ${move.durationMs}`));
     }
     await Promise.all(sends);
     await new Promise(resolve => setTimeout(resolve, plan.durationMs));
