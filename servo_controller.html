@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Servo Cluster · Telemetry</title>
+<title>Servo Cluster · Machines</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600;700&family=IBM+Plex+Sans+Condensed:wght@500;600;700&family=Major+Mono+Display&display=swap" rel="stylesheet">
@@ -335,7 +335,7 @@
   .board-strip { display: grid; gap: 6px; }
   .board-row {
     display: grid;
-    grid-template-columns: 72px 170px 150px 1fr;
+    grid-template-columns: 72px 150px 128px 132px 1fr;
     gap: 14px;
     align-items: center;
     background: var(--bg-elev);
@@ -368,6 +368,13 @@
     align-items: center;
     gap: 8px;
   }
+  .board-row .br-machine {
+    font: 700 10px/1.3 var(--label);
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    color: var(--amber);
+  }
+  .board-row .br-machine.unknown { color: var(--ink-mute); }
   .board-row .dot {
     width: 7px; height: 7px; border-radius: 50%;
     background: var(--ink-mute);
@@ -420,6 +427,7 @@
   .pill.on    { color: var(--phosphor); border-color: var(--phosphor); background: rgba(75,227,193,0.06); }
   .pill.warn  { color: var(--amber);    border-color: var(--amber);    background: rgba(255,182,39,0.06); }
   .pill.alert { color: var(--alert);    border-color: var(--alert);    background: rgba(241,90,58,0.08); }
+  .pill .v2 { opacity: .62; margin-left: 4px; }
   .pill .v { font-family: var(--mono); letter-spacing: 0.02em; font-weight: 500; }
 
 
@@ -1800,7 +1808,7 @@
   <header class="masthead">
     <div>
       <div class="brand">servo<span class="slash">·</span>cluster</div>
-      <div class="sub">telemetry &nbsp;·&nbsp; section 01 &nbsp;·&nbsp; uno r4 wifi</div>
+      <div class="sub">three machines &nbsp;·&nbsp; one cluster &nbsp;·&nbsp; uno r4 wifi</div>
     </div>
     <div class="meta">
       <div class="row">
@@ -1822,9 +1830,9 @@
        ============================================================ -->
   <div class="sect">
     <span class="num">// 01</span>
-    <span class="label">Show Control</span>
+    <span class="label">Machines</span>
     <span class="rule"></span>
-    <span class="hint">play runs on-device from the last bake · broadcast → first reachable board mirrors via udp</span>
+    <span class="hint">three boards, three sculptures · play runs on-device from the last bake · broadcast → first reachable board mirrors via udp</span>
   </div>
 
   <div class="panel cmdbar">
@@ -2653,7 +2661,7 @@ function escapeHtml(s) {
   ));
 }
 
-function renderPills(s) {
+function renderPills(s, boardId) {
   const motion = s.motion, motor = s.motor, runseq = s.runseq;
   const out = [];
   if (s.otaInProgress) out.push(`<span class="pill alert">OTA UPLOAD</span>`);
@@ -2675,7 +2683,10 @@ function renderPills(s) {
   if (motor) {
     const spd = motor.speed | 0;
     const cls = spd === 0 ? "" : (spd > 0 ? " on" : " warn");
-    out.push(`<span class="pill${cls}">DC <span class="v">${spd > 0 ? '+' : ''}${spd}</span></span>`);
+    // The same percentage is a different speed on every machine — 20x between
+    // the geared wands and the field deck — so say what it is actually doing.
+    const rpm = spd === 0 ? "" : ` <span class="v2">${formatRpm(rpmForSpeed(boardId, spd))}</span>`;
+    out.push(`<span class="pill${cls}">DC <span class="v">${spd > 0 ? '+' : ''}${spd}</span>${rpm}</span>`);
   }
   return out.join("");
 }
@@ -2697,12 +2708,22 @@ function renderBoardRow(ip, idx, status, online) {
     ? `<span class="br-up"><span class="k">up</span> ${fmtUptime(status.uptimeMs)}</span>`
     : `<span class="br-lost">signal lost${ageS != null ? ` · ${ageS}s` : ""}</span>`;
 
+  // Key the machine off what the board REPORTS, not off its position in the
+  // configured list — the list order is an accident of typing and the board id
+  // is discovered over /boardId.
+  const boardId = status?.node ?? boardIdByIp.get(ip) ?? null;
+  const machine = machineOf(boardId);
+  const machineHtml = machine
+    ? `<span class="br-machine" title="${escapeHtml(machine.drive)}">${escapeHtml(machine.name)}</span>`
+    : `<span class="br-machine unknown">unknown machine</span>`;
+
   return `
     <article class="board-row" data-state="${dataState}">
       <span class="br-id">${idStr}<span class="br-id-label">node</span></span>
       <span class="br-ip">${ipShort}<span class="dot"></span></span>
+      ${machineHtml}
       ${health}
-      <span class="br-pills pills">${status ? renderPills(status) : `<span class="pill alert">NO SIGNAL</span>`}</span>
+      <span class="br-pills pills">${status ? renderPills(status, boardId) : `<span class="pill alert">NO SIGNAL</span>`}</span>
     </article>`;
 }
 
