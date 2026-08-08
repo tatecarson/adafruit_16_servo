@@ -24,6 +24,7 @@ const dir = mkdtempSync(join(tmpdir(), "dc-lane-core-"));
 const modulePath = join(dir, "core.mjs");
 writeFileSync(modulePath, `
 const SEQ_MAX_STEPS = 16;
+${block("// === MACHINE-CORE START ===", "// === MACHINE-CORE END ===")}
 ${block("// === DC-LANE-CORE START ===", "// === DC-LANE-CORE END ===")}
 export { flattenDcLanes, clampDcLaneValue, readStepDcMap, dcStateByDisplayBlock, DC_LANE_SPEED_LIMIT, DC_LANE_BOARD_IDS };
 `, "utf8");

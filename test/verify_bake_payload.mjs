@@ -48,7 +48,8 @@ function block(start, end) {
 }
 
 const bridgeCore = block("// === SEQ-BRIDGE-CORE START ===", "// === SEQ-BRIDGE-CORE END ===");
-const dcLaneCore = block("// === DC-LANE-CORE START ===", "// === DC-LANE-CORE END ===");
+const machineCore = block("// === MACHINE-CORE START ===", "// === MACHINE-CORE END ===");
+const dcLaneCore = machineCore + block("// === DC-LANE-CORE START ===", "// === DC-LANE-CORE END ===");
 const payloadCore = block("// === BAKE-PAYLOAD-CORE START ===", "// === BAKE-PAYLOAD-CORE END ===");
 const dir = mkdtempSync(join(tmpdir(), "bake-payload-core-"));
 const modulePath = join(dir, "core.mjs");

@@ -1,6 +1,6 @@
 // Host tests for Motion normalization (servo-b4r).
 //
-// normalizeMotion materializes all nine MOTION_TRACK_SPECS tracks for every
+// normalizeMotion materializes every MOTION_TRACK_SPECS track for every
 // Motion, so what normalizeKeyframes synthesizes for a channel the author
 // never touched is a physical command, not a formality. On this rig 0% is
 // FULLY UP and the unpowered rest pose is 100% (fully down), so synthesizing
@@ -34,7 +34,8 @@ function block(startMarker, endMarker) {
 
 // SPEC-CORE holds the track list and the rest-pose constant; SNAP-CORE holds
 // clampMotionValue, which normalizeKeyframes uses to bound every value.
-const core = block("// === MOTION-SPEC-CORE START ===", "// === MOTION-SPEC-CORE END ===")
+const core = block("// === MACHINE-CORE START ===", "// === MACHINE-CORE END ===")
+  + block("// === MOTION-SPEC-CORE START ===", "// === MOTION-SPEC-CORE END ===")
   + block("// === SNAP-CORE START ===", "// === SNAP-CORE END ===")
   + block("// === MOTION-NORMALIZE-CORE START ===", "// === MOTION-NORMALIZE-CORE END ===");
 
@@ -75,9 +76,13 @@ const boardThreeOnly = {
 };
 const normalized = normalizeMotion(boardThreeOnly);
 eq("every spec track is still materialized", normalized.tracks.length, MOTION_TRACK_SPECS.length);
+// Only board 1 is left un-authored — the field board has no servos, so it has
+// no tracks to rest.
 eq("un-authored channels rest instead of raising",
    normalized.tracks.filter(t => t.boardId !== 3).map(t => t.keyframes[0].value),
-   [100, 100, 100, 100, 100, 100]);
+   [100, 100, 100]);
+eq("a machine with no servos gets no tracks at all",
+   normalized.tracks.filter(t => t.boardId === 2).length, 0);
 eq("the authored board is untouched",
    normalized.tracks.filter(t => t.boardId === 3).map(t => t.keyframes.map(k => [k.atMs, k.value])),
    [[[0,100],[6000,40]], [[0,100],[6000,43]], [[0,100],[6000,46]]]);

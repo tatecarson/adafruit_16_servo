@@ -1130,6 +1130,13 @@
     display: grid;
     grid-template-columns: 170px 110px 1fr;
   }
+  .motion-noservo {
+    font-size: 11px;
+    line-height: 1.55;
+    opacity: .68;
+    padding: 8px 10px 10px 12px;
+    border-left: 2px solid var(--rule);
+  }
   .motion-scale {
     position: sticky;
     top: 0;
@@ -1869,7 +1876,7 @@
     <span class="num">// 02</span>
     <span class="label">Motion</span>
     <span class="rule"></span>
-    <span class="hint">9-track cluster keyframes · servo % down (0=up, 100=down) · motor speed moved to Sequencer DC lanes · live scrub · values snap to 5 (⇧ for fine) · ⌥-drag a shape · ⇧-drag to select (Del removes) · Clr clears a row · shared library</span>
+    <span class="hint">6-track cluster keyframes · board 2 (field) has no servos · servo % down (0=up, 100=down) · motor speed moved to Sequencer DC lanes · live scrub · values snap to 5 (⇧ for fine) · ⌥-drag a shape · ⇧-drag to select (Del removes) · Clr clears a row · shared library</span>
   </div>
 
   <div class="panel motion-editor">
@@ -3669,7 +3676,7 @@ function renderBakeInventory() {
   // that will actually be posted. Passive preview ignores reference/step gate
   // errors; the real bake path names and blocks those before touching a board.
   const bakeLib = buildBakeLibrary(lib);
-  const boardBytes = [1, 2, 3].map(boardId => {
+  const boardBytes = MACHINE_IDS.map(boardId => {
     const bytes = size(sliceForBoard(bakeLib, boardId));
     const tier = bakeStorageTier(bytes);
     const level = tier.mode === "over" ? "over"
@@ -3862,11 +3869,22 @@ const motionLoopEl       = $("#motionLoop");
 // DC-LANE-CORE. A motor carries a running speed, not a pose, so it never
 // belonged on the same keyframe clock as servo positions.
 // === MOTION-SPEC-CORE START ===
-const MOTION_TRACK_SPECS = [1, 2, 3].flatMap(boardId => ([
-  { kind: "servo", boardId, channel: 0, label: `B${boardId}.S0`, min: 0, max: 100, unit: "%" },
-  { kind: "servo", boardId, channel: 1, label: `B${boardId}.S1`, min: 0, max: 100, unit: "%" },
-  { kind: "servo", boardId, channel: 2, label: `B${boardId}.S2`, min: 0, max: 100, unit: "%" },
-]));
+// Tracks exist because a machine has a servo to move, not because a board id
+// exists. The field board has none, so it gets none — otherwise every Motion
+// carries three phantom tracks that are baked to it, eat its keyframe budget,
+// and get DMOVE'd at hardware that is not there.
+//
+// The label stays in the B<id>.S<ch> form: hydrateDeviceLibraryForEditor
+// rebuilds that exact string when pulling a library back off a board, and
+// trackSpecKey identity flows through the mute, solo and selection sets. The
+// human name for the channel rides alongside it instead.
+const MOTION_TRACK_SPECS = SERVO_BOARD_IDS.flatMap(boardId =>
+  MACHINES[boardId].servos.map((name, channel) => ({
+    kind: "servo", boardId, channel,
+    label: `B${boardId}.S${channel}`,
+    name,
+    min: 0, max: 100, unit: "%",
+  })));
 // Where a track sits when nothing else defines it (servo-xfq). A winch only
 // holds position while it is driven; unpowered, the ring's own weight pulls it
 // to the bottom of its travel. So a servo's honest resting pose is 100% (fully
@@ -4486,7 +4504,7 @@ function renderMotionEditor() {
     ticks.push(`<span style="left:${i * 10}%">${formatMs(Math.round(motion.durationMs * i / 10))}</span>`);
   }
   let html = `<div class="motion-scale"><div>track</div><div>mode</div><div class="motion-axis">${ticks.join("")}</div></div>`;
-  for (const boardId of [1, 2, 3]) {
+  for (const boardId of MACHINE_IDS) {
     const collapsed = motionCollapsedBoards.has(boardId);
     // Surface the actual IP currently advertising this boardId instead
     // of assuming boards[0]=B1, boards[1]=B2, boards[2]=B3. The bake path
@@ -4499,6 +4517,16 @@ function renderMotionEditor() {
       ? `Resolved via /boardId to ${ip}`
       : "No responding board currently reports this boardId";
     html += `<div class="motion-board"><button data-motion-collapse="${boardId}" title="${escapeHtml(titleAttr)}">${collapsed ? "+" : "-"} ${boardLabel(boardId)} ${ipHtml}</button></div>`;
+    // Say why the group is empty. The same fact is stated in the Motor Test
+    // drawer; wording it the same way there and here keeps it reading as one
+    // fact about the machine rather than two different failures.
+    if (machineOf(boardId)?.servos === null) {
+      if (!collapsed) {
+        html += `<div class="motion-noservo">${escapeHtml(machineOf(boardId).name)} has no servos — this
+          machine is one DC motor. Its speed is authored on the Sequencer's DC lane, not here.</div>`;
+      }
+      continue;
+    }
     for (const spec of MOTION_TRACK_SPECS.filter(s => s.boardId === boardId)) {
       const track = findTrack(motion, spec);
       const key = trackSpecKey(spec);
@@ -6797,7 +6825,7 @@ function conformTrackForBake(track, durationMs) {
 // cases the bake must block + name. Mirrors analyzeLibraryServoFeasibility.
 function analyzeBakeConformance(lib) {
   const report = { errors: [] };
-  for (const boardId of [1, 2, 3]) {
+  for (const boardId of MACHINE_IDS) {
     for (const m of lib.motions || []) {
       const boardTracks = (m.tracks || []).filter(t => t.boardId === boardId);
       if (!boardTracks.length) continue;
@@ -7277,7 +7305,7 @@ function dcStateByDisplayBlock(displaySteps) {
 // Authoring stays clamped to ±50 (the servo-1gc safety limit) even though bare
 // ROTATE accepts ±100; the wider range remains available for manual testing.
 const DC_LANE_SPEED_LIMIT = 50;
-const DC_LANE_BOARD_IDS = [1, 2, 3];
+const DC_LANE_BOARD_IDS = MACHINE_IDS;   // every machine has a motor
 
 function clampDcLaneValue(value) {
   const n = Number(value);
