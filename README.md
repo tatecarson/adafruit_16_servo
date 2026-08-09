@@ -390,6 +390,7 @@ package.json            npm start (serve) and npm test (browser-side verifiers)
 compile-firmware.sh     Build the OTA bin (and optionally serve the page)
 ota-all.sh              OTA-flash every board
 docs/sequencer-schema.md  Content data model and interpolation rules
+docs/three-machine-bench-check.md  Bench checklist for the three machines
 test/                   Host-side tests (C++ engines + JS editor logic)
 ```
 
