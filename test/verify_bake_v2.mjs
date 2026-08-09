@@ -38,7 +38,8 @@ function block(start, end) {
 const dir = mkdtempSync(join(tmpdir(), "bake-v2-"));
 const modulePath = join(dir, "core.mjs");
 writeFileSync(modulePath, `
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 1;      // authoring (library.json)
+const DEVICE_SCHEMA_VERSION = 2;  // the wire format a board receives
 const SERVO_FEASIBILITY_MS_PER_PERCENT = 77;
 const MOTION_SERVO_REST_PERCENT = 100;
 const SEQ_MAX_STEPS = 16;
@@ -70,6 +71,20 @@ const eq = (actual, expected, message) =>
 const K = core.BAKE_V2_KEYS;
 
 check(K, "the browser exports the v2 key table");
+
+// The bug this catches: the page declared schemaVersion 1 while emitting v2
+// keys, because SCHEMA_VERSION was doing double duty as both the authoring
+// version and the wire version. The harness stubbed the constant, so nothing
+// noticed until a board was baked. Read the real values out of the source.
+const authoring = /^const SCHEMA_VERSION = (\d+);/m.exec(html);
+const device = /^const DEVICE_SCHEMA_VERSION = (\d+);/m.exec(html);
+check(authoring && authoring[1] === "1",
+  "the page keeps authoring at schemaVersion 1 (library.json is unchanged by v2)");
+check(device && device[1] === "2",
+  "the page stamps board payloads with DEVICE_SCHEMA_VERSION 2");
+check(/schemaVersion: DEVICE_SCHEMA_VERSION/.test(html),
+  "sliceForBoard stamps the device version, not the authoring one — a v2 blob "
+  + "declaring v1 would be accepted by v1 firmware and silently read as empty");
 
 eq(K.motion, { id:"i", durationMs:"d", tracks:"r" }, "motion keys");
 eq(K.track, { channel:"c", keyframes:"k" }, "track keys");

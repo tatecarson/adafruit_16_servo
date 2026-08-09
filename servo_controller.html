@@ -3443,6 +3443,17 @@ const LIB_KEY = "servoCluster.library";
 const LIB_FILE_URL = "library.json";
 const LIB_SNAP_PREFIX = "servoCluster.lastBake.";
 const SCHEMA_VERSION = 1;
+/* The version stamped on a BOARD payload, which is not the authoring version
+   above (servo-zzo). library.json stays schemaVersion 1 — v2 changes only how
+   a slice is spelled on the wire between the compactor and the firmware, not
+   what the editor stores.
+
+   Keeping these separate matters for more than tidiness. A v2-keyed blob that
+   declared version 1 would be ACCEPTED by v1-only firmware, which would then
+   find none of its keys and boot an empty library — a silent failure on a
+   board that had been working. Declaring 2 makes that same board refuse the
+   blob with 400 and keep the bake it already has. */
+const DEVICE_SCHEMA_VERSION = 2;
 // Firmware motion limits (servo_runtime.h). MOTION_MAX_KEYFRAMES is the TOTAL
 // keyframe budget across all tracks of a motion (one shared counter in the
 // firmware's motionParseTrack), not per-track. MOTION_MAX_TRACKS is the total
@@ -8217,7 +8228,7 @@ function sliceForBoard(lib, boardId) {
     // Full name, always. bake_validate.h searches for this literal to decide
     // whether to accept the blob, and the firmware reads its value to pick a
     // parser — so it is the one key that can never be abbreviated.
-    schemaVersion: SCHEMA_VERSION,
+    schemaVersion: DEVICE_SCHEMA_VERSION,
     bakedAtMs: Date.now(),
     [R.motions]: motions,
     [R.sequences]: (lib.sequences || []).map(compactSequenceForDevice),
@@ -8702,8 +8713,8 @@ async function pullFromBoards() {
     for (const r of results) {
       if (r.boardId == null) continue;
       if (!r.blob) { bakeLog(`${r.ip} (board ${r.boardId}): no library baked`, "amber"); continue; }
-      if (r.blob.schemaVersion !== SCHEMA_VERSION) {
-        bakeLog(`${r.ip} (board ${r.boardId}): schemaVersion ${r.blob.schemaVersion} ≠ ${SCHEMA_VERSION} — skipped`, "alert");
+      if (r.blob.schemaVersion !== DEVICE_SCHEMA_VERSION) {
+        bakeLog(`${r.ip} (board ${r.boardId}): schemaVersion ${r.blob.schemaVersion} ≠ ${DEVICE_SCHEMA_VERSION} — skipped`, "alert");
         continue;
       }
       // Convert the board's v2 wire format back to named fields here, once,

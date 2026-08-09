@@ -54,7 +54,8 @@ const payloadCore = block("// === BAKE-PAYLOAD-CORE START ===", "// === BAKE-PAY
 const dir = mkdtempSync(join(tmpdir(), "bake-payload-core-"));
 const modulePath = join(dir, "core.mjs");
 writeFileSync(modulePath, `
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 1;      // authoring (library.json)
+const DEVICE_SCHEMA_VERSION = 2;  // the wire format a board receives
 const SERVO_FEASIBILITY_MS_PER_PERCENT = 77;
 const MOTION_SERVO_REST_PERCENT = 100;
 const SEQ_MAX_STEPS = 16;
