@@ -32,30 +32,30 @@ id and configures itself.
 
 ## A. Nothing connected
 
-- [ ] Masthead reads **three machines · one cluster**; section 01 is **Machines**.
-- [ ] Motion editor shows **one board group and three track rows** — every
+- [x] Masthead reads **three machines · one cluster**; section 01 is **Machines**.
+- [x] Motion editor shows **one board group and three track rows** — every
       motion in the library is tagged for a machine, and the timeline draws
       that machine alone. A line under the tracks names what is hidden and why.
-- [ ] With the machine filter on `all machines`, **NEW** makes an untagged
+- [x] With the machine filter on `all machines`, **NEW** makes an untagged
       motion, which draws all three: six track rows, and board 2's group reads
       **"field has no servos"** instead of listing three. Nine rows means a
       stale page — hard-reload. Delete the scratch motion afterwards.
-- [ ] Machine filter (left of the motion picker): `wands` lists only wand
+- [x] Machine filter (left of the motion picker): `wands` lists only wand
       motions, `curtain` lists the seven originals.
-- [ ] Storage badge reads **"loaded from library.json"**.
+- [x] Storage badge reads **"loaded from library.json"**.
       If it says browser cache, the file did not parse — stop, nothing below is
       trustworthy.
-- [ ] Sequencer, `Cluster · Bench Check`: every step's target reads a machine
+- [x] Sequencer, `Cluster · Bench Check`: every step's target reads a machine
       name, and the DC column is headed **wands / field / curtain** with an rpm
       figure under any value that is set.
 
 ## B. Boards powered, nothing baked
 
-- [ ] **Board strip names sit on the right IPs.** Everything else rests on this;
+- [x] **Board strip names sit on the right IPs.** Everything else rests on this;
       a wrong name means `/boardId` is reporting something unexpected.
-- [ ] The DC pill shows rpm alongside the percentage. The same `+30` should read
+- [x] The DC pill shows rpm alongside the percentage. The same `+30` should read
       about **1.88 / 38 / 7.50 rpm** across the three.
-- [ ] Motor Test → field: says it has no servos, and the **All Down / All Up
+- [x] Motor Test → field: says it has no servos, and the **All Down / All Up
       buttons are gone** (they used to fire at absent servos).
 - [ ] Motor Test → wands: channels labelled *Wand I/II/III throw*, note says
       `ROTATE 30 is about 1.88 rpm`.
