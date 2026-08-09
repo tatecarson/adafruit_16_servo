@@ -1457,7 +1457,7 @@
     },
     {
       "id": "sq-benchw",
-      "name": "Bench \u00b7 wands",
+      "name": "Wands \u00b7 Bench Check",
       "tags": [
         "bench"
       ],
@@ -1507,7 +1507,7 @@
     },
     {
       "id": "sq-benchf",
-      "name": "Bench \u00b7 field",
+      "name": "Field \u00b7 Bench Check",
       "tags": [
         "bench"
       ],
@@ -1549,7 +1549,7 @@
     },
     {
       "id": "sq-benchall",
-      "name": "Bench \u00b7 all three",
+      "name": "Cluster \u00b7 Bench Check",
       "tags": [
         "bench"
       ],

@@ -33,17 +33,21 @@ id and configures itself.
 ## A. Nothing connected
 
 - [ ] Masthead reads **three machines · one cluster**; section 01 is **Machines**.
-- [ ] Motion editor shows **three board groups and six track rows**.
-      Nine rows means a stale page — hard-reload.
-- [ ] Board 2's group says **"field has no servos"** instead of listing three.
+- [ ] Motion editor shows **one board group and three track rows** — every
+      motion in the library is tagged for a machine, and the timeline draws
+      that machine alone. A line under the tracks names what is hidden and why.
+- [ ] With the machine filter on `all machines`, **NEW** makes an untagged
+      motion, which draws all three: six track rows, and board 2's group reads
+      **"field has no servos"** instead of listing three. Nine rows means a
+      stale page — hard-reload. Delete the scratch motion afterwards.
 - [ ] Machine filter (left of the motion picker): `wands` lists only wand
       motions, `curtain` lists the seven originals.
 - [ ] Storage badge reads **"loaded from library.json"**.
       If it says browser cache, the file did not parse — stop, nothing below is
       trustworthy.
-- [ ] Sequencer, `Bench · all three`: every step's target reads a machine name,
-      and the DC column is headed **wands / field / curtain** with an rpm figure
-      under any value that is set.
+- [ ] Sequencer, `Cluster · Bench Check`: every step's target reads a machine
+      name, and the DC column is headed **wands / field / curtain** with an rpm
+      figure under any value that is set.
 
 ## B. Boards powered, nothing baked
 
@@ -76,13 +80,13 @@ id and configures itself.
 
 ## D. Run
 
-- [ ] `Bench · wands` on board 1 — about 7 s. Wands clear, drive in, cascade,
-      clear.
-- [ ] `Bench · field` — the deck steps 15 → 38 → 64 rpm.
+- [ ] `Wands · Bench Check` on board 1 — about 7 s. Wands clear, drive in,
+      cascade, clear.
+- [ ] `Field · Bench Check` — the deck steps 15 → 38 → 64 rpm.
 - [ ] Any `Curtain ·` sequence — **only the curtain moves.** Before the
       migration these fired at all three machines; that is the change this
       whole branch exists to make.
-- [ ] `Bench · all three`, then the `bench-test` setlist end to end.
+- [ ] `Cluster · Bench Check`, then the `bench-test` setlist end to end.
 
 ## E. The room
 
