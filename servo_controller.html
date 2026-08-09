@@ -1147,7 +1147,8 @@
     display: grid;
     grid-template-columns: 170px 110px 1fr;
   }
-  .motion-noservo {
+  .motion-noservo,
+  .motion-hidden {
     font-size: 11px;
     line-height: 1.55;
     opacity: .68;
@@ -1207,6 +1208,17 @@
   }
   .motion-board button .ip.missing {
     color: var(--ink-mute);
+  }
+  /* A board the motion is not tagged for but still drives. Alert-coloured
+     because it is a discrepancy, not a second machine the author chose. */
+  .motion-board.stray {
+    background: rgba(255,74,74,0.045);
+  }
+  .motion-board button .off-machine {
+    color: var(--alert);
+    font: 700 8px/1 var(--label);
+    letter-spacing: 0.22em;
+    margin-left: 8px;
   }
   .motion-row {
     min-height: 48px;
@@ -2488,6 +2500,27 @@ function inferredMachineIds(motion) {
     if (values.size > 1) out.add(Number(t.boardId));
   }
   return [...out];
+}
+
+/* Which machines the Motion editor draws sections for.
+
+   A Motion says which machine it is for, and the timeline should say the same
+   thing: authoring a wand gesture under three winch tracks and a "the field
+   has no servos" note is three machines' worth of chrome around one.
+
+   Two cases keep everything on screen. An untagged motion makes no claim, and
+   inferredMachineIds is a reading of the keyframes rather than the author's
+   intent — hiding a board on it would hide whatever the motion happens not to
+   move right now. And a motion that moves a board it is not tagged for stays
+   showing that board, because that is exactly the state that bakes to a
+   machine nobody is looking at. Duplicate-to-another-machine leaves rest
+   keyframes on the source, so a stray is a board that still moves, not one
+   that merely has tracks. */
+function motionEditorBoardIds(motion) {
+  const declared = MACHINE_IDS.includes(Number(motion?.machine)) ? Number(motion.machine) : null;
+  if (declared == null) return MACHINE_IDS.slice();
+  const moving = inferredMachineIds(motion);
+  return MACHINE_IDS.filter(id => id === declared || moving.includes(id));
 }
 // === MACHINE-CORE END ===
 
@@ -4589,8 +4622,15 @@ function renderMotionEditor() {
     ticks.push(`<span style="left:${i * 10}%">${formatMs(Math.round(motion.durationMs * i / 10))}</span>`);
   }
   let html = `<div class="motion-scale"><div>track</div><div>mode</div><div class="motion-axis">${ticks.join("")}</div></div>`;
-  for (const boardId of MACHINE_IDS) {
+  // A tagged motion draws its own machine only (servo-bfe). See
+  // motionEditorBoardIds for what keeps the other machines on screen.
+  const visibleBoards = motionEditorBoardIds(motion);
+  const declared = MACHINE_IDS.includes(Number(motion.machine)) ? Number(motion.machine) : null;
+  for (const boardId of visibleBoards) {
     const collapsed = motionCollapsedBoards.has(boardId);
+    // Present only when the motion is tagged for one machine and moves
+    // another. Naming it here is the point: the bake goes to this board too.
+    const stray = declared != null && boardId !== declared;
     // Surface the actual IP currently advertising this boardId instead
     // of assuming boards[0]=B1, boards[1]=B2, boards[2]=B3. The bake path
     // already resolves /boardId; the editor/runtime must use the same map.
@@ -4601,7 +4641,9 @@ function renderMotionEditor() {
     const titleAttr = ip
       ? `Resolved via /boardId to ${ip}`
       : "No responding board currently reports this boardId";
-    html += `<div class="motion-board"><button data-motion-collapse="${boardId}" title="${escapeHtml(titleAttr)}">${collapsed ? "+" : "-"} ${boardLabel(boardId)} ${ipHtml}</button></div>`;
+    html += `<div class="motion-board${stray ? " stray" : ""}"><button data-motion-collapse="${boardId}" title="${escapeHtml(titleAttr)}">${collapsed ? "+" : "-"} ${boardLabel(boardId)} ${ipHtml}${
+      stray ? ` <span class="off-machine" title="This motion is tagged for ${escapeHtml(machineOf(declared).name)}">also moves here</span>` : ""
+    }</button></div>`;
     // Say why the group is empty. The same fact is stated in the Motor Test
     // drawer; wording it the same way there and here keeps it reading as one
     // fact about the machine rather than two different failures.
@@ -4657,6 +4699,15 @@ function renderMotionEditor() {
         </div>
       </div>`;
     }
+  }
+  // Say that the timeline is filtered, and by what. A silently short editor
+  // reads as a machine that failed to load; naming the tag makes it a choice.
+  const hidden = MACHINE_IDS.filter(id => !visibleBoards.includes(id));
+  if (hidden.length) {
+    html += `<div class="motion-hidden">Tagged for ${escapeHtml(machineOf(declared).name)}, so
+      ${hidden.map(id => escapeHtml(machineOf(id).name)).join(" and ")}
+      ${hidden.length > 1 ? "are" : "is"} hidden — this motion rests ${hidden.length > 1 ? "them" : "it"}.
+      Duplicate to another machine to author there.</div>`;
   }
   motionGridEl.innerHTML = html;
 }
