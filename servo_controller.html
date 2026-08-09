@@ -5305,36 +5305,90 @@ function scrubMotionTo(atMs, live = true) {
 // latest target value, and the Arduino's queue depth stays at 0-1.
 // No backlog means STOP at end of playback only needs to be sent
 // once — there's nothing to outrun.
-const motionInflightIps = new Set();
-const motionPendingByIp = new Map(); // ip -> { cmd, signal }
+// === SEND-QUEUE-CORE START ===
+/* What a command addresses, for deciding whether a newer one replaces it.
+
+   A board runs one HTTP socket, so playback keeps one request in flight per
+   board and collapses the rest. The question is what "the rest" means. A newer
+   ROTATE genuinely supersedes an older one — same motor, only the latest value
+   matters. A DMOVE on channel 2 supersedes nothing: it is a different servo.
+
+   Getting that wrong cost a bench afternoon. A motion frame dispatches every
+   channel in one synchronous pass, and with a single pending slot per board
+   the third channel overwrote the second before either was sent — so the
+   middle servo of every three-servo board silently never moved, and it looked
+   for all the world like dead hardware. */
+function motionCoalesceKey(cmd) {
+  const parts = String(cmd).trim().split(/\s+/);
+  const verb = (parts[0] || "").toUpperCase();
+  // Per-channel commands: the channel is what makes them distinct.
+  if ((verb === "DMOVE" || verb === "DOWN" || verb === "UP") && parts[1] != null) {
+    return `${verb}:${parts[1]}`;
+  }
+  return verb;
+}
+
+/* One board's outbox: at most one request in flight, and behind it at most one
+   pending command per addressed thing, kept in the order each was first seen
+   so no channel starves behind a busier one. */
+function makeSendQueue() {
+  const pending = new Map();   // coalesceKey -> entry, insertion-ordered
+  let inflight = false;
+  return {
+    get inflight() { return inflight; },
+    get size() { return pending.size; },
+    /* Returns { sendNow } — true when the caller should dispatch immediately,
+       false when it has been queued for takeNext(). */
+    push(cmd, signal) {
+      if (!inflight) { inflight = true; return { sendNow: true, cmd, signal }; }
+      pending.set(motionCoalesceKey(cmd), { cmd, signal });
+      return { sendNow: false, cmd, signal };
+    },
+    /* The in-flight request finished: hand back the next command to send, or
+       null when the board is idle. */
+    takeNext() {
+      const first = pending.entries().next();
+      if (first.done) { inflight = false; return null; }
+      const [key, entry] = first.value;
+      pending.delete(key);
+      inflight = true;
+      return entry;
+    },
+    clear() { pending.clear(); inflight = false; },
+  };
+}
+// === SEND-QUEUE-CORE END ===
+
+const motionSendQueues = new Map(); // ip -> send queue
+
+function motionQueueFor(ip) {
+  if (!motionSendQueues.has(ip)) motionSendQueues.set(ip, makeSendQueue());
+  return motionSendQueues.get(ip);
+}
 
 function clearMotionSendQueues() {
-  motionInflightIps.clear();
-  motionPendingByIp.clear();
+  for (const q of motionSendQueues.values()) q.clear();
 }
 
 function sendMotionCommand(ip, cmd, signal) {
-  if (motionInflightIps.has(ip)) {
-    // Coalesce: only the most recent value matters; older pending
-    // commands are superseded.
-    motionPendingByIp.set(ip, { cmd, signal });
-    return;
-  }
-  motionInflightIps.add(ip);
+  const queue = motionQueueFor(ip);
+  if (!queue.push(cmd, signal).sendNow) return;
+  dispatchMotionCommand(ip, cmd, signal);
+}
+
+function dispatchMotionCommand(ip, cmd, signal) {
   publishToSim(ip, cmd);
   const url = `http://${ip}/cmd?c=${encodeURIComponent(cmd)}&t=${Date.now().toString(36)}`;
   fetch(url, { method: "GET", mode: "no-cors", cache: "no-store", signal })
     .then(() => { lastCmd.set(ip, { cmd, ts: Date.now() }); })
     .catch(() => { /* aborted or transport error */ })
     .finally(() => {
-      motionInflightIps.delete(ip);
-      const pending = motionPendingByIp.get(ip);
-      if (pending && !pending.signal?.aborted) {
-        motionPendingByIp.delete(ip);
-        sendMotionCommand(ip, pending.cmd, pending.signal);
-      } else {
-        motionPendingByIp.delete(ip);
-      }
+      // Drain the backlog one at a time — the board still only has the one
+      // socket. Abandoned commands are skipped rather than stalling the queue.
+      const queue = motionQueueFor(ip);
+      let next = queue.takeNext();
+      while (next && next.signal?.aborted) next = queue.takeNext();
+      if (next) dispatchMotionCommand(ip, next.cmd, next.signal);
     });
 }
 
