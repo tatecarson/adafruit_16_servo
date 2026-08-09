@@ -1116,6 +1116,19 @@
     justify-content: space-between;
     margin: 12px 0;
   }
+  /* Duplicate's target reads as its own control when it wraps onto its own
+     line, so it stays inline with the button it modifies and says "copy to". */
+  .motion-actions .motion-dup {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    white-space: nowrap;
+    color: var(--ink-mute);
+    font: 700 8px/1 var(--label);
+    text-transform: uppercase;
+    letter-spacing: 0.22em;
+  }
+  .motion-actions .motion-dup select { width: auto; }
   .motion-tags input { max-width: 150px; }
   .motion-time {
     color: var(--ink-dim);
@@ -1923,7 +1936,9 @@
       <div class="motion-actions">
         <button class="cmd compact" id="motionNew">New</button>
         <button class="cmd compact" id="motionDuplicate">Duplicate</button>
-        <select id="motionDupTarget" class="compact" title="Where Duplicate puts the copy — 'same machine' keeps the channels it already uses"></select>
+        <label class="motion-dup" title="Where Duplicate puts the copy. Another machine carries the keyframes onto its channels, rests the originals, and tags the copy for it — the gesture, on a different mechanism.">copy to
+          <select id="motionDupTarget" class="compact"></select>
+        </label>
         <button class="cmd compact alert" id="motionDelete">Delete</button>
       </div>
     </div>
@@ -2516,6 +2531,36 @@ function inferredMachineIds(motion) {
    machine nobody is looking at. Duplicate-to-another-machine leaves rest
    keyframes on the source, so a stray is a board that still moves, not one
    that merely has tracks. */
+/* What Duplicate's "copy to" target can actually do with this motion.
+
+   Carrying a gesture to another machine means reading it off the machine it is
+   on now, so exactly one machine has to move. Two of them moving, or none, and
+   there is nothing to carry — the duplicate still happens, because that is the
+   button the operator pressed, but the target they chose is not silently
+   dropped on the floor. Every refusal here says which machine it did not reach
+   and why. */
+function motionRetargetPlan(motion, target) {
+  const to = MACHINE_IDS.includes(Number(target)) ? Number(target) : null;
+  const moving = inferredMachineIds(motion).sort((a, b) => a - b);
+  const from = moving.length === 1 ? moving[0] : null;
+  const plan = { retarget: false, from, to, copy: true, message: null };
+  if (to == null) return plan;
+
+  const name = (id) => machineOf(id)?.name ?? `board ${id}`;
+  if (machineOf(to)?.servos == null) {
+    return { ...plan, copy: false, message: `${name(to)} has no servos — nothing to copy there` };
+  }
+  if (moving.length === 0) {
+    return { ...plan, message: `nothing moves in this motion — copied as-is, not to the ${name(to)}` };
+  }
+  if (moving.length > 1) {
+    return { ...plan, message: `this moves the ${moving.map(name).join(" and the ")}`
+      + ` — copied as-is; clear the machine you do not want, then duplicate again` };
+  }
+  if (from === to) return { ...plan, message: `already on the ${name(to)} — copied as-is` };
+  return { ...plan, retarget: true };
+}
+
 function motionEditorBoardIds(motion) {
   const declared = MACHINE_IDS.includes(Number(motion?.machine)) ? Number(motion.machine) : null;
   if (declared == null) return MACHINE_IDS.slice();
@@ -5560,27 +5605,22 @@ $("#motionDuplicate").addEventListener("click", () => {
   /* Duplicate can also move the gesture to another machine. A shape authored
      against the curtain's winches is often a reasonable starting point for the
      wands, and re-drawing it by hand is the tedious part. */
-  const target = Number($("#motionDupTarget").value) || null;
-  const sources = [...new Set(copy.tracks.map(t => Number(t.boardId)))]
-    .filter(id => inferredMachineIds(copy).includes(id));
-  const from = sources.length === 1 ? sources[0] : null;
+  const plan = motionRetargetPlan(copy, Number($("#motionDupTarget").value) || null);
+  if (!plan.copy) { setMotionStatus(plan.message, "alert"); return; }
 
-  if (target && from && target !== from) {
-    if (machineOf(target)?.servos === null) {
-      setMotionStatus(`${machineOf(target).name} has no servos — nothing to copy there`, "alert");
-      return;
-    }
-    const room = servoCountOf(target);
+  if (plan.retarget) {
+    const { from, to } = plan;
+    const room = servoCountOf(to);
     let dropped = 0;
     for (const t of copy.tracks) {
       if (Number(t.boardId) !== from) continue;
-      const dest = copy.tracks.find(x => Number(x.boardId) === target && x.channel === t.channel);
+      const dest = copy.tracks.find(x => Number(x.boardId) === to && x.channel === t.channel);
       if (!dest) { dropped++; continue; }
       dest.keyframes = JSON.parse(JSON.stringify(t.keyframes));
       t.keyframes = [{ atMs: 0, value: MOTION_SERVO_REST_PERCENT }];
     }
-    copy.machine = target;
-    copy.name = `${motion.name || motion.id} → ${machineOf(target).short}`;
+    copy.machine = to;
+    copy.name = `${motion.name || motion.id} → ${machineOf(to).short}`;
     lib.motions.push(copy);
     currentMotionId = copy.id;
     saveLibrary(lib);
@@ -5588,8 +5628,8 @@ $("#motionDuplicate").addEventListener("click", () => {
     renderLibSummary();
     renderMotionEditor();
     setMotionStatus(dropped
-      ? `copied to ${machineOf(target).name} — ${dropped} channel${dropped > 1 ? "s" : ""} dropped, it has only ${room}`
-      : `copied to ${machineOf(target).name}`, dropped ? "amber" : "phosphor");
+      ? `copied to ${machineOf(to).name} — ${dropped} channel${dropped > 1 ? "s" : ""} dropped, it has only ${room}`
+      : `copied to ${machineOf(to).name}`, dropped ? "amber" : "phosphor");
     return;
   }
 
@@ -5600,7 +5640,10 @@ $("#motionDuplicate").addEventListener("click", () => {
   motionDirty = false;
   renderLibSummary();
   renderMotionEditor();
-  setMotionStatus(`duplicated ${motion.name || motion.id}`, "phosphor");
+  // A chosen target that could not be honoured is the whole point of the
+  // message: the copy is not the one the operator asked for.
+  setMotionStatus(plan.message || `duplicated ${motion.name || motion.id}`,
+                  plan.message ? "amber" : "phosphor");
 });
 
 /* The two machine selects. Kept in one place so adding a machine adds it to
@@ -5617,7 +5660,7 @@ function renderMachineSelectors() {
   if (dupEl) {
     const keep = dupEl.value;
     dupEl.innerHTML = [`<option value="">same machine</option>`]
-      .concat(SERVO_BOARD_IDS.map(id => `<option value="${id}">→ ${escapeHtml(machineOf(id).short)}</option>`))
+      .concat(SERVO_BOARD_IDS.map(id => `<option value="${id}">${escapeHtml(machineOf(id).short)}</option>`))
       .join("");
     dupEl.value = keep;
   }
