@@ -8,6 +8,7 @@
         "clear"
       ],
       "scope": "cluster",
+      "machine": 3,
       "durationMs": 8000,
       "tracks": [
         {
@@ -94,8 +95,7 @@
             }
           ]
         }
-      ],
-      "machine": 3
+      ]
     },
     {
       "id": "mt-low1",
@@ -104,6 +104,7 @@
         "drag"
       ],
       "scope": "cluster",
+      "machine": 3,
       "durationMs": 6500,
       "tracks": [
         {
@@ -190,12 +191,11 @@
             }
           ]
         }
-      ],
-      "machine": 3
+      ]
     },
     {
       "id": "mt-stg2",
-      "name": "Lower Arm 2 \u00b7 1 held",
+      "name": "Lower Arm 2 · 1 held",
       "tags": [
         "drag"
       ],
@@ -283,7 +283,7 @@
     },
     {
       "id": "mt-stg3",
-      "name": "Lower Arm 3 \u00b7 1-2 held",
+      "name": "Lower Arm 3 · 1-2 held",
       "tags": [
         "drag"
       ],
@@ -559,7 +559,7 @@
     },
     {
       "id": "mt-stir",
-      "name": "All Down \u00b7 Stir",
+      "name": "All Down · Stir",
       "tags": [
         "drag",
         "agitated"
@@ -668,7 +668,7 @@
     },
     {
       "id": "mt-wclear",
-      "name": "Wands \u00b7 all clear",
+      "name": "Wands · all clear",
       "tags": [
         "bench",
         "wands"
@@ -765,7 +765,7 @@
     },
     {
       "id": "mt-wstrike",
-      "name": "Wands \u00b7 all in",
+      "name": "Wands · all in",
       "tags": [
         "bench",
         "wands"
@@ -862,7 +862,7 @@
     },
     {
       "id": "mt-wcasc",
-      "name": "Wands \u00b7 cascade in",
+      "name": "Wands · cascade in",
       "tags": [
         "bench",
         "wands"
@@ -967,7 +967,7 @@
     },
     {
       "id": "mt-wsolo",
-      "name": "Wands \u00b7 one only",
+      "name": "Wands · one only",
       "tags": [
         "bench",
         "wands"
@@ -1056,7 +1056,7 @@
     },
     {
       "id": "mt-whalf",
-      "name": "Wands \u00b7 half depth",
+      "name": "Wands · half depth",
       "tags": [
         "bench",
         "wands"
@@ -1153,7 +1153,7 @@
     },
     {
       "id": "mt-wsweep",
-      "name": "Wands \u00b7 in and out",
+      "name": "Wands · in and out",
       "tags": [
         "bench",
         "wands"
@@ -1264,7 +1264,7 @@
   "sequences": [
     {
       "id": "sq-nxy2a1",
-      "name": "Curtain \u00b7 Willow Rustle",
+      "name": "Curtain · Willow Rustle",
       "tags": [],
       "steps": [
         {
@@ -1283,7 +1283,7 @@
     },
     {
       "id": "sq-wyf1tp",
-      "name": "Curtain \u00b7 Rotations",
+      "name": "Curtain · Rotations",
       "tags": [],
       "steps": [
         {
@@ -1323,7 +1323,7 @@
     },
     {
       "id": "sq-drag01",
-      "name": "Curtain \u00b7 Contact Build",
+      "name": "Curtain · Contact Build",
       "tags": [
         "slow",
         "build"
@@ -1333,7 +1333,7 @@
           "cmd": "MOTION mt-low1",
           "durationMs": 6500,
           "target": "3",
-          "label": "arm 1 drags \u00b7 slow",
+          "label": "arm 1 drags · slow",
           "hold": false,
           "dc": {
             "3": 10
@@ -1352,7 +1352,7 @@
           "cmd": "MOTION mt-stg2",
           "durationMs": 6200,
           "target": "3",
-          "label": "arm 2 drags \u00b7 slow",
+          "label": "arm 2 drags · slow",
           "hold": false,
           "dc": {
             "3": 10
@@ -1371,7 +1371,7 @@
           "cmd": "MOTION mt-stg3",
           "durationMs": 6500,
           "target": "3",
-          "label": "arm 3 drags \u00b7 all down",
+          "label": "arm 3 drags · all down",
           "hold": false,
           "dc": {
             "3": 10
@@ -1390,7 +1390,7 @@
           "cmd": "MOTION mt-stir",
           "durationMs": 5200,
           "target": "3",
-          "label": "all dragging \u00b7 faster",
+          "label": "all dragging · faster",
           "hold": false,
           "dc": {
             "3": 10
@@ -1401,7 +1401,7 @@
     },
     {
       "id": "sq-649ld4",
-      "name": "Curtain \u00b7 Shaking Rotations",
+      "name": "Curtain · Shaking Rotations",
       "tags": [],
       "steps": [
         {
@@ -1457,7 +1457,7 @@
     },
     {
       "id": "sq-benchw",
-      "name": "Wands \u00b7 Bench Check",
+      "name": "Wands · Bench Check",
       "tags": [
         "bench"
       ],
@@ -1475,27 +1475,27 @@
         },
         {
           "cmd": "MOTION mt-wstrike",
-          "durationMs": 1600,
+          "durationMs": 3000,
           "target": "1",
           "label": "wands in, ring turning",
-          "hold": false,
-          "dc": {
-            "1": 25
-          }
-        },
-        {
-          "cmd": "MOTION mt-wcasc",
-          "durationMs": 2600,
-          "target": "1",
-          "label": "cascade against a faster ring",
           "hold": false,
           "dc": {
             "1": 40
           }
         },
         {
+          "cmd": "MOTION mt-wcasc",
+          "durationMs": 3000,
+          "target": "1",
+          "label": "cascade against a faster ring",
+          "hold": false,
+          "dc": {
+            "1": 50
+          }
+        },
+        {
           "cmd": "MOTION mt-wclear",
-          "durationMs": 1600,
+          "durationMs": 3000,
           "target": "1",
           "label": "clear and stop",
           "hold": false,
@@ -1507,7 +1507,7 @@
     },
     {
       "id": "sq-benchf",
-      "name": "Field \u00b7 Bench Check",
+      "name": "Field · Bench Check",
       "tags": [
         "bench"
       ],
@@ -1517,7 +1517,7 @@
           "cmd": "ROTATE 12",
           "durationMs": 6000,
           "target": "2",
-          "label": "just turning \u2014 15 rpm",
+          "label": "just turning — 15 rpm",
           "hold": false,
           "dc": {}
         },
@@ -1549,7 +1549,7 @@
     },
     {
       "id": "sq-benchall",
-      "name": "Cluster \u00b7 Bench Check",
+      "name": "Cluster · Bench Check",
       "tags": [
         "bench"
       ],
