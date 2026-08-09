@@ -7497,7 +7497,6 @@ function rewriteSequencePreRolls(steps, motions, opts) {
     const motion = id ? byId.get(id.toLowerCase()) : null;
     if (motion) Object.assign(rerunFromPose, bridgeServoPose(motion, "exit"));
   }
-  const coldOpts = Object.assign({}, opts, { rerunFromPose });
 
   for (let stepIndex = 0; stepIndex < (steps || []).length; stepIndex++) {
     const step = steps[stepIndex];
@@ -7510,13 +7509,24 @@ function rewriteSequencePreRolls(steps, motions, opts) {
     }
 
     const entry = bridgeServoPose(motion, "entry");
+    // The glide is on the machine this step reaches, and machines travel at
+    // different rates. Prefer what the Motion says it is for; fall back to the
+    // step's target, then to opts.msPerPercent for anything unidentifiable.
+    const stepBoardId = motion.machine != null ? motion.machine : Number(step.target);
+    const stepRate = typeof opts.msPerPercentFor === "function"
+      ? opts.msPerPercentFor(stepBoardId)
+      : null;
+    const stepOpts = Number.isFinite(stepRate)
+      ? Object.assign({}, opts, { msPerPercent: stepRate })
+      : opts;
+
     let planned = null;
     let kind = "interior";
     if (virt === null) {
-      planned = planColdStartBridge(entry, coldOpts);
+      planned = planColdStartBridge(entry, Object.assign({}, stepOpts, { rerunFromPose }));
       kind = "cold";
     } else {
-      planned = planInteriorBridge(virt, entry, "__duration_only", opts);
+      planned = planInteriorBridge(virt, entry, "__duration_only", stepOpts);
     }
 
     const prepareMs = planned ? Number(planned.durationMs ?? planned.motion?.durationMs) || 0 : 0;
@@ -7857,7 +7867,22 @@ function dcLaneSegments(lane, totalMs) {
 // Lives inside this extracted block because buildBakeLibrary needs it in the
 // host-test module too.
 function seqPrerollOpts(seqId) {
-  return { seqId, msPerPercent: SERVO_FEASIBILITY_MS_PER_PERCENT, minDeltaPercent: 5, floorMs: 800, restPercent: MOTION_SERVO_REST_PERCENT, maxSteps: SEQ_MAX_STEPS };
+  return {
+    seqId,
+    msPerPercent: SERVO_FEASIBILITY_MS_PER_PERCENT,
+    /* How long a percent of travel takes on the machine a step actually
+       reaches. The rate belongs to the mechanism, not the servo: one goBILDA
+       runs every board, but a winch spends all 1800° where a wand spends 36°.
+       Handing the planner the winch constant for everything budgeted 7700ms
+       for a wand sweep that takes 154ms — fifty times the dead air, baked into
+       the payload. msPerPercent above stays as the fallback for a step whose
+       machine cannot be identified. */
+    msPerPercentFor: (boardId) => servoMsPerPercent(boardId),
+    minDeltaPercent: 5,
+    floorMs: 800,
+    restPercent: MOTION_SERVO_REST_PERCENT,
+    maxSteps: SEQ_MAX_STEPS,
+  };
 }
 
 function bakeStorageTier(byteCount) {
