@@ -2824,6 +2824,23 @@ function renderPills(s, boardId) {
 // what is it playing?" — id · ip · dot · uptime · status pills. The old
 // per-channel instrument graphics were deleted; the Motor Test drawer is the
 // place to watch/poke individual channels.
+// === BOARD-IDENTITY-CORE START ===
+/* Which machine a board row is, from the one source that knows.
+
+   `status.node` is NOT a board id. Sync.cpp's initNodeId sets nodeId to the
+   last byte of the board's MAC, so the curtain — board 3 — reports node 208.
+   Feeding that to machineOf() answered nothing, and every online board in the
+   strip read "unknown machine" while the DC pill could not name an rpm.
+
+   The board id is discovered over /boardId and cached per IP; nothing else is
+   allowed to stand in for it. A board that has not answered /boardId yet has
+   no machine, and says so rather than guessing from list position. */
+function resolveBoardId(status, discovered) {
+  const id = Number(discovered);
+  return MACHINE_IDS.includes(id) ? id : null;
+}
+// === BOARD-IDENTITY-CORE END ===
+
 function renderBoardRow(ip, idx, status, online) {
   const idStr = (status?.node != null) ? pad2(status.node) : "—";
   const ipShort = status?.ip ?? ip;
@@ -2838,7 +2855,7 @@ function renderBoardRow(ip, idx, status, online) {
   // Key the machine off what the board REPORTS, not off its position in the
   // configured list — the list order is an accident of typing and the board id
   // is discovered over /boardId.
-  const boardId = status?.node ?? boardIdByIp.get(ip) ?? null;
+  const boardId = resolveBoardId(status, boardIdByIp.get(ip));
   const machine = machineOf(boardId);
   const machineHtml = machine
     ? `<span class="br-machine" title="${escapeHtml(machine.drive)}">${escapeHtml(machine.name)}</span>`
