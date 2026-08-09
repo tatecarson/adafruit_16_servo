@@ -1116,6 +1116,15 @@
     justify-content: space-between;
     margin: 12px 0;
   }
+  /* Six children in a five-column grid put the actions on their own row, in
+     the narrowest column, where four controls stack and "copy to" ends up
+     sitting over Delete as though Delete were part of it. Give the row the
+     full width and they read left to right in one line. */
+  .motion-actions {
+    grid-column: 1 / -1;
+  }
+  /* Destructive, and nothing to do with the three beside it. */
+  .motion-actions #motionDelete { margin-left: auto; }
   /* Duplicate's target reads as its own control when it wraps onto its own
      line, so it stays inline with the button it modifies and says "copy to". */
   .motion-actions .motion-dup {
