@@ -2450,15 +2450,15 @@ const boardIdByIp = new Map();
 const SERVO_FULL_TRAVEL_DEGREES = 1800;   // the servo, not the mechanism
 
 const MACHINES = {
-  1: { name: "centre wands", short: "wands",
+  1: { name: "centre wands", short: "wands", units: "wands",
        drive: "3 wands · ring on a 4:1 gearbox", gear: 4, rpmAt100: 6.25,
        servos: ["Wand I throw", "Wand II throw", "Wand III throw"],
        travelDeg: 36 },
-  2: { name: "field", short: "field",
+  2: { name: "field", short: "field", units: null,
        drive: "tone-wheel deck · DC only", gear: 1, rpmAt100: 128,
        servos: null,                         // no servos on this machine at all
        travelDeg: null },
-  3: { name: "dowel curtain", short: "curtain",
+  3: { name: "dowel curtain", short: "curtain", units: "winches",
        drive: "3 winches · ring direct", gear: 1, rpmAt100: 25,
        servos: ["Winch S0", "Winch S1", "Winch S2"],
        travelDeg: 1800 },
@@ -2473,6 +2473,15 @@ const SERVO_BOARD_IDS = MACHINE_IDS.filter(id => Array.isArray(MACHINES[id].serv
 const machineOf   = (boardId) => MACHINES[Number(boardId)] || null;
 const servoCountOf = (boardId) => (machineOf(boardId)?.servos || []).length;
 const servoTravelOf = (boardId) => machineOf(boardId)?.travelDeg ?? null;
+
+/* What this machine's moving parts are called, for counting them in prose.
+   Saying "3 winches" while planning a wand glide is how a bench session goes
+   looking for a hardware fault that is not there. */
+function machineUnitPlural(boardId) {
+  // Spelled out per machine rather than pluralised by rule — "winch" is
+  // exactly the word an -s rule gets wrong.
+  return machineOf(boardId)?.units || "servos";
+}
 
 function boardLabel(boardId, withDrive) {
   const m = machineOf(boardId);
@@ -6685,7 +6694,7 @@ function renderSequenceArrangement() {
       const toggleAttr = seqPlayer.active ? "" : ` data-arrange-prep="${ownerIndex}"`;
       // What the block actually says. Without this it read "pre-roll 7700ms",
       // which names a duration and explains nothing (servo-rvn).
-      const travel = describePreRollTravel(step.moves);
+      const travel = describePreRollTravel(step.moves, machineUnitPlural);
       const detail = travel.rows.length
         ? `\n${travel.rows.join("\n")}`
         : "";
@@ -7389,7 +7398,7 @@ function planColdStartBridge(toPose, opts) {
 // shows (servo-rvn). The direction wording is the part that matters: on this
 // rig 0% is fully UP and 100% is fully down, so a RISING value is travel DOWN.
 // Naming it backwards would be worse than saying nothing at all.
-function describePreRollTravel(moves) {
+function describePreRollTravel(moves, unitsFor) {
   const list = (moves || []).filter(m => m && Number.isFinite(m.from) && Number.isFinite(m.to) && m.from !== m.to);
   const rows = list.map(m => `${m.label} ${m.from}% → ${m.to}%`);
   if (!list.length) return { count:0, direction:null, headline:"nothing to move", rows };
@@ -7403,7 +7412,16 @@ function describePreRollTravel(moves) {
   const hi = Math.max(...targets);
   const where = lo === hi ? `${lo}%` : `${lo}–${hi}%`;
 
-  const subject = list.length === 1 ? list[0].label : `${list.length} winches`;
+  // Name the parts after the machine they belong to. Track labels are B<n>.S<c>,
+  // so the board id is right there — and calling three wands "winches" is what
+  // turned a mis-planned glide into a hardware hunt. This block is extracted
+  // without MACHINE-CORE by its host tests, so the noun arrives injected and
+  // falls back to something true of every machine.
+  const boardId = Number(/^B(\d+)\./.exec(list[0].label || "")?.[1]);
+  const units = typeof unitsFor === "function" ? unitsFor(boardId) : null;
+  const subject = list.length === 1
+    ? list[0].label
+    : `${list.length} ${units || "servos"}`;
   const headline = `${subject} ${direction ? `${direction} ` : ""}to ${where}`;
   return { count:list.length, direction, headline, rows };
 }
@@ -8292,7 +8310,7 @@ async function bakeToAllBoards(onlyIps = null, mode = onlyIps ? "targeted" : "al
   // say what physically travels rather than only how many channels (servo-rvn).
   for (const s of bakeLib._bridgeSummaries) {
     const kind = s.kind === "cold" ? "cold start" : "transition";
-    const travel = describePreRollTravel(s.moves);
+    const travel = describePreRollTravel(s.moves, machineUnitPlural);
     bakeLog(`↳ travel to start (${kind}) in "${s.seqName}": ${travel.headline}, ${s.durationMs}ms`, "amber");
   }
   if (bakeLib._bridgeSummaries.length) {

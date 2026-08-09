@@ -59,11 +59,11 @@ const SEQ_MAX_STEPS = 16;
 
 const dir = mkdtempSync(join(tmpdir(), "preroll-rate-"));
 const modPath = join(dir, "core.mjs");
-writeFileSync(modPath, shims + core + "\nexport { seqPrerollOpts, rewriteSequencePreRolls, servoMsPerPercent };\n", "utf8");
+writeFileSync(modPath, shims + core + "\nexport { seqPrerollOpts, rewriteSequencePreRolls, servoMsPerPercent, machineUnitPlural };\n", "utf8");
 const mod = await import(pathToFileURL(modPath).href);
 if (typeof mod.seqPrerollOpts !== "function") fail("no seqPrerollOpts()");
 if (failed) process.exit(1);
-const { seqPrerollOpts, rewriteSequencePreRolls, servoMsPerPercent } = mod;
+const { seqPrerollOpts, rewriteSequencePreRolls, servoMsPerPercent, machineUnitPlural } = mod;
 
 console.log("=== Pre-roll rate per machine ===");
 
@@ -107,6 +107,14 @@ eq("a full-travel winch pre-roll is still measured in seconds", curtainPrep >= 7
 // so the assertion is "far below the winch", not an exact millisecond count.
 eq("a wand pre-roll is nothing like the winch's", wandPrep < curtainPrep / 5, true);
 eq("...and the two are no longer identical", wandPrep === curtainPrep, false);
+
+// --- and it must say which parts are moving --------------------------------
+// "3 winches" on a wand board is what sent a bench session looking for
+// hardware faults. The noun comes from the machine, like the rate does.
+eq("the curtain moves winches", machineUnitPlural(3), "winches");
+eq("the wands move wands", machineUnitPlural(1), "wands");
+eq("a machine with no servos has no parts to name", machineUnitPlural(2), "servos");
+eq("neither does something that is not a machine", machineUnitPlural(99), "servos");
 
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

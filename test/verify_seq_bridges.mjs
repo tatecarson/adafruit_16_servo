@@ -184,7 +184,7 @@ eq("steps without noPrep are unchanged",
    rewriteSequencePreRolls([{cmd:"MOTION rise",durationMs:1000}], lib, wopts).steps[0].cmd,
    "MOTION rise PREP 7700");
 
-// --- servo-rvn: the plan must say which winches travel, and from where ---
+// --- servo-rvn: the plan must say which parts travel, and from where ---
 // The planners already know every endpoint; they used to report only channel
 // keys, which is why a PREP block could say "7700ms" and nothing else.
 {
@@ -240,28 +240,37 @@ eq("steps without noPrep are unchanged",
 // 0% is fully UP and 100% is fully down, so a RISING value is travel DOWN.
 // Getting this backwards in the UI would be worse than saying nothing.
 {
-  const d = describePreRollTravel;
+  // The noun is the machine's, injected — this block is extracted without
+  // MACHINE-CORE, so the lookup is stubbed the way the dashboard supplies it.
+  const units = (boardId) => ({ 1: "wands", 3: "winches" })[boardId] || "servos";
+  const d = (moves) => describePreRollTravel(moves, units);
   eq("a rising value reads as travelling down",
      d([{label:"B1.S0", from:0, to:100}]).headline, "B1.S0 down to 100%");
   eq("a falling value reads as travelling up",
      d([{label:"B1.S0", from:100, to:0}]).headline, "B1.S0 up to 0%");
-  eq("several winches to a shared target are counted",
+  eq("several wands to a shared target are counted, and named as wands",
      d([{label:"B1.S0",from:100,to:40},{label:"B1.S1",from:100,to:40}]).headline,
+     "2 wands up to 40%");
+  eq("the same plan on the curtain names winches",
+     d([{label:"B3.S0",from:100,to:40},{label:"B3.S1",from:100,to:40}]).headline,
      "2 winches up to 40%");
+  eq("with no lookup it says something true of any machine",
+     describePreRollTravel([{label:"B1.S0",from:100,to:40},{label:"B1.S1",from:100,to:40}]).headline,
+     "2 servos up to 40%");
   eq("a spread of targets is shown as a range",
      d([{label:"B1.S0",from:100,to:96},{label:"B1.S1",from:100,to:90}]).headline,
-     "2 winches up to 90–96%");
+     "2 wands up to 90–96%");
   // A channel whose endpoints match isn't travelling, so it is not counted.
   eq("a channel that does not actually move is left out",
      d([{label:"B1.S0",from:100,to:96},{label:"B1.S1",from:100,to:100}]).count, 1);
   eq("mixed directions do not claim a direction",
      d([{label:"B1.S0",from:0,to:50},{label:"B1.S1",from:100,to:50}]).headline,
-     "2 winches to 50%");
+     "2 wands to 50%");
   eq("nothing moving says so", d([]).headline, "nothing to move");
   eq("rows list every channel for the tooltip",
      d([{label:"B1.S0",from:100,to:40},{label:"B1.S1",from:90,to:40}]).rows,
      ["B1.S0 100% → 40%", "B1.S1 90% → 40%"]);
-  eq("the count is the number of winches that actually travel",
+  eq("the count is the number of parts that actually travel",
      d([{label:"B1.S0",from:100,to:40}]).count, 1);
 }
 
