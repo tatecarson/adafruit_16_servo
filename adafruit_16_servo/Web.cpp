@@ -82,8 +82,30 @@ static void sendControlResponse(WiFiClient& client) {
 
 // Streams the POST body into a static buffer (up to STORAGE_PAYLOAD_MAX), then
 // validates and persists. Writes the response on `client`.
+/* Read and throw away a request body we are about to refuse.
+
+   Replying before the body is consumed leaves the client streaming into a
+   socket nobody is draining, so it never reaches the response. An accurate,
+   specific error — "large-buffer-unavailable" — arrived at the operator as a
+   20-second client timeout with no reason attached. The board knew exactly
+   what was wrong and had no way to say it. */
+static void drainRequestBody(WiFiClient& client, int contentLength) {
+    uint8_t sink[64];
+    int remaining = contentLength;
+    unsigned long deadline = millis() + 3000;
+    while (remaining > 0 && millis() < deadline && client.connected()) {
+        int avail = client.available();
+        if (avail <= 0) { delay(2); continue; }
+        int toRead = avail > (int)sizeof(sink) ? (int)sizeof(sink) : avail;
+        if (toRead > remaining) toRead = remaining;
+        int n = client.read(sink, toRead);
+        if (n > 0) { remaining -= n; deadline = millis() + 1000; }
+    }
+}
+
 static void handleSequencesPost(WiFiClient& client, int contentLength) {
     if (contentLength <= 0 || contentLength > (int)STORAGE_PAYLOAD_MAX) {
+        drainRequestBody(client, contentLength);
         client.println("HTTP/1.1 413 Payload Too Large");
         client.println("Connection: close");
         client.println("Access-Control-Allow-Origin: *");
@@ -97,6 +119,7 @@ static void handleSequencesPost(WiFiClient& client, int contentLength) {
     // leases heap so the expanded capacity does not permanently overflow RAM.
     StorageBufferLease lease(contentLength);
     if (!lease.data) {
+        drainRequestBody(client, contentLength);
         client.println("HTTP/1.1 503 Service Unavailable");
         client.println("Connection: close");
         client.println("Access-Control-Allow-Origin: *");
