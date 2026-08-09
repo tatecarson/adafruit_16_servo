@@ -50,7 +50,7 @@ ${block("// === MACHINE-CORE START ===", "// === MACHINE-CORE END ===")}
 ${block("// === SEQ-BRIDGE-CORE START ===", "// === SEQ-BRIDGE-CORE END ===")}
 ${block("// === DC-LANE-CORE START ===", "// === DC-LANE-CORE END ===")}
 ${block("// === BAKE-PAYLOAD-CORE START ===", "// === BAKE-PAYLOAD-CORE END ===")}
-export { buildBakeLibrary, sliceForBoard, hydrateDeviceLibraryForEditor, expandDeviceBlob, BAKE_V2_KEYS };
+export { buildBakeLibrary, sliceForBoard, hydrateDeviceLibraryForEditor, expandDeviceBlob, diffBlob, BAKE_V2_KEYS };
 `, "utf8");
 const core = await import(pathToFileURL(modulePath).href);
 
@@ -207,5 +207,56 @@ const v1Bytes = 1183;   // the same fixture through v1, pinned so a regression s
 const v2Bytes = Buffer.byteLength(JSON.stringify(slice));
 check(v2Bytes < v1Bytes * 0.75,
   `the fixture slice shrinks by at least a quarter (v1 ${v1Bytes}B -> v2 ${v2Bytes}B)`);
+
+
+// --- Every reader of a device payload has to speak v2 --------------------
+// This is the bug class that kept recurring: the wire format changed, and
+// then another place that reads it silently kept using v1 names. A reader
+// that misses does not throw — it reads undefined, treats the payload as
+// empty, and reports something plausible. So sweep the source instead of
+// waiting for each one to be noticed.
+
+// diffBlob decides "edited since bake". With v1 names it indexed nothing on
+// either side and returned a clean zero, so the warning would just have
+// stopped appearing.
+{
+  const lib = core.buildBakeLibrary(fixture);
+  const a = core.sliceForBoard(lib, 1);
+  check(core.diffBlob(a, a).added === 0 &&
+        core.diffBlob(a, a).changed === 0 &&
+        core.diffBlob(a, a).deleted === 0,
+    "diffBlob sees no change between a v2 payload and itself");
+
+  const edited = JSON.parse(JSON.stringify(a));
+  edited[K.root.motions][0][K.motion.durationMs] = 9999;
+  check(core.diffBlob(a, edited).changed === 1,
+    "diffBlob detects an edited motion in a v2 payload");
+
+  const removed = JSON.parse(JSON.stringify(a));
+  removed[K.root.sequences] = [];
+  check(core.diffBlob(a, removed).deleted === a[K.root.sequences].length,
+    "diffBlob detects removed sequences in a v2 payload");
+
+  // A snapshot cached by an older build is v1. Comparing it to a v2 slice
+  // should report churn, not silence — the operator does need to re-bake.
+  const v1ish = { motions: [{ id: "rise", durationMs: 1 }], sequences: [], setlists: [] };
+  check(core.diffBlob(v1ish, a).added + core.diffBlob(v1ish, a).deleted > 0,
+    "diffBlob reports churn between a stale v1 snapshot and a v2 slice");
+}
+
+// The readers that touch the DOM cannot be imported, so check the source. Any
+// of these reading a device snapshot with a v1 name is the bug again.
+{
+  const deviceReaders = [
+    ["snap.motions", "the baked-on-boards panel"],
+    ["snap.sequences", "the setlist readiness gate"],
+    ["?.tracks?.[0]?.boardId", "the panel's board-id derivation"],
+  ];
+  for (const [needle, what] of deviceReaders) {
+    // A `||` fallback for an older cached snapshot is fine; a bare read is not.
+    const bare = new RegExp(String.raw`(?<!\|\|\s)` + needle.replace(/[.?[\]]/g, "\\$&"));
+    check(!bare.test(html), `${what} no longer reads a device payload as v1`);
+  }
+}
 
 console.log(`\n${passed} bake-v2 checks passed`);

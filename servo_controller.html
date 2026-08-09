@@ -3949,8 +3949,13 @@ function renderBakedPanel() {
       return `<div class="baked-board"><div class="bb-head">${escapeHtml(ip)}</div>`
         + `<div class="bb-empty">no bake recorded from this browser — Bake to Boards to populate</div></div>`;
     }
-    const motions = snap.motions || [];
-    const boardId = motions[0]?.tracks?.[0]?.boardId ?? null;
+    // Device snapshot: v2 short keys, with the v1 fallback for one cached by
+    // an older build.
+    const motions = snap[BAKE_V2_KEYS.root.motions] || snap.motions || [];
+    // Take the board id from /boardId discovery rather than from the payload.
+    // v2 drops boardId from tracks, and the old derivation also failed for a
+    // board with no motions at all — which the field legitimately is.
+    const boardId = boardIdByIp.get(ip) ?? null;
     // Staleness: does the current editor library still match what was baked?
     let staleNote = "";
     if (bakeLib && boardId != null) {
@@ -3965,11 +3970,14 @@ function renderBakedPanel() {
       return `<div class="baked-board">${head}<div class="bb-empty">bake recorded, but no motions target this board</div></div>`;
     }
     const rows = motions.map(mo => {
-      const trackCount = (mo.tracks || []).length;
+      // A device payload carries no human name — only the stable id, which is
+      // what MOTION dispatches on anyway.
+      const moId = mo[BAKE_V2_KEYS.motion.id] ?? mo.id;
+      const trackCount = (mo[BAKE_V2_KEYS.motion.tracks] || mo.tracks || []).length;
       return `<div class="baked-row">`
-        + `<span class="bn">${escapeHtml(mo.name || mo.id)}</span>`
-        + `<code class="bid">id: ${escapeHtml(mo.id)}</code>`
-        + `<button class="cmd compact baked" data-baked-play data-ip="${escapeHtml(ip)}" data-id="${escapeHtml(mo.id)}" title="Plays the BAKED motion ${escapeHtml(mo.id)} on ${escapeHtml(ip)} (on-device, full-rate).">▶ Play</button>`
+        + `<span class="bn">${escapeHtml(mo.name || moId)}</span>`
+        + `<code class="bid">id: ${escapeHtml(moId)}</code>`
+        + `<button class="cmd compact baked" data-baked-play data-ip="${escapeHtml(ip)}" data-id="${escapeHtml(moId)}" title="Plays the BAKED motion ${escapeHtml(moId)} on ${escapeHtml(ip)} (on-device, full-rate).">▶ Play</button>`
         + `<span class="bmeta">${trackCount} track${trackCount === 1 ? "" : "s"}</span>`
         + `</div>`;
     }).join("");
@@ -8275,21 +8283,26 @@ function buildBakeLibrary(lib) {
     _bridgeErrors: errors,
   };
 }
-// === BAKE-PAYLOAD-CORE END ===
-
-// Diff one sliced blob against the last snapshot for the same board.
-// Returns counts across motions+sequences+setlists. We count an item as
-// "changed" if its id matches a snapshot id but its minified JSON differs.
+/* Both sides here are DEVICE payloads, so they carry v2 short keys (servo-zzo).
+   Reading them with the v1 names indexed nothing on either side and produced a
+   clean zero — the "edited since bake" warning would simply have stopped
+   appearing, with nothing to show it had. A snapshot cached by an older build
+   may still be v1, so accept either spelling; a v1 snapshot against a v2 slice
+   then reports everything as changed, which is exactly right, because it is. */
 function diffBlob(prev, next) {
+  const R = BAKE_V2_KEYS.root;
+  const listOf = (blob, v2Key, v1Key) => blob?.[v2Key] || blob?.[v1Key] || [];
   function indexById(arr) {
     const m = new Map();
-    for (const x of arr || []) m.set(x.id, JSON.stringify(x));
+    for (const x of arr || []) m.set(x[BAKE_V2_KEYS.motion.id] ?? x.id, JSON.stringify(x));
     return m;
   }
   const out = { added: 0, changed: 0, deleted: 0 };
-  for (const field of ["motions", "sequences", "setlists"]) {
-    const prevMap = indexById(prev?.[field]);
-    const nextMap = indexById(next?.[field]);
+  for (const [v2Key, v1Key] of [[R.motions, "motions"],
+                                [R.sequences, "sequences"],
+                                [R.setlists, "setlists"]]) {
+    const prevMap = indexById(listOf(prev, v2Key, v1Key));
+    const nextMap = indexById(listOf(next, v2Key, v1Key));
     for (const [id, json] of nextMap) {
       if (!prevMap.has(id)) out.added++;
       else if (prevMap.get(id) !== json) out.changed++;
@@ -8300,6 +8313,12 @@ function diffBlob(prev, next) {
   }
   return out;
 }
+
+// === BAKE-PAYLOAD-CORE END ===
+
+// Diff one sliced blob against the last snapshot for the same board.
+// Returns counts across motions+sequences+setlists. We count an item as
+// "changed" if its id matches a snapshot id but its minified JSON differs.
 
 async function fetchBoardId(ip) {
   const ctrl = new AbortController();
@@ -10150,7 +10169,13 @@ async function playSetlistOnDevice() {
   // against the LEADER's snapshot — sequences bake identically to all boards.
   let snap = null;
   try { snap = JSON.parse(localStorage.getItem(LIB_SNAP_PREFIX + leaderIp) || "null"); } catch {}
-  const bakedSeqIds = snap ? (snap.sequences || []).map(sq => sq.id) : null;
+  // Device snapshot again: sequences live under the v2 key. Reading `.sequences`
+  // returned undefined, so every entry looked missing and RUN AUTO refused to
+  // start on a board that was baked correctly.
+  const bakedSeqIds = snap
+    ? (snap[BAKE_V2_KEYS.root.sequences] || snap.sequences || [])
+        .map(sq => sq[BAKE_V2_KEYS.sequence.id] ?? sq.id)
+    : null;
   let editedSinceBake = false;
   if (snap) {
     const d = diffBlob(snap, sliceForBoard(buildBakeLibrary(lib), leaderBoardId));
