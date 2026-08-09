@@ -38,14 +38,24 @@ inline void applyCustomServoSetup(ServoConfig servoConfig[], ServoState servoSta
   // === CUSTOM SERVO CALIBRATIONS ===
   // Add your servo-specific calibrations here so they persist across uploads
 
+  // storageBoardId() returns 0 when the id has never been set or the EEPROM
+  // has been cleared, so the branch has to say which way an UNKNOWN board
+  // falls — and the two mistakes are not equally bad. A winch handed the
+  // wand's 36° barely moves: obviously wrong, harmless, easy to spot. A wand
+  // handed the winch's 1800° drives five turns into a lever with 36° of room.
+  //
+  // So the winch config is opt-in by positive identification, and anything
+  // else — board 1, board 2, an unprogrammed board fresh off the bench —
+  // gets the short travel. Failure lands on the side that cannot break
+  // anything.
   const uint8_t boardId = storageBoardId();
-  const bool isWands = (boardId == 1);
+  const bool isWinch = (boardId == 3);
 
   // How far 100 %down drives the mechanism, and which way round it runs.
   // The winches are wound so a higher value RAISES the ring, hence the
   // reversal; the wands are direct-driven and want 100 %down to mean down.
-  const uint16_t downDegrees = isWands ? WAND_DOWN_DEGREES : CURTAIN_WINCH_DOWN_DEGREES;
-  const bool reverseDir = !isWands;
+  const uint16_t downDegrees = isWinch ? CURTAIN_WINCH_DOWN_DEGREES : WAND_DOWN_DEGREES;
+  const bool reverseDir = isWinch;
 
   for (uint8_t ch = 0; ch < 3; ch++) {
     // Servos 0-2: goBILDA 2000 Series 5-Turn Dual Mode (25-2 Torque)
@@ -61,6 +71,18 @@ inline void applyCustomServoSetup(ServoConfig servoConfig[], ServoState servoSta
 
   // Board 2 — field. No servos are connected at all; the config above is
   // harmless and simply never actuates anything.
+
+  // Say out loud which profile this board took. One binary goes to every
+  // board and configures itself from its stored id, so the only way to be
+  // sure the right machine got the right travel is to have it tell you.
+  Serial.print(F("servos: "));
+  Serial.print(isWinch ? F("winch profile") : F("wand profile"));
+  Serial.print(F(" · 100%down = "));
+  Serial.print(downDegrees);
+  Serial.print(F("deg · reverseDir="));
+  Serial.print(reverseDir ? F("yes") : F("no"));
+  if (boardId == 0) Serial.print(F("  [!] boardId unset — using the safe short travel"));
+  Serial.println();
 
   // === END CUSTOM CALIBRATIONS ===
 }
