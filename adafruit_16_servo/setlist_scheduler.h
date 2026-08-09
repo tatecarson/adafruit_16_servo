@@ -21,7 +21,7 @@ void dispatchCommand(const char* cmd, bool fromNetwork);
 // Missing repeat/weight default to 1; missing gapMs defaults to 0.
 static bool setlistParseEntry(const uint8_t* data, int objStart, int objEnd, SetlistEntry& out) {
   int valuePos = 0;
-  if (!bakeFindValue(data, objStart + 1, objEnd, "seqId", valuePos)) return false;
+  if (!bakeFindValueEither(data, objStart + 1, objEnd, "q", "seqId", valuePos)) return false;
   if (!bakeCopyString(data, valuePos, objEnd, out.seqId, sizeof(out.seqId))) return false;
 
   // Numeric fields are narrowed to uint16_t/uint32_t, so reject out-of-range
@@ -29,18 +29,18 @@ static bool setlistParseEntry(const uint8_t* data, int objStart, int objEnd, Set
   // would wrap and silently change scheduling. Missing fields keep the default.
   long parsed = 0;
   out.repeat = 1;
-  if (bakeFindValue(data, objStart + 1, objEnd, "repeat", valuePos)) {
+  if (bakeFindValueEither(data, objStart + 1, objEnd, "p", "repeat", valuePos)) {
     if (!bakeParseInteger(data, valuePos, objEnd, parsed) || parsed < 1 || parsed > 0xFFFFL) return false;
     out.repeat = (uint16_t)parsed;
   }
   out.gapMs = 0;
-  if (bakeFindValue(data, objStart + 1, objEnd, "gapMs", valuePos)) {
+  if (bakeFindValueEither(data, objStart + 1, objEnd, "g", "gapMs", valuePos)) {
     // `parsed` is a (≤32-bit) long, so it can't exceed UINT32_MAX; only guard < 0.
     if (!bakeParseInteger(data, valuePos, objEnd, parsed) || parsed < 0) return false;
     out.gapMs = (uint32_t)parsed;
   }
   out.weight = 1;
-  if (bakeFindValue(data, objStart + 1, objEnd, "weight", valuePos)) {
+  if (bakeFindValueEither(data, objStart + 1, objEnd, "w", "weight", valuePos)) {
     if (!bakeParseInteger(data, valuePos, objEnd, parsed) || parsed < 1 || parsed > 0xFFFFL) return false;
     out.weight = (uint16_t)parsed;
   }
@@ -61,7 +61,7 @@ inline bool setlistLoadFromBuffer(const uint8_t* data, int len,
   }
 
   int valuePos = 0;
-  if (!bakeFindValue(data, 1, len - 1, "setlists", valuePos)) {
+  if (!bakeFindValueEither(data, 1, len - 1, "l", "setlists", valuePos)) {
     if (error) *error = "missing-setlists";
     return false;
   }
@@ -75,7 +75,7 @@ inline bool setlistLoadFromBuffer(const uint8_t* data, int len,
   int slStart = 0, slEnd = 0;
   while (bakeNextObjectInArray(data, valuePos, setlistsEnd, pos, slStart, slEnd)) {
     int idPos = 0;
-    if (!bakeFindValue(data, slStart + 1, slEnd, "id", idPos)) continue;
+    if (!bakeFindValueEither(data, slStart + 1, slEnd, "i", "id", idPos)) continue;
     if (!bakeStringEqualsIgnoreCase(data, idPos, slEnd, setlistId)) continue;
 
     if (!bakeCopyString(data, idPos, slEnd, out.id, sizeof(out.id))) {
@@ -84,34 +84,34 @@ inline bool setlistLoadFromBuffer(const uint8_t* data, int len,
     }
 
     int modePos = 0;
-    out.shuffle = bakeFindValue(data, slStart + 1, slEnd, "mode", modePos) &&
+    out.shuffle = bakeFindValueEither(data, slStart + 1, slEnd, "o", "mode", modePos) &&
                   bakeStringEqualsIgnoreCase(data, modePos, slEnd, "shuffle");
 
     // shuffleRules.minGapEntries + seed (optional).
     out.minGapEntries = 0;
     out.rngState = 0;
     int rulesPos = 0;
-    if (bakeFindValue(data, slStart + 1, slEnd, "shuffleRules", rulesPos)) {
+    if (bakeFindValueEither(data, slStart + 1, slEnd, "u", "shuffleRules", rulesPos)) {
       int rulesEnd = bakeFindContainerEnd(data, rulesPos, slEnd, '{', '}');
       if (rulesEnd > rulesPos) {
         long v = 0;
         int p = 0;
         // Reject out-of-range minGapEntries before the uint8_t cast (256 → 0).
-        if (bakeFindValue(data, rulesPos + 1, rulesEnd, "minGapEntries", p)) {
+        if (bakeFindValueEither(data, rulesPos + 1, rulesEnd, "n", "minGapEntries", p)) {
           if (!bakeParseInteger(data, p, rulesEnd, v) || v < 0 || v > 0xFFL) {
             if (error) *error = "bad-shuffle-rules";
             return false;
           }
           out.minGapEntries = (uint8_t)v;
         }
-        if (bakeFindValue(data, rulesPos + 1, rulesEnd, "seed", p) &&
+        if (bakeFindValueEither(data, rulesPos + 1, rulesEnd, "s", "seed", p) &&
             bakeParseInteger(data, p, rulesEnd, v)) {
           out.rngState = (uint32_t)v;
         }
       }
     }
 
-    if (!bakeFindValue(data, slStart + 1, slEnd, "entries", valuePos)) {
+    if (!bakeFindValueEither(data, slStart + 1, slEnd, "e", "entries", valuePos)) {
       if (error) *error = "missing-entries";
       return false;
     }
@@ -149,11 +149,11 @@ inline bool setlistLoadFromBuffer(const uint8_t* data, int len,
 inline uint8_t schedulerLeaderBoardId(const uint8_t* data, int len) {
   if (data == nullptr || len < 2) return 1;
   int cfgPos = 0;
-  if (!bakeFindValue(data, 1, len - 1, "schedulerConfig", cfgPos)) return 1;
+  if (!bakeFindValueEither(data, 1, len - 1, "g", "schedulerConfig", cfgPos)) return 1;
   int cfgEnd = bakeFindContainerEnd(data, cfgPos, len, '{', '}');
   if (cfgEnd <= cfgPos) return 1;
   int p = 0; long v = 0;
-  if (bakeFindValue(data, cfgPos + 1, cfgEnd, "leaderBoardId", p) &&
+  if (bakeFindValueEither(data, cfgPos + 1, cfgEnd, "b", "leaderBoardId", p) &&
       bakeParseInteger(data, p, cfgEnd, v) && v >= 1 && v <= 3) {
     return (uint8_t)v;
   }
@@ -166,11 +166,11 @@ inline uint8_t schedulerLeaderBoardId(const uint8_t* data, int len) {
 inline uint32_t schedulerGraceMs(const uint8_t* data, int len) {
   if (data == nullptr || len < 2) return 10000;
   int cfgPos = 0;
-  if (!bakeFindValue(data, 1, len - 1, "schedulerConfig", cfgPos)) return 10000;
+  if (!bakeFindValueEither(data, 1, len - 1, "g", "schedulerConfig", cfgPos)) return 10000;
   int cfgEnd = bakeFindContainerEnd(data, cfgPos, len, '{', '}');
   if (cfgEnd <= cfgPos) return 10000;
   int p = 0; long v = 0;
-  if (bakeFindValue(data, cfgPos + 1, cfgEnd, "graceMs", p) &&
+  if (bakeFindValueEither(data, cfgPos + 1, cfgEnd, "g", "graceMs", p) &&
       bakeParseInteger(data, p, cfgEnd, v) && v >= 0) {
     return (uint32_t)v;
   }
@@ -182,7 +182,7 @@ inline uint32_t schedulerGraceMs(const uint8_t* data, int len) {
 inline bool activeSetlistId(const uint8_t* data, int len, char* out, uint8_t outLen) {
   if (data == nullptr || len < 2 || outLen == 0) return false;
   int p = 0;
-  if (!bakeFindValue(data, 1, len - 1, "activeSetlistId", p)) return false;
+  if (!bakeFindValueEither(data, 1, len - 1, "a", "activeSetlistId", p)) return false;
   if (p >= len || data[p] != '"') return false;   // null / non-string → none
   if (!bakeCopyString(data, p, len - 1, out, outLen)) return false;
   return out[0] != '\0';

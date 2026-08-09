@@ -4,7 +4,7 @@ The on-the-wire JSON contract shared by `servo_controller.html` (composer) and t
 
 This document is the single source of truth. Any change that breaks compatibility **must** bump `schemaVersion` in the bake blob.
 
-- Current `schemaVersion`: **1**
+- Current `schemaVersion`: **2** (see §9). Firmware reads both **1** and **2**.
 - Encoding: UTF-8 JSON, no comments, no trailing commas. Field order doesn't matter.
 - Units: durations in **milliseconds** (integer), angles in **degrees** (0–180), DC Motion speed signed **−50..+50** with sign indicating direction.
 - Time origin: every `atMs` and `durationMs` is relative to the start of its containing entity (Motion or Sequence step). No wall-clock dependencies.
@@ -319,7 +319,7 @@ A single compact deployment envelope sent to each board's `POST /sequences` endp
 
 | Field | Type | Required | Notes |
 |---|---|---|---|
-| `schemaVersion` | integer | yes | Currently `1`. Firmware rejects unsupported versions with HTTP 400. |
+| `schemaVersion` | integer | yes | `1` or `2`; the browser emits `2` (§9). Firmware rejects anything else with HTTP 400. |
 | `bakedAtMs` | integer | yes | Unix epoch milliseconds at bake time. Used for the diff display and the rollback log. |
 | `motions` | Motion[] | yes | After bake-time slicing, may be empty on a board if no Motion targets it. |
 | `sequences` | Sequence[] | yes | Full library; same on every board. |
@@ -356,7 +356,7 @@ Validation checks (firmware, at `POST /sequences` time):
 
 1. `Content-Length` is between 1 and 6000.
 2. Body is well-formed JSON shape — balanced braces, terminated strings.
-3. Top-level object contains `"schemaVersion": 1`.
+3. Top-level object contains `"schemaVersion": 1` or `"schemaVersion": 2`.
 
 Semantic validation (Motion `id` references, keyframe ordering, value-range bounds) is deferred to the playback engines (servo-2cw, servo-3a9), which fail the relevant `MOTION`/`RUN` command rather than the bake. This keeps the bake endpoint fast and the storage layer independent of the schema's domain semantics.
 
@@ -440,3 +440,48 @@ The smallest possible bake that demonstrates every layer. One Motion, one Sequen
 ```
 
 This blob, posted to board 1, then `RUN AUTO`'d, should sweep servo channel 0 from 0° → 90° → 0° over two seconds, pause one second, and repeat forever.
+
+---
+
+## 9. Wire format v2 (dense keys)
+
+`schemaVersion: 2` changes **how the bake blob is spelled**, not what it means. Every field in §§2–5 still exists with the same type, range, and semantics; the deployed payload just carries shorter names. Authoring (`library.json`) is untouched — v2 exists only between the compactor and the firmware.
+
+It was introduced because per-board slices had grown past the 4080-byte rollback-safe storage tier (servo-zzo). Measured against the project library, v2 takes board 1 from 5154 to 2846 bytes and board 3 from 5361 to 2900 — both back under the line, where rollback works and no large-record fallback is needed.
+
+### What changes
+
+**1. Keyframes become positional.** `{"atMs": 1000, "value": 90}` is written `[1000, 90]`. This is the single largest saving: 24 bytes down to 8, and keyframes are the most repeated object in the blob.
+
+**2. Structural keys become one character.**
+
+| Object | v1 → v2 |
+|---|---|
+| root | `motions`→`m`, `sequences`→`q`, `setlists`→`l`, `activeSetlistId`→`a`, `schedulerConfig`→`g` |
+| Motion | `id`→`i`, `durationMs`→`d`, `tracks`→`r` |
+| Track | `channel`→`c`, `keyframes`→`k` |
+| Sequence | `id`→`i`, `steps`→`s` |
+| Step | `cmd`→`c`, `durationMs`→`d`, `target`→`t` |
+| Setlist | `id`→`i`, `entries`→`e`, `mode`→`o`, `shuffleRules`→`u` |
+| Entry | `seqId`→`q`, `repeat`→`p`, `gapMs`→`g`, `weight`→`w` |
+| ShuffleRules | `minGapEntries`→`n`, `seed`→`s` |
+| SchedulerConfig | `leaderBoardId`→`b`, `graceMs`→`g` |
+
+`schemaVersion` and `bakedAtMs` keep their full names. `schemaVersion` must, because the firmware searches for that literal key to decide whether to accept the blob at all.
+
+**3. Two fields are dropped**, because their value is implied by where they sit:
+
+- `kind` — every baked Motion track is a servo. DC lanes became step commands in servo-y29, so an absent `kind` reads as `"servo"`.
+- `boardId` — a board's slice contains that board's tracks and no others, so there is nothing left to filter on.
+
+### Why short keys are safe
+
+The firmware's `bakeFindValue` matches a key only at depth 0 of the window it is scanning; a nested object cannot shadow an outer one. Keys therefore need to be unique **within an object level**, not globally — which is why `g` can mean `gapMs` in an entry and `graceMs` in `schedulerConfig` without ambiguity.
+
+This is load-bearing and a collision inside a single level would be silent, so both sides pin it: `test/verify_bake_v2.mjs` asserts per-level uniqueness of the browser's key table, and `test_setlist_scheduler.cpp` reads a blob where `g` appears at both levels and asserts each resolves to its own object.
+
+### Compatibility
+
+Firmware reads **both** schemas, chosen per field rather than per blob: each lookup accepts either spelling, and keyframes are detected by whether the array element is `[` or `{`. This is unambiguous because no v1 key is one character and no v2 key is longer than one.
+
+That means **no flag day**. A board can be flashed with v2-capable firmware while still holding a v1 bake and keep playing it, then be re-baked as v2 whenever convenient. A v2 blob sent to *older* firmware is refused with HTTP 400 `unsupported-schema-version`, which is fail-safe: the board keeps its existing bake and nothing is written.

@@ -43,7 +43,12 @@ inline BakeValidateResult bakeValidate(const uint8_t* data, size_t len) {
                     memcmp(data + back + 1 - klen, key, klen) == 0) {
                     size_t fwd = i + 1;
                     while (fwd < len && (data[fwd] == ' ' || data[fwd] == '\t' || data[fwd] == '\n')) fwd++;
-                    if (fwd < len && data[fwd] == '1' && (fwd + 1 == len ||
+                    // v1 and v2 are both accepted. v2 (servo-zzo) renames the
+                    // structural keys and makes keyframes positional to get a
+                    // slice back under the rollback-safe line; the parsers read
+                    // either, so a board can hold one and be sent the other
+                    // without a flag day.
+                    if (fwd < len && (data[fwd] == '1' || data[fwd] == '2') && (fwd + 1 == len ||
                         data[fwd+1] == ',' || data[fwd+1] == '}' || data[fwd+1] == ' ' ||
                         data[fwd+1] == '\t' || data[fwd+1] == '\n')) {
                         hasVersion = true;

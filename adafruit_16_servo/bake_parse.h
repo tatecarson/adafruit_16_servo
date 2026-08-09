@@ -102,6 +102,27 @@ static bool bakeFindValue(const uint8_t* data, int start, int end, const char* k
   return false;
 }
 
+/* Look a field up under either schema spelling (servo-zzo).
+
+   v2 renames every structural key to one character to get a board slice back
+   under the rollback-safe 4080-byte line. Rather than thread a schema flag
+   through every parse function, each lookup accepts both names and takes
+   whichever the blob actually carries.
+
+   That is unambiguous in both directions: no v1 key is a single character, and
+   no v2 key is longer than one, so a v1 blob can never match a short name and
+   a v2 blob can never match a long one. The cost is a second scan of the object
+   window when the first spelling misses — parsing happens once per MOTION or
+   RUN, not per frame, so it is not on any hot path.
+
+   Order matters only for speed, and v2 is what new bakes emit, so it goes
+   first. */
+static bool bakeFindValueEither(const uint8_t* data, int start, int end,
+                                const char* keyV2, const char* keyV1, int& valuePos) {
+  return bakeFindValue(data, start, end, keyV2, valuePos)
+      || bakeFindValue(data, start, end, keyV1, valuePos);
+}
+
 static int bakeFindContainerEnd(const uint8_t* data, int start, int end, char openChar, char closeChar) {
   if (start >= end || data[start] != openChar) return -1;
   int depth = 0;
@@ -146,16 +167,39 @@ static bool bakeParseInteger(const uint8_t* data, int pos, int end, long& value)
   return true;
 }
 
-static bool bakeNextObjectInArray(const uint8_t* data, int arrayStart, int arrayEnd,
-                                  int& pos, int& objStart, int& objEnd) {
+/* Walk the containers in an array. `openChar` is '{' for an array of objects
+   and '[' for v2's positional keyframes, which are [atMs, value] pairs rather
+   than named objects (servo-zzo). */
+static bool bakeNextContainerInArray(const uint8_t* data, int arrayStart, int arrayEnd,
+                                     int& pos, int& objStart, int& objEnd,
+                                     char openChar, char closeChar) {
   if (pos <= arrayStart) pos = arrayStart + 1;
   pos = bakeSkipWs(data, pos, arrayEnd);
   if (pos < arrayEnd && data[pos] == ',') pos = bakeSkipWs(data, pos + 1, arrayEnd);
   if (pos >= arrayEnd || data[pos] == ']') return false;
-  if (data[pos] != '{') return false;
+  if (data[pos] != openChar) return false;
   objStart = pos;
-  objEnd = bakeFindContainerEnd(data, objStart, arrayEnd + 1, '{', '}');
+  objEnd = bakeFindContainerEnd(data, objStart, arrayEnd + 1, openChar, closeChar);
   if (objEnd < 0) return false;
   pos = objEnd + 1;
   return true;
+}
+
+static bool bakeNextObjectInArray(const uint8_t* data, int arrayStart, int arrayEnd,
+                                  int& pos, int& objStart, int& objEnd) {
+  return bakeNextContainerInArray(data, arrayStart, arrayEnd, pos, objStart, objEnd, '{', '}');
+}
+
+/* Read the nth integer out of a positional array like [1000,90]. Used for v2
+   keyframes, where dropping the two key names saves 16 of the 24 bytes a v1
+   keyframe spent. */
+static bool bakeParseArrayInteger(const uint8_t* data, int arrStart, int arrEnd,
+                                  int index, long& value) {
+  int p = arrStart + 1;
+  for (int i = 0; i < index; i++) {
+    while (p < arrEnd && data[p] != ',') p++;
+    if (p >= arrEnd) return false;
+    p++;
+  }
+  return bakeParseInteger(data, bakeSkipWs(data, p, arrEnd), arrEnd, value);
 }
