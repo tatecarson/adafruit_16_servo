@@ -184,6 +184,35 @@ eq("steps without noPrep are unchanged",
    rewriteSequencePreRolls([{cmd:"MOTION rise",durationMs:1000}], lib, wopts).steps[0].cmd,
    "MOTION rise PREP 7700");
 
+// --- a Motion's pose is its own machine's ----------------------------------
+// normalizeMotion materializes every track spec on every Motion, so a curtain
+// Motion still carries B1 wand tracks parked at rest. The bake does not send
+// those anywhere — board 1 never receives a curtain Motion, and the step is
+// targeted at board 3 — so planning glides for them invents travel on a
+// machine that is not moving, at the wrong machine's rate, and bakes it in.
+//
+// A Motion that says which machine it is for poses only that machine.
+{
+  const curtainMotion = {
+    id: "mt-c", machine: 3,
+    tracks: [
+      { kind:"servo", boardId:3, channel:0, keyframes:[{atMs:0,value:100},{atMs:900,value:40}] },
+      { kind:"servo", boardId:1, channel:0, keyframes:[{atMs:0,value:100}] },  // materialized, at rest
+    ],
+  };
+  eq("a tagged Motion poses only its own machine",
+     Object.keys(bridgeServoPose(curtainMotion, "entry")).sort(), ["3:servo:0"]);
+  eq("...at both edges",
+     Object.keys(bridgeServoPose(curtainMotion, "exit")).sort(), ["3:servo:0"]);
+  eq("...and the value is still the real one",
+     bridgeServoPose(curtainMotion, "exit")["3:servo:0"], 40);
+
+  // An untagged Motion makes no claim, so nothing may be dropped from it.
+  const untagged = { id:"mt-u", tracks: curtainMotion.tracks };
+  eq("an untagged Motion still poses every channel it carries",
+     Object.keys(bridgeServoPose(untagged, "entry")).sort(), ["1:servo:0","3:servo:0"]);
+}
+
 // --- servo-rvn: the plan must say which parts travel, and from where ---
 // The planners already know every endpoint; they used to report only channel
 // keys, which is why a PREP block could say "7700ms" and nothing else.

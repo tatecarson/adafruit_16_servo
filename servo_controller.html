@@ -7267,8 +7267,17 @@ function formatBakeConformanceError(e) {
 // skipped. A single-keyframe track is a constant hold (entry === exit).
 function bridgeServoPose(motion, edge) {
   const pose = {};
+  /* normalizeMotion materializes every track spec on every Motion, so a
+     curtain Motion carries wand tracks parked at rest. Nothing sends them
+     anywhere — board 1 is not given curtain Motions, and the step targets
+     board 3 — but posing them made the planner invent travel on a machine
+     that is not moving, charge it the wrong machine's rate, and bake the
+     result. A Motion that says which machine it is for poses only that one;
+     an untagged Motion makes no claim, so it keeps every channel. */
+  const only = motion && motion.machine != null ? Number(motion.machine) : null;
   for (const t of (motion && motion.tracks) || []) {
     if (t.kind !== "servo") continue;
+    if (only != null && Number(t.boardId) !== only) continue;
     const kfs = Array.isArray(t.keyframes) ? t.keyframes : [];
     if (!kfs.length) continue;
     let pick = kfs[0];
