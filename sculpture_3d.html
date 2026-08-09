@@ -373,7 +373,20 @@ const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 let forcedSeed = null;
 
 const SERVO_CAL = { minPulse: 110, maxPulse: 480, totalDegrees: 1800, downDegrees: 1800, upDegrees: 0, reverseDir: true };
-const SLEW_MS_PER_PCT = 77;
+/* How long a percent of travel takes, per machine.
+
+   The servo's angular speed is the invariant, not the ms-per-percent. 77 ms/%
+   is the winch's figure: 1800° of drum in 7.7 s, about 234°/s. The wands run
+   the same servo but their horn IS the pivot and they only sweep 36°, so the
+   same speed covers their whole range in 154 ms. Charging them the winch's
+   rate made them ~50x too slow — three levers that barely moved. */
+const SERVO_DEG_PER_MS  = 1800 / 7700;
+const SERVO_TRAVEL_DEG  = { 1: 36, 2: null, 3: 1800 };
+const slewMsPerPct = (id) => {
+  const deg = SERVO_TRAVEL_DEG[id];
+  return deg == null ? 77 : (deg / 100) / SERVO_DEG_PER_MS;
+};
+const SLEW_MS_PER_PCT = 77;          // board 3's, kept for its own fastForward
 const DC_LAG_S        = 0.7;
 const PHYS_H          = 1 / 120;
 const GRAVITY         = -9.81;
@@ -3036,10 +3049,10 @@ function animate() {
     tickPlayer(dt * 1000);
     tickRamps();
     syncSlidersFromTarget();
-    const maxStep = state.slewLimit ? (1000 / SLEW_MS_PER_PCT) * dt : 1e6;
     for (const rg of rigs) {
       if (rg.noServos) continue;
       const st = rg.st;
+      const maxStep = state.slewLimit ? (1000 / slewMsPerPct(rg.id)) * dt : 1e6;
       for (let i = 0; i < 3; i++) {
         const d = st.target[i] - st.actual[i];
         st.actual[i] += Math.abs(d) <= maxStep ? d : Math.sign(d) * maxStep;

@@ -2459,6 +2459,20 @@ function formatRpm(rpm) {
 
 /* What 100 %down means as a physical gesture, for the places that author in
    percent and would otherwise imply the three machines move alike. */
+/* How long a percent of travel takes on a given machine.
+
+   The servo's angular speed is the invariant, not the ms-per-percent: 77 ms/%
+   is 1800° in 7.7 s, about 234°/s. A wand covering 36° at that same speed
+   takes 154 ms end to end, so charging it the winch's rate makes it ~50x too
+   slow — the authoring gate then refuses any wand gesture quicker than seven
+   seconds, and the simulator shows three levers barely moving. */
+const SERVO_DEG_PER_MS = 1800 / 7700;
+function servoMsPerPercent(boardId) {
+  const deg = servoTravelOf(boardId);
+  if (deg == null) return 77;                      // no servos; the value is unused
+  return (deg / 100) / SERVO_DEG_PER_MS;
+}
+
 function travelLabel(boardId) {
   const deg = servoTravelOf(boardId);
   if (deg == null) return "no servos";
@@ -4227,8 +4241,9 @@ function normalizeMotion(motion) {
 function analyzeServoSegmentFeasibility(track, spec, fromKf, toKf, motion) {
   const deltaPercent = Math.abs((toKf?.value ?? 0) - (fromKf?.value ?? 0));
   const durationMs = Math.max(0, (toKf?.atMs ?? 0) - (fromKf?.atMs ?? 0));
-  const minDurationMs = Math.ceil(deltaPercent * SERVO_FEASIBILITY_MS_PER_PERCENT);
-  const staccatoDurationMs = Math.ceil(deltaPercent * SERVO_STACCATO_MS_PER_PERCENT);
+  const msPerPct = servoMsPerPercent(spec?.boardId ?? track?.boardId);
+  const minDurationMs = Math.ceil(deltaPercent * msPerPct);
+  const staccatoDurationMs = Math.ceil(deltaPercent * (msPerPct / SERVO_FEASIBILITY_MS_PER_PERCENT) * SERVO_STACCATO_MS_PER_PERCENT);
   const finding = {
     kind: "servo",
     motionId: motion.id,
@@ -5123,11 +5138,12 @@ function constrainServoKeyframePoint(track, spec, motionDurationMs, draftPoint, 
     }
   }
   if (!prev && next && next.atMs === draftPoint.atMs && next.value === draftPoint.value) prev = next;
+  const msPerPct = servoMsPerPercent(spec?.boardId ?? track?.boardId);
   const lowerBound = prev
-    ? prev.atMs + Math.ceil(Math.abs(draftPoint.value - prev.value) * SERVO_FEASIBILITY_MS_PER_PERCENT)
+    ? prev.atMs + Math.ceil(Math.abs(draftPoint.value - prev.value) * msPerPct)
     : 0;
   const upperBound = next
-    ? next.atMs - Math.ceil(Math.abs(next.value - draftPoint.value) * SERVO_FEASIBILITY_MS_PER_PERCENT)
+    ? next.atMs - Math.ceil(Math.abs(next.value - draftPoint.value) * msPerPct)
     : motionDurationMs;
   if (lowerBound > upperBound) {
     return { point: null, clamped: false, lowerBound, upperBound, impossible: true };
@@ -5707,7 +5723,7 @@ function openShapePopover(clientX, clientY, box) {
 function applyShapeToTrack(shape, box) {
   const { spec, t0, t1, low, high } = box;
   const gen = generateShapeKeyframes({
-    shape, t0, t1, low, high, spec, msPerPct: SERVO_FEASIBILITY_MS_PER_PERCENT,
+    shape, t0, t1, low, high, spec, msPerPct: servoMsPerPercent(spec?.boardId),
   });
   let keyframes = gen.keyframes;
   const reducedTo = gen.reducedTo;
@@ -5729,7 +5745,7 @@ function applyShapeToTrack(shape, box) {
     const prev = before.length ? before[before.length - 1] : null;
     const next = after.length ? after[0] : null;
     const before0 = JSON.stringify(keyframes);
-    keyframes = fitKeyframesToNeighbors(keyframes, prev, next, SERVO_FEASIBILITY_MS_PER_PERCENT);
+    keyframes = fitKeyframesToNeighbors(keyframes, prev, next, servoMsPerPercent(spec?.boardId));
     if (JSON.stringify(keyframes) !== before0) fitNote = " · eased to fit neighbours";
   }
 
@@ -5992,7 +6008,7 @@ window.addEventListener("pointermove", e => {
         minValue: spec.min,
         maxValue: spec.max,
         kind: spec.kind,
-        msPerPct: SERVO_FEASIBILITY_MS_PER_PERCENT,
+        msPerPct: servoMsPerPercent(spec?.boardId),
         fitToNeighbors: spec.kind === "servo" ? fitKeyframesToNeighbors : null,
       }
     );
