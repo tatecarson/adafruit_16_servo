@@ -2397,31 +2397,35 @@ const boardIdByIp = new Map();
 //
 //   rpmAt100  — ring or deck speed at ROTATE 100, after the reduction. It is
 //               what makes "the same command" mean three different speeds.
-//   servoMode — these are goBILDA 2000 Series 5-Turn Dual Mode servos, the
-//               same part on every board, switchable between a 5-turn winch
-//               drum and standard travel. A winch wants the turns; a wand
-//               bolted to the horn wants the short sweep. So 100 %down is a
-//               different physical gesture per machine even though the
-//               command is identical.
+//   travelDeg — how far 100 %down actually drives the mechanism. Every board
+//               runs the same goBILDA 5-Turn Dual Mode servo in its 1800°
+//               positional mode (its other mode is continuous rotation, which
+//               cannot hold an angle, so nothing here uses it). What differs
+//               is how much of that travel the mechanism wants: a winch drum
+//               pays out over all five turns, while a wand bolted straight to
+//               the horn sweeps ~36° and no further, because past that its tip
+//               carries into the outer ring. So 100 %down is a different
+//               physical gesture per machine even though the command is
+//               identical — and on the wands it is only ~7 PWM ticks wide.
 //
 // This block is extracted by the Node tests, so it must not reach for
 // anything outside itself — ipLabel stays below it because it reads
 // boardIdByIp, which is network-discovery state rather than machine truth.
-const SERVO_MODE_DEGREES = { turn5: 1800, standard: 300 };
+const SERVO_FULL_TRAVEL_DEGREES = 1800;   // the servo, not the mechanism
 
 const MACHINES = {
   1: { name: "centre wands", short: "wands",
        drive: "3 wands · ring on a 4:1 gearbox", gear: 4, rpmAt100: 6.25,
        servos: ["Wand I throw", "Wand II throw", "Wand III throw"],
-       servoMode: "standard" },
+       travelDeg: 36 },
   2: { name: "field", short: "field",
        drive: "tone-wheel deck · DC only", gear: 1, rpmAt100: 128,
        servos: null,                         // no servos on this machine at all
-       servoMode: null },
+       travelDeg: null },
   3: { name: "dowel curtain", short: "curtain",
        drive: "3 winches · ring direct", gear: 1, rpmAt100: 25,
        servos: ["Winch S0", "Winch S1", "Winch S2"],
-       servoMode: "turn5" },
+       travelDeg: 1800 },
 };
 
 /* Every machine has a motor and a bake. Only some have servos. Keeping those
@@ -2432,7 +2436,7 @@ const SERVO_BOARD_IDS = MACHINE_IDS.filter(id => Array.isArray(MACHINES[id].serv
 
 const machineOf   = (boardId) => MACHINES[Number(boardId)] || null;
 const servoCountOf = (boardId) => (machineOf(boardId)?.servos || []).length;
-const servoTravelOf = (boardId) => SERVO_MODE_DEGREES[machineOf(boardId)?.servoMode] ?? null;
+const servoTravelOf = (boardId) => machineOf(boardId)?.travelDeg ?? null;
 
 function boardLabel(boardId, withDrive) {
   const m = machineOf(boardId);
@@ -2458,7 +2462,7 @@ function formatRpm(rpm) {
 function travelLabel(boardId) {
   const deg = servoTravelOf(boardId);
   if (deg == null) return "no servos";
-  return deg >= 720 ? `${(deg / 360).toFixed(0)} turns` : `${deg}°`;
+  return deg >= 720 ? `${(deg / 360).toFixed(0)} turns` : `${deg}° of ${SERVO_FULL_TRAVEL_DEGREES}°`;
 }
 /* Which machines a motion actually moves, from its keyframes rather than its
    label. This is what lets the filter be useful before anything is tagged: an
