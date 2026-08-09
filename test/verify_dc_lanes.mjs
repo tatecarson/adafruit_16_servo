@@ -174,7 +174,9 @@ const chords = out => out.steps.filter(s => s.dcChord).map(s => `${s.cmd}@${s.ta
 // the step on every board, which is how DC chords first failed to fire.
 {
   const compact = /function compactStepForDevice\(step\)[\s\S]*?\n\}/.exec(html)[0];
-  check(/out\.target\s*=\s*Number\(target\)/.test(compact),
+  // The key moved behind the v2 table (out[K.target]) in servo-zzo; what
+  // matters here is unchanged — the value is a Number, never the string.
+  check(/out(?:\.target|\[K\.target\])\s*=\s*Number\(target\)/.test(compact),
     "compactStepForDevice bakes target as a number, not the select's string");
 }
 

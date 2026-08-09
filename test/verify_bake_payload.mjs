@@ -54,7 +54,7 @@ const payloadCore = block("// === BAKE-PAYLOAD-CORE START ===", "// === BAKE-PAY
 const dir = mkdtempSync(join(tmpdir(), "bake-payload-core-"));
 const modulePath = join(dir, "core.mjs");
 writeFileSync(modulePath, `
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 2;
 const SERVO_FEASIBILITY_MS_PER_PERCENT = 77;
 const MOTION_SERVO_REST_PERCENT = 100;
 const SEQ_MAX_STEPS = 16;
@@ -64,7 +64,7 @@ function conformTrackForBake(track) { return track; }
 ${bridgeCore}
 ${dcLaneCore}
 ${payloadCore}
-export { buildBakeLibrary, sliceForBoard, hydrateDeviceLibraryForEditor, validateLibraryReferences, bakeStorageTier };
+export { buildBakeLibrary, sliceForBoard, hydrateDeviceLibraryForEditor, expandDeviceBlob, validateLibraryReferences, bakeStorageTier, BAKE_V2_KEYS };
 `, "utf8");
 
 const core = await import(pathToFileURL(modulePath).href);
@@ -99,20 +99,16 @@ const boardPayloads = [1, 2, 3].map(boardId => core.sliceForBoard(baked, boardId
 const boardBytes = boardPayloads.map(bytes);
 check(boardBytes.every(size => size <= 4080),
   `compact fixture fits all boards (${boardBytes.join("/ ")} bytes)`);
-check(boardPayloads.every(payload => payload.motions.every(m =>
-  !Object.hasOwn(m, "name") && !Object.hasOwn(m, "tags") &&
-  m.tracks.every(t => !Object.hasOwn(t, "label")))),
-  "device Motions omit editor-only metadata");
-check(boardPayloads.every(payload => payload.sequences.every(seq =>
-  !Object.hasOwn(seq, "name") && seq.steps.every(step =>
-    !Object.hasOwn(step, "label") && !Object.hasOwn(step, "hold")))),
-  "device Sequences omit editor-only metadata and flags");
-// The device compactors are allowlists, which is why a new authoring field
-// costs the bake nothing. Pin that, so the next one added is free too.
-check(boardPayloads.every(payload =>
-  payload.motions.every(m => !Object.hasOwn(m, "machine")) &&
-  payload.sequences.every(seq => !Object.hasOwn(seq, "machine"))),
-  "the machine label never reaches the device");
+// Editor-only fields must not reach the device under ANY spelling. Checking
+// the serialized payload for the authoring key names catches both a compactor
+// that forgets to drop one and a v2 key table that accidentally maps a short
+// key onto an authoring name (servo-zzo).
+const EDITOR_ONLY = ["name", "tags", "label", "hold", "machine", "scope",
+                     "avoidSameTag", "moodArc", "kind", "boardId"];
+check(boardPayloads.every(payload => {
+  const wire = JSON.stringify(payload);
+  return EDITOR_ONLY.every(key => !wire.includes(`"${key}":`));
+}), `no editor-only field reaches the device (${EDITOR_ONLY.join(", ")})`);
 
 // A board that only sits at rest in a motion does not get that motion baked to
 // it — a curtain piece should not carry wand tracks commanding the wands to
@@ -133,14 +129,15 @@ holdLib.sequences = [{ id:"s", name:"s", tags:[], steps:[{ cmd:"MOTION hold", du
 holdLib.setlists = [{ id:"show", name:"", mode:"ordered", entries:[{seqId:"s",repeat:1,gapMs:0,weight:1}],
   shuffleRules:{avoidSameTag:false,minGapEntries:0,moodArc:"random",seed:0} }];
 const holdBaked = core.buildBakeLibrary(holdLib);
-check(core.sliceForBoard(holdBaked, 1).motions.length === 1,
+const hold1 = core.expandDeviceBlob(core.sliceForBoard(holdBaked, 1), 1);
+check(hold1.motions.length === 1,
   "a board that moves in a motion still gets it");
-check(core.sliceForBoard(holdBaked, 1).motions[0].tracks.length === 2,
+check(hold1.motions[0].tracks.length === 2,
   "and keeps its flat hold track alongside the moving one");
-check(core.sliceForBoard(holdBaked, 3).motions.length === 0,
+check(core.expandDeviceBlob(core.sliceForBoard(holdBaked, 3), 3).motions.length === 0,
   "a board that only sits at rest does not get the motion at all");
 
-const hydrated = core.hydrateDeviceLibraryForEditor(boardPayloads[0]);
+const hydrated = core.hydrateDeviceLibraryForEditor(boardPayloads[0], 1);
 check(hydrated.motions.every(m => m.name && Array.isArray(m.tags) &&
   m.tracks.every(t => t.label)),
   "pulled device payload restores editor defaults");
@@ -159,15 +156,19 @@ check(!refs.ok && refs.errors.some(e => e.code === "missing-motion") &&
 
 // servo-vp8: winch-direction compensation inverts servo values for reversed
 // boards (board 3) at the device bake boundary, and undoes it on pull-back.
-const b3rise = core.sliceForBoard(baked, 3).motions.find(m => m.id === "rise")
-  .tracks.find(t => t.channel === 0);
-check(b3rise.keyframes[0].value === 0 && b3rise.keyframes[1].value === 10,
+// Read these off the raw v2 wire, positional keyframes and all, so the
+// inversion is checked where it actually ships rather than after a round trip.
+const KV = core.BAKE_V2_KEYS;
+const wireTrack = (boardId) => core.sliceForBoard(baked, boardId)[KV.root.motions]
+  .find(m => m[KV.motion.id] === "rise")[KV.motion.tracks]
+  .find(t => t[KV.track.channel] === 0)[KV.track.keyframes];
+const b3rise = wireTrack(3);
+check(b3rise[0][1] === 0 && b3rise[1][1] === 10,
   "reversed board 3 servo values are inverted at bake (100→0, 90→10)");
-const b1rise = core.sliceForBoard(baked, 1).motions.find(m => m.id === "rise")
-  .tracks.find(t => t.channel === 0);
-check(b1rise.keyframes[0].value === 100 && b1rise.keyframes[1].value === 90,
+const b1rise = wireTrack(1);
+check(b1rise[0][1] === 100 && b1rise[1][1] === 90,
   "non-reversed board 1 servo values are left untouched at bake");
-const rehydrated = core.hydrateDeviceLibraryForEditor(core.sliceForBoard(baked, 3))
+const rehydrated = core.hydrateDeviceLibraryForEditor(core.sliceForBoard(baked, 3), 3)
   .motions.find(m => m.id === "rise").tracks.find(t => t.channel === 0);
 check(rehydrated.keyframes[0].value === 100 && rehydrated.keyframes[1].value === 90,
   "pull-back restores board 3's authored values (0→100, 10→90)");
