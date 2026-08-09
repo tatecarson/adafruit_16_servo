@@ -1161,7 +1161,134 @@ issue a manual `RUN <otherId>` from another browser/serial mid-run.
 
 ---
 
+## Test 34: Bake schema v2 (servo-zzo)
+
+v2 changes how a board slice is spelled, not what it means: positional
+keyframes, one-character structural keys, and `kind`/`boardId` dropped because
+the slice implies both. `library.json` stays schemaVersion 1 — v2 exists only
+between the compactor and the firmware.
+
+The point is the storage tier. Board 1 was 5154 bytes and board 3 was 5361,
+both past the 4080-byte rollback-safe line and into a tier that has no rollback
+and could not be written at all until servo-8ea. v2 puts them at 2846 and 2900.
+
+**Setup:** a board on USB, and the controller served from the servo-zzo
+worktree — not another one. A page from the wrong worktree still emits v1 at
+5154 bytes, which is how the first attempt at this failed.
+
+### 34a: v2-capable firmware still reads a v1 bake
+
+The no-flag-day claim. Flash a board that is holding a v1 bake and confirm it
+still reads it, before re-baking anything.
+
+**Command:** USB-flash, then `MOTION <id-that-does-not-exist>`.
+
+**Expected:**
+- `MOTION failed: motion-not-found`. That means the board read the blob, found
+  the motions array under its v1 key, walked it and compared ids. `No baked
+  library` instead would mean back-compat is broken.
+- `GET /sequences` returns the v1 blob with `"schemaVersion": 1`.
+- Chosen deliberately over playing a real motion: it exercises the parse
+  without moving a servo.
+
+**Result:**
+- [x] Pass — 2026-08-09, board 1. Firmware `servo-ua4-2`, 122448 bytes.
+  `MOTION failed: motion-not-found`; `GET /sequences` → 200, 2079 B,
+  `schemaVersion: 1`. Boot banner confirmed the EEPROM survived the flash:
+  `storage: boardId=1 hasActive=yes`.
+- [ ] Fail - describe:
+
+### 34b: a v2 bake lands in the rollback-safe tier
+
+**Command:** Bake One to the board.
+
+**Expected:**
+- ~2846 B for board 1, `storageMode: "dual"`, `rollbackSafe: true`.
+- `hasPrevious: true` after a second bake — rollback is the whole point.
+- Bake budget line reads `rollback` for all three boards, no large-mode warning.
+- Roughly half the wall time of the equivalent v1 large bake.
+
+**Result:**
+- [x] Pass — 2026-08-09, board 1.
+  `{"bytesUsed":2846,"storageMode":"dual","rollbackSafe":true,"hasPrevious":true}`.
+  Budget line: `B1 2846/4080 rollback · B2 2072/4080 rollback · B3 2900/4080
+  rollback`. Rollback restored on board 1 for the first time that day.
+- [ ] Fail - describe:
+
+### 34c: an oversized v1 payload is still refused safely
+
+**Command:** bake from a v1 page to a board running firmware without the
+servo-8ea streaming path.
+
+**Expected:** `503 large-buffer-unavailable`, and the board keeps its existing
+bake — the refusal happens before any EEPROM write.
+
+**Result:**
+- [x] Pass — 2026-08-09, observed by accident when the controller was served
+  from the wrong worktree. POST 5154 B → 503; `/sequences/info` still reported
+  the prior 2079 B bake intact.
+- [ ] Fail - describe:
+
+### 34d: the browser reads back its own v2 bake
+
+Every reader of a device payload has to speak v2. None of them throw when they
+miss — they read undefined, treat the payload as empty, and report something
+plausible, which is why this needs checking by eye rather than by absence of
+errors.
+
+**Expected:**
+- The baked-on-boards panel lists the board's motions with ▶ Play buttons,
+  **not** "bake recorded, but no motions target this board".
+- Editing a motion without re-baking shows `edited since bake (n)`.
+- Setlist ▶ Play does not claim "no bake recorded" on a freshly baked board.
+
+**Result:**
+- [x] Panel — 2026-08-09, after the reader sweep. Reported the empty message
+  for a board holding six motions until `diffBlob`, the panel and the setlist
+  readiness gate were all moved onto the v2 keys.
+- [ ] Staleness warning — not exercised.
+- [ ] Setlist readiness — not exercised.
+
+### 34e: playback from a v2 bake
+
+**Command:** `MOTION <id>` for a motion in the v2 bake, on the board.
+
+**Expected:** the motion plays at full rate on-device; serial reports
+`Motion complete <id>`.
+
+**Result:**
+- [ ] Pass
+- [ ] Fail - describe:
+
+> Not run as of 2026-08-09 — it moves the wands, and the bench session ended
+> before it was exercised. **This is the one remaining gap in v2 verification:
+> every check above proves the payload is stored, sized and read correctly, but
+> nothing has yet proved a v2 motion actually drives a servo.** Run it before
+> trusting a v2 bake in a show.
+
+### 34f: boards 2 and 3
+
+**Result:**
+- [ ] Not started. Both were offline through the 2026-08-09 session and still
+  run v1 firmware. They are safe as long as the payload declares
+  schemaVersion 2, which makes them refuse it with 400 and keep the bake they
+  have; a v2-keyed blob mis-declaring version 1 would instead be accepted and
+  silently read as an empty library.
+
+---
+
 ## Host Regression Tests
+
+**2026-08-09 (servo-zzo bake schema v2):**
+- [x] `make -C test` — all suites green. 60 new bake-v2 checks, 10 new firmware
+  v2 tests across motion/sequence/setlist, and the whole existing v1 suite
+  passing unchanged, which is the back-compat assertion.
+- [x] `make -C test size` — 122448 / 122880 (+432). Dual-schema parsing cost
+  664 bytes.
+- [x] Per-board slices against the real `library.json`: 5154→2846, 2967→2072,
+  5361→2900. All three under the 4080 rollback-safe line.
+- [x] **Hardware** — Test 34a-d above, board 1. 34e (playback) not run.
+
 
 **2026-06-02 (servo-vna synchronized Motion start):**
 - [x] `make -C test` — storage 22/22, motion 8/8 (2 new: future-start hold,
