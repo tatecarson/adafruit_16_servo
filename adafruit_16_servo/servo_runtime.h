@@ -142,6 +142,40 @@ extern Adafruit_PWMServoDriver pwm;
 extern ServoConfig servoConfig[NUM_SERVOS];
 extern ServoState servoState[NUM_SERVOS];
 
+// --- the one place a logical servo becomes a driver channel ----------------
+//
+// Every engine here — motion, sequence, animation, maintenance, calibration,
+// the command parser — addresses servos by logical index, and until board 1's
+// PCA9685 lost a header those numbers were also the driver's. They are no
+// longer identical on every board (see servoPhysicalChannel in servo_setup.h),
+// so the translation has to happen somewhere all of them pass through.
+//
+// That is here. Nothing else may call pwm.setPWM() for a servo; the Makefile's
+// channelmap target fails the build if anything does, because a write that
+// skips the map drives a different wand than the one commanded and the only
+// symptom is the wrong thing moving on the bench.
+//
+// The map defaults to identity, so a board that never calls
+// setServoChannelMapping behaves exactly as it did before any of this.
+inline uint8_t& servoChannelOf(uint8_t logical) {
+  static uint8_t map[NUM_SERVOS];
+  static bool ready = false;
+  if (!ready) {
+    for (uint8_t i = 0; i < NUM_SERVOS; i++) map[i] = i;
+    ready = true;
+  }
+  return map[logical];
+}
+
+inline void setServoChannelMapping(uint8_t logical, uint8_t physical) {
+  if (logical < NUM_SERVOS && physical < NUM_SERVOS) servoChannelOf(logical) = physical;
+}
+
+inline void writeServoPulse(uint8_t logical, uint16_t pulse) {
+  if (logical >= NUM_SERVOS) return;
+  pwm.setPWM(servoChannelOf(logical), 0, pulse);
+}
+
 // WAVE globals removed (servo-dz7). Legacy PLAY/SPLAY/RUN-n + TIMESCALE
 // (timeMultiplier) state removed in servo-voc.
 

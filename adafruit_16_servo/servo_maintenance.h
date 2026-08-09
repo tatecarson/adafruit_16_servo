@@ -14,19 +14,19 @@ void sweepServo(uint8_t servo) {
   Serial.print(F(" - ")); Serial.println(servoConfig[servo].maxPulse);
 
   for (uint16_t p = servoConfig[servo].minPulse; p <= servoConfig[servo].maxPulse; p += 2) {
-    pwm.setPWM(servo, 0, p);
+    writeServoPulse(servo, p);
     delay(5);
   }
   delay(300);
 
   for (uint16_t p = servoConfig[servo].maxPulse; p > servoConfig[servo].minPulse + 1; p -= 2) {
-    pwm.setPWM(servo, 0, p);
+    writeServoPulse(servo, p);
     delay(5);
   }
-  pwm.setPWM(servo, 0, servoConfig[servo].minPulse);
+  writeServoPulse(servo, servoConfig[servo].minPulse);
 
   uint16_t center = (servoConfig[servo].minPulse + servoConfig[servo].maxPulse) / 2;
-  pwm.setPWM(servo, 0, center);
+  writeServoPulse(servo, center);
   servoState[servo].posPulse = center;
   Serial.println(F("Sweep complete"));
 }

@@ -10,7 +10,7 @@ FQBN       = arduino:renesas_uno:unor4wifi
 BUILD_DIR  = /tmp/adafruit-16-servo-build
 SKETCH_DIR = ../adafruit_16_servo
 
-.PHONY: all test clean size ota-budget storage motion sequence setlist gallery sim-verify
+.PHONY: all test clean size ota-budget storage motion sequence setlist gallery channelmap sim-verify
 
 all: test
 
@@ -47,7 +47,7 @@ sim-verify:
 
 # Aggregate run of every host suite. The legacy time-multiplier suite was
 # removed in servo-voc along with the legacy PLAY/SPLAY/RUN-n engine it tested.
-test: storage motion sequence setlist gallery sim-verify
+test: storage motion sequence setlist gallery channelmap sim-verify
 
 run_storage_tests: test_storage.cpp mock/Arduino.h mock/EEPROM.h
 	$(CXX) $(CXXFLAGS) -o $@ $<
@@ -78,6 +78,23 @@ run_gallery_tests: test_gallery_mode.cpp $(SKETCH_DIR)/gallery_mode.h $(SKETCH_D
 
 gallery: run_gallery_tests
 	./run_gallery_tests
+
+# Board 1's dead PCA9685 header 1 is worked around by a channel map. The
+# numbers are the whole content of it, so they are pinned here.
+run_channel_map_tests: test_servo_channel_map.cpp $(SKETCH_DIR)/servo_setup.h $(SKETCH_DIR)/servo_runtime.h mock/Arduino.h
+	$(CXX) $(CXXFLAGS) -o $@ $<
+
+channelmap: run_channel_map_tests
+	./run_channel_map_tests
+	@echo "=== Channel map is the only servo write ==="
+	@if grep -rn 'pwm\.setPWM(' $(SKETCH_DIR) | grep -v 'setPWMFreq' | grep -v '^$(SKETCH_DIR)/servo_runtime.h' | grep -v '^\s*//' | grep -v '// ' ; then \
+	  echo "" ; \
+	  echo "  A servo is written without going through writeServoPulse()." ; \
+	  echo "  That bypasses the per-board channel map and drives the wrong" ; \
+	  echo "  header on board 1. Use writeServoPulse(logical, pulse)." ; \
+	  exit 1 ; \
+	fi
+	@echo "  ok - every servo write goes through the map"
 
 # OTA budget guard — compile the sketch and fail loud if the resulting
 # binary exceeds the OTA partition limit. Catches the kind of accidental

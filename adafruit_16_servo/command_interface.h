@@ -289,7 +289,7 @@ void processCommand(char* cmd) {
       uint8_t ch = atoi(cmd + s1 + 1);
       uint16_t us = atoi(cmd + s2 + 1);
       if (ch < NUM_SERVOS && us >= 400 && us <= 2600) {
-        pwm.setPWM(ch, 0, calibUsToTicks(us));
+        writeServoPulse(ch, calibUsToTicks(us));
         Serial.print(F("CAL_PULSE S")); Serial.print(ch);
         Serial.print(F(" -> ")); Serial.print(us); Serial.println(F("us"));
       } else {

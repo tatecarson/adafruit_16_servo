@@ -225,7 +225,7 @@ static void motionApplyServo(uint8_t channel, int16_t value) {
   servoState[channel].stopped = false;
   servoState[channel].posPulse = pulse;
   servoState[channel].targetPulse = pulse;
-  pwm.setPWM(channel, 0, pulse);
+  writeServoPulse(channel, pulse);
 }
 
 static void motionApplyTrackValue(MotionTrack& track, int16_t value) {

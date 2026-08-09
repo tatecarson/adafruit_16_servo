@@ -71,7 +71,7 @@ void setServoPulse(uint8_t servo, uint16_t pulse) {
   servoState[servo].stopped = false;
   pulse = constrain(pulse, servoConfig[servo].minPulse, servoConfig[servo].maxPulse);
   servoState[servo].posPulse = pulse;
-  pwm.setPWM(servo, 0, pulse);
+  writeServoPulse(servo, pulse);
   Serial.print(F("Servo ")); Serial.print(servo);
   Serial.print(F(" -> pulse ")); Serial.println(pulse);
 }
@@ -145,7 +145,7 @@ void stopServoNow(uint8_t servo) {
   servoState[servo].moving = false;
   servoState[servo].stopped = true;
 
-  pwm.setPWM(servo, 0, servoState[servo].posPulse);
+  writeServoPulse(servo, servoState[servo].posPulse);
   Serial.print(F("Servo ")); Serial.print(servo);
   Serial.println(F(" held"));
 }

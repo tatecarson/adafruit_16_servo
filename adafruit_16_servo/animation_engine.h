@@ -13,7 +13,7 @@ void updateAnimations() {
 
     if (elapsed >= servoState[i].moveDurationMs) {
       servoState[i].posPulse = servoState[i].targetPulse;
-      pwm.setPWM(i, 0, servoState[i].posPulse);
+      writeServoPulse(i, servoState[i].posPulse);
       servoState[i].moving = false;
     } else {
       float progress = (float)elapsed / (float)servoState[i].moveDurationMs;
@@ -25,7 +25,7 @@ void updateAnimations() {
         : lerpEased (servoState[i].startPulse, servoState[i].targetPulse, progress);
       if (newPos != servoState[i].posPulse) {
         servoState[i].posPulse = newPos;
-        pwm.setPWM(i, 0, newPos);
+        writeServoPulse(i, newPos);
       }
     }
   }

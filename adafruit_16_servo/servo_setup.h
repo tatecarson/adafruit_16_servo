@@ -34,6 +34,41 @@
 // the wand down so it uses more of the servo's rotation.
 #define WAND_DOWN_DEGREES 36
 
+// ---------------------------------------------------------------------------
+// TEMPORARY — board 1, dead PCA9685 header
+//
+// Header 1 on the wands' driver does not drive a servo. A known-good servo
+// works on header 2 and not on 1, and a resolder did not bring it back, so the
+// fault is the board rather than the servo or its wiring.
+//
+// Everything upstream addresses the wands as B1.S0/S1/S2 — tracks, motions,
+// sequences, and bakes already on the boards all carry those numbers. Renaming
+// channels to route around one dead header would mean rewriting all of it and
+// then rewriting it back. So the redirect happens at the last possible moment,
+// where a logical servo becomes a driver channel, and nothing above notices:
+//
+//     logical 0 -> header 0        logical 2 -> header 3
+//     logical 1 -> header 2        logical 3 -> header 1  (the dead one)
+//
+// Wand II and wand III are plugged into headers 2 and 3. Header 1 is left
+// unconnected.
+//
+// Logical 3 is the channel the DC motor freed, so nothing routes to it — but
+// it has to go somewhere, and leaving it on header 3 would put it on top of
+// wand III, where a stray `S3` from the terminal would drive a wand. Sending
+// it to the dead header keeps the map a permutation: every logical servo has
+// its own destination, and the one nobody uses gets the one that does nothing.
+//
+// Delete this map and the call in servo_control.h once the driver is repaired
+// or replaced — and re-plug the wands back to 0/1/2 when you do.
+#define BOARD1_DEAD_HEADER 1
+
+inline uint8_t servoPhysicalChannel(uint8_t boardId, uint8_t logical) {
+  if (boardId != 1 || logical >= 4) return logical;
+  static const uint8_t wandHeaders[4] = { 0, 2, 3, BOARD1_DEAD_HEADER };
+  return wandHeaders[logical];
+}
+
 inline void applyCustomServoSetup(ServoConfig servoConfig[], ServoState servoState[]) {
   // === CUSTOM SERVO CALIBRATIONS ===
   // Add your servo-specific calibrations here so they persist across uploads
@@ -50,6 +85,12 @@ inline void applyCustomServoSetup(ServoConfig servoConfig[], ServoState servoSta
   // anything.
   const uint8_t boardId = storageBoardId();
   const bool isWinch = (boardId == 3);
+
+  // Install the driver-channel map before anything can drive a servo. On every
+  // board but 1 this is the identity it already was.
+  for (uint8_t ch = 0; ch < NUM_SERVOS; ch++) {
+    setServoChannelMapping(ch, servoPhysicalChannel(boardId, ch));
+  }
 
   // How far 100 %down drives the mechanism, and which way round it runs.
   // The winches are wound so a higher value RAISES the ring, hence the
