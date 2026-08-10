@@ -46,7 +46,8 @@ function block(startMarker, endMarker) {
 const core = block("// === MACHINE-CORE START ===", "// === MACHINE-CORE END ===")
   + block("// === MOTION-SPEC-CORE START ===", "// === MOTION-SPEC-CORE END ===")
   + block("// === SEQ-BRIDGE-CORE START ===", "// === SEQ-BRIDGE-CORE END ===")
-  + block("// === BAKE-PAYLOAD-CORE START ===", "// === BAKE-PAYLOAD-CORE END ===");
+  + block("// === BAKE-PAYLOAD-CORE START ===", "// === BAKE-PAYLOAD-CORE END ===")
+  + block("// === PREROLL-DURATION-CORE START ===", "// === PREROLL-DURATION-CORE END ===");
 
 // Constants that live outside the extracted blocks, mirrored the same way
 // verify_bake_payload.mjs mirrors them.
@@ -59,11 +60,11 @@ const SEQ_MAX_STEPS = 16;
 
 const dir = mkdtempSync(join(tmpdir(), "preroll-rate-"));
 const modPath = join(dir, "core.mjs");
-writeFileSync(modPath, shims + core + "\nexport { seqPrerollOpts, rewriteSequencePreRolls, servoMsPerPercent, machineUnitPlural };\n", "utf8");
+writeFileSync(modPath, shims + core + "\nexport { seqPrerollOpts, rewriteSequencePreRolls, servoMsPerPercent, machineUnitPlural, preRollDurationMs };\n", "utf8");
 const mod = await import(pathToFileURL(modPath).href);
 if (typeof mod.seqPrerollOpts !== "function") fail("no seqPrerollOpts()");
 if (failed) process.exit(1);
-const { seqPrerollOpts, rewriteSequencePreRolls, servoMsPerPercent, machineUnitPlural } = mod;
+const { seqPrerollOpts, rewriteSequencePreRolls, servoMsPerPercent, machineUnitPlural, preRollDurationMs } = mod;
 
 console.log("=== Pre-roll rate per machine ===");
 
@@ -115,6 +116,53 @@ eq("the curtain moves winches", machineUnitPlural(3), "winches");
 eq("the wands move wands", machineUnitPlural(1), "wands");
 eq("a machine with no servos has no parts to name", machineUnitPlural(2), "servos");
 eq("neither does something that is not a machine", machineUnitPlural(99), "servos");
+
+
+// --- the LIVE player has to use the same rate as the bake ------------------
+// 813cc27 fixed the bake glue and left the live Motion player on the flat
+// winch constant. The board logged DMOVE 0 0 7700 for a wand glide the bake
+// log had planned at 800ms — the same move, the same rig, 9.6x apart. These
+// pin the live planner's duration, which nothing covered before.
+
+const rate = (boardId) => servoMsPerPercent(boardId);
+
+eq("a full wand sweep clamps to the 800ms floor, not 7700",
+   preRollDurationMs([{ boardId: 1, delta: 100 }], rate), 800);
+eq("a full curtain sweep still gets its real 7700ms",
+   preRollDurationMs([{ boardId: 3, delta: 100 }], rate), 7700);
+eq("half a curtain sweep is half the time",
+   preRollDurationMs([{ boardId: 3, delta: 50 }], rate), 3850);
+
+// A pre-roll spanning machines waits for the slowest, the same way the bake
+// path shares one maximum so the synchronized MOTION start stays aligned.
+eq("a mixed pre-roll waits for the slowest machine",
+   preRollDurationMs([{ boardId: 1, delta: 100 }, { boardId: 3, delta: 100 }], rate), 7700);
+eq("...and the wand alone does not drag the curtain's rate in",
+   preRollDurationMs([{ boardId: 1, delta: 100 }, { boardId: 1, delta: 40 }], rate), 800);
+
+// The bug in one assertion: charging every machine the winch rate.
+eq("the wands are no longer charged the curtain's rate",
+   preRollDurationMs([{ boardId: 1, delta: 100 }], rate) === Math.ceil(100 * 77), false);
+
+// A board with no servos, or one that is not a machine, keeps the 77 fallback
+// that servoMsPerPercent already documents.
+eq("a machine with no servos falls back to the winch rate",
+   preRollDurationMs([{ boardId: 2, delta: 100 }], rate), 7700);
+
+eq("no movement means no pre-roll", preRollDurationMs([], rate), 800);
+
+// The live planner must actually call it. A pure function nothing uses would
+// pass every test above and change nothing on the rig.
+if (!/const durationMs = preRollDurationMs\(/.test(html)) {
+  fail("_planMotionPreRoll does not use preRollDurationMs()");
+} else {
+  passed++; console.log("PASS: the live Motion player uses the shared duration helper");
+}
+if (/maxDelta \* SERVO_FEASIBILITY_MS_PER_PERCENT/.test(html)) {
+  fail("the flat winch constant is still applied to a pre-roll");
+} else {
+  passed++; console.log("PASS: no pre-roll multiplies a delta by the flat winch constant");
+}
 
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);
