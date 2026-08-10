@@ -2587,6 +2587,30 @@ function motionEditorBoardIds(motion) {
 }
 // === MACHINE-CORE END ===
 
+// === PREROLL-DURATION-CORE START ===
+/* How long to glide servos to a Motion's start pose.
+
+   The rate belongs to the mechanism, not the servo: one goBILDA drives every
+   board, but the curtain's winch spends all 1800 degrees where a wand spends
+   36. Charging every machine the winch's 77 ms/% budgeted 7700ms for a wand
+   sweep that takes 154 — fifty times the dead air, with the playhead parked
+   for all of it (servo-b7v).
+
+   One duration comes back for the whole pre-roll rather than one per servo, so
+   a glide spanning machines waits for the slowest and the synchronized MOTION
+   start afterwards stays aligned across the cluster. The floor is a real
+   constraint, not a rounding guard: a wand's physical move is 154ms, so most
+   wand pre-rolls are the floor. */
+function preRollDurationMs(deltas, msPerPercentFor, floorMs = 800) {
+  let ms = 0;
+  for (const { boardId, delta } of deltas || []) {
+    ms = Math.max(ms, delta * msPerPercentFor(boardId));
+  }
+  return Math.max(floorMs, Math.ceil(ms));
+}
+// === PREROLL-DURATION-CORE END ===
+
+
 function ipLabel(ip) {
   const id = boardIdByIp.get(ip);
   const m = machineOf(id);
@@ -5516,6 +5540,7 @@ function stopMotionPlayback(sendStop = false) {
 function _planMotionPreRoll(motion) {
   const fromValues = new Map();
   const toValues = new Map();
+  const deltas = [];
   let maxDelta = 0;
   for (const spec of MOTION_TRACK_SPECS) {
     if (spec.kind !== "servo") continue;
@@ -5528,13 +5553,19 @@ function _planMotionPreRoll(motion) {
     if (currentValue === startValue) continue;
     fromValues.set(key, currentValue);
     toValues.set(key, startValue);
-    maxDelta = Math.max(maxDelta, Math.abs(startValue - currentValue));
+    const delta = Math.abs(startValue - currentValue);
+    maxDelta = Math.max(maxDelta, delta);
+    deltas.push({ boardId: Number(spec.boardId), delta });
   }
   if (maxDelta < 5) return null;              // trivial drift, skip
-  // Use the same measured physical floor as keyframe feasibility so the
-  // warm-up doesn't release the playhead before the servo could plausibly
-  // have reached the motion's start pose.
-  const durationMs = Math.max(800, Math.ceil(maxDelta * SERVO_FEASIBILITY_MS_PER_PERCENT));
+  // Charge each servo its own machine's rate. Taking the max of
+  // (delta x that board's ms-per-percent) rather than (max delta x 77) is the
+  // whole of servo-b7v: 77 ms/% is the curtain's winch spending 1800 degrees,
+  // and a wand spends 36, so the flat constant budgeted 7700ms for a sweep
+  // that physically takes 154. One shared duration still comes out, so a
+  // mixed pre-roll waits for the slowest machine and the synchronized MOTION
+  // start stays aligned — same contract the bake path already honours.
+  const durationMs = preRollDurationMs(deltas, servoMsPerPercent);
   return { active: true, startedAt: performance.now(), durationMs, fromValues, toValues, dispatched: false };
 }
 
