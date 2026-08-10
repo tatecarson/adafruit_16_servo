@@ -302,6 +302,45 @@ static void test_bad_seqid_advances_without_hanging() {
   ASSERT_FALSE(setlistScheduler.active);
 }
 
+
+// --- Schema v2 (servo-zzo) ----------------------------------------------
+// The setlist level has the densest short-key packing: an entry uses q/p/g/w
+// and schedulerConfig reuses `g` for graceMs. That reuse is only safe because
+// bakeFindValue matches at depth 0 of the window it scans, so an entry's `g`
+// cannot be seen while reading schedulerConfig. These are the tests that would
+// catch it if that ever stopped being true.
+static const char* kBlobV2Set =
+  "{\"schemaVersion\":2,\"m\":[],"
+  "\"q\":[{\"i\":\"s1\",\"s\":[{\"c\":\"ROTATE 10\",\"d\":50}]}],"
+  "\"l\":[{\"i\":\"show\",\"e\":["
+     "{\"q\":\"s1\",\"p\":2,\"g\":1500,\"w\":3}"
+  "],\"u\":{\"n\":1,\"s\":42}}],"
+  "\"a\":\"show\",\"g\":{\"b\":1,\"g\":7000}}";
+
+static void test_v2_setlist_entry_fields_land_in_the_right_places() {
+  SetlistRuntime plan;
+  const char* error = nullptr;
+  ASSERT_TRUE(setlistLoadFromBuffer((const uint8_t*)kBlobV2Set, strlen(kBlobV2Set),
+                                    "show", plan, &error));
+  ASSERT_EQ(plan.entryCount, 1);
+  ASSERT_EQ(plan.entries[0].repeat, 2);
+  ASSERT_EQ(plan.entries[0].gapMs, 1500);
+  ASSERT_EQ(plan.entries[0].weight, 3);
+}
+
+// `g` means gapMs inside an entry and graceMs inside schedulerConfig. If the
+// scanner ever stopped honouring depth, this would read 1500 instead of 7000.
+static void test_v2_reused_short_key_reads_the_right_object() {
+  ASSERT_EQ(schedulerGraceMs((const uint8_t*)kBlobV2Set, strlen(kBlobV2Set)), 7000);
+  ASSERT_EQ(schedulerLeaderBoardId((const uint8_t*)kBlobV2Set, strlen(kBlobV2Set)), 1);
+}
+
+static void test_v2_active_setlist_id_is_found() {
+  char id[SETLIST_ID_MAX_LEN + 1];
+  ASSERT_TRUE(activeSetlistId((const uint8_t*)kBlobV2Set, strlen(kBlobV2Set), id, sizeof(id)));
+  ASSERT_TRUE(strcmp(id, "show") == 0);
+}
+
 int main() {
   printf("=== Setlist Scheduler Tests ===\n");
   RUN(parse_ordered_setlist);
@@ -315,6 +354,9 @@ int main() {
   RUN(shuffle_is_deterministic_for_seed);
   RUN(shuffle_honors_min_gap_entries);
   RUN(bad_seqid_advances_without_hanging);
+  RUN(v2_setlist_entry_fields_land_in_the_right_places);
+  RUN(v2_reused_short_key_reads_the_right_object);
+  RUN(v2_active_setlist_id_is_found);
   printf("\n%d/%d passed, %d failed\n", _tests_passed, _tests_run, _tests_failed);
   return _tests_failed ? 1 : 0;
 }

@@ -14,6 +14,19 @@ static bool motionParseKeyframe(
 ) {
   int valuePos = 0;
   long parsed = 0;
+
+  // A v2 keyframe is the positional pair [atMs, value]; a v1 one is the named
+  // object {"atMs":...,"value":...}. Branch on what the element actually is
+  // rather than on a schema flag, so the reader does not depend on a version
+  // field sitting somewhere else in the blob (servo-zzo).
+  if (data[objStart] == '[') {
+    if (!bakeParseArrayInteger(data, objStart, objEnd, 0, parsed) || parsed < 0) return false;
+    frame.atMs = (uint32_t)parsed;
+    if (!bakeParseArrayInteger(data, objStart, objEnd, 1, parsed)) return false;
+    frame.value = (int16_t)parsed;
+    return true;
+  }
+
   if (!bakeFindValue(data, objStart + 1, objEnd, "atMs", valuePos) ||
       !bakeParseInteger(data, valuePos, objEnd, parsed) ||
       parsed < 0) {
@@ -41,8 +54,12 @@ static bool motionParseTrack(
   int valuePos = 0;
   uint8_t kind = MOTION_TRACK_NONE;
 
-  if (!bakeFindValue(data, objStart + 1, objEnd, "kind", valuePos)) return false;
-  if (bakeStringEqualsIgnoreCase(data, valuePos, objEnd, "servo")) {
+  // v2 stops carrying `kind`: every baked track is a servo, because DC lanes
+  // were flattened into step commands by servo-y29. An absent kind therefore
+  // means servo rather than malformed (servo-zzo).
+  if (!bakeFindValue(data, objStart + 1, objEnd, "kind", valuePos)) {
+    kind = MOTION_TRACK_SERVO;
+  } else if (bakeStringEqualsIgnoreCase(data, valuePos, objEnd, "servo")) {
     kind = MOTION_TRACK_SERVO;
   } else if (bakeStringEqualsIgnoreCase(data, valuePos, objEnd, "dc")) {
     kind = MOTION_TRACK_DC;
@@ -51,7 +68,7 @@ static bool motionParseTrack(
   }
 
   long parsed = 0;
-  if (!bakeFindValue(data, objStart + 1, objEnd, "channel", valuePos) ||
+  if (!bakeFindValueEither(data, objStart + 1, objEnd, "c", "channel", valuePos) ||
       !bakeParseInteger(data, valuePos, objEnd, parsed) ||
       parsed < 0 || parsed > 255) {
     return false;
@@ -73,7 +90,7 @@ static bool motionParseTrack(
   }
 
   if (out.trackCount >= MOTION_MAX_TRACKS) return false;
-  if (!bakeFindValue(data, objStart + 1, objEnd, "keyframes", valuePos)) return false;
+  if (!bakeFindValueEither(data, objStart + 1, objEnd, "k", "keyframes", valuePos)) return false;
   int arrayEnd = bakeFindContainerEnd(data, valuePos, objEnd, '[', ']');
   if (arrayEnd < 0) return false;
 
@@ -83,7 +100,13 @@ static bool motionParseTrack(
   int kfStart = 0;
   int kfEnd = 0;
   uint32_t previousAt = 0;
-  while (bakeNextObjectInArray(data, valuePos, arrayEnd, pos, kfStart, kfEnd)) {
+  // v1 keyframes are objects, v2's are positional arrays. Peek at the first
+  // element to decide which container the walker should step over.
+  int kfProbe = bakeSkipWs(data, valuePos + 1, arrayEnd);
+  bool positional = kfProbe < arrayEnd && data[kfProbe] == '[';
+  while (positional
+           ? bakeNextContainerInArray(data, valuePos, arrayEnd, pos, kfStart, kfEnd, '[', ']')
+           : bakeNextObjectInArray(data, valuePos, arrayEnd, pos, kfStart, kfEnd)) {
     if (out.keyframeCount >= MOTION_MAX_KEYFRAMES) return false;
     MotionKeyframe frame;
     if (!motionParseKeyframe(data, kfStart, kfEnd, frame)) return false;
@@ -139,7 +162,7 @@ inline bool motionLoadFromBuffer(
   }
 
   int valuePos = 0;
-  if (!bakeFindValue(data, 1, len - 1, "motions", valuePos)) {
+  if (!bakeFindValueEither(data, 1, len - 1, "m", "motions", valuePos)) {
     if (error) *error = "missing-motions";
     return false;
   }
@@ -154,7 +177,7 @@ inline bool motionLoadFromBuffer(
   int motionEnd = 0;
   while (bakeNextObjectInArray(data, valuePos, motionsEnd, pos, motionStart, motionEnd)) {
     int idPos = 0;
-    if (!bakeFindValue(data, motionStart + 1, motionEnd, "id", idPos)) continue;
+    if (!bakeFindValueEither(data, motionStart + 1, motionEnd, "i", "id", idPos)) continue;
     if (!bakeStringEqualsIgnoreCase(data, idPos, motionEnd, motionId)) continue;
 
     if (!bakeCopyString(data, idPos, motionEnd, out.id, sizeof(out.id))) {
@@ -163,7 +186,7 @@ inline bool motionLoadFromBuffer(
     }
 
     long duration = 0;
-    if (!bakeFindValue(data, motionStart + 1, motionEnd, "durationMs", valuePos) ||
+    if (!bakeFindValueEither(data, motionStart + 1, motionEnd, "d", "durationMs", valuePos) ||
         !bakeParseInteger(data, valuePos, motionEnd, duration) ||
         duration < 1) {
       if (error) *error = "bad-duration";
@@ -171,7 +194,7 @@ inline bool motionLoadFromBuffer(
     }
     out.durationMs = (uint32_t)duration;
 
-    if (!bakeFindValue(data, motionStart + 1, motionEnd, "tracks", valuePos)) {
+    if (!bakeFindValueEither(data, motionStart + 1, motionEnd, "r", "tracks", valuePos)) {
       if (error) *error = "missing-tracks";
       return false;
     }

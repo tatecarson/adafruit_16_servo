@@ -325,6 +325,95 @@ static void test_prepared_start_arms_motion_and_servo_glide() {
   ASSERT_EQ(servoState[0].posPulse, 375); // Motion itself is still gated
 }
 
+
+// --- Schema v2 wire format (servo-zzo) ----------------------------------
+// v2 renames the structural keys to one character, makes keyframes the
+// positional pair [atMs, value], and stops carrying `kind` and `boardId`
+// because a board slice implies both. The firmware reads either schema, so
+// these run the same content as kBlob above through the new spelling.
+static const char* kBlobV2 =
+  "{\"schemaVersion\":2,\"m\":["
+    "{\"i\":\"tidal-drift\",\"d\":1000,\"r\":["
+      "{\"c\":0,\"k\":[[0,0],[1000,100]]}"
+    "]},"
+    "{\"i\":\"other\",\"d\":100,\"r\":["
+      "{\"c\":1,\"k\":[[0,10],[100,20]]}"
+    "]}"
+  "],"
+  "\"q\":[],\"l\":[],\"a\":null,\"g\":{}}";
+
+static void test_v2_loads_positional_keyframes() {
+  reset_state();
+  MotionRuntime parsed;
+  const char* error = nullptr;
+  ASSERT_TRUE(motionLoadFromBuffer((const uint8_t*)kBlobV2, strlen(kBlobV2),
+                                   "tidal-drift", parsed, &error));
+  ASSERT_EQ(parsed.durationMs, 1000);
+  ASSERT_EQ(parsed.trackCount, 1);
+  ASSERT_EQ(parsed.keyframeCount, 2);
+  // An absent `kind` means servo: DC lanes stopped being motion tracks in
+  // servo-y29, so a baked track can only be a servo.
+  ASSERT_EQ(parsed.tracks[0].kind, MOTION_TRACK_SERVO);
+  ASSERT_EQ(parsed.tracks[0].channel, 0);
+}
+
+// The positional pair has to yield the same numbers the named object did.
+static void test_v2_keyframe_values_match_v1() {
+  reset_state();
+  MotionRuntime a, b;
+  const char* error = nullptr;
+  ASSERT_TRUE(motionLoadFromBuffer((const uint8_t*)kBlobV2, strlen(kBlobV2),
+                                   "tidal-drift", a, &error));
+  ASSERT_TRUE(motionLoadFromBuffer((const uint8_t*)kBlob, strlen(kBlob),
+                                   "tidal-drift", b, &error));
+  // kBlob's first track is the same servo track. Its DC track has no v2
+  // counterpart on purpose — DC lanes stopped being motion tracks in
+  // servo-y29, so a v2 slice carries servo tracks only.
+  for (uint8_t i = 0; i < 2; i++) {
+    ASSERT_EQ(a.keyframes[i].atMs, b.keyframes[i].atMs);
+    ASSERT_EQ(a.keyframes[i].value, b.keyframes[i].value);
+  }
+}
+
+// A v2 track carries no boardId, so the slice's own contents decide what
+// plays. Every track in a slice belongs to the board that received it.
+static void test_v2_track_without_boardid_is_local() {
+  reset_state();
+  storageSetBoardId(3);
+  MotionRuntime parsed;
+  const char* error = nullptr;
+  ASSERT_TRUE(motionLoadFromBuffer((const uint8_t*)kBlobV2, strlen(kBlobV2),
+                                   "tidal-drift", parsed, &error));
+  ASSERT_EQ(parsed.trackCount, 1);
+}
+
+static void test_v2_plays_back_identically_to_v1() {
+  reset_state();
+  ASSERT_TRUE(storageWriteSlot((const uint8_t*)kBlobV2, strlen(kBlobV2)));
+  ASSERT_TRUE(startMotionFromStorage("tidal-drift", false));
+  ASSERT_EQ(servoState[0].posPulse, 150);
+  _mock_millis = 500;
+  updateMotion();
+  ASSERT_EQ(servoState[0].posPulse, 375);
+  _mock_millis = 1000;
+  updateMotion();
+  ASSERT_EQ(servoState[0].posPulse, 600);
+  ASSERT_FALSE(motionRuntime.active);
+}
+
+// Both schemas have to remain readable on the same firmware — that is what
+// lets a board be flashed before it is re-baked, with no flag day.
+static void test_v1_and_v2_both_parse_on_one_firmware() {
+  reset_state();
+  MotionRuntime v1, v2;
+  const char* error = nullptr;
+  ASSERT_TRUE(motionLoadFromBuffer((const uint8_t*)kBlob, strlen(kBlob),
+                                   "tidal-drift", v1, &error));
+  ASSERT_TRUE(motionLoadFromBuffer((const uint8_t*)kBlobV2, strlen(kBlobV2),
+                                   "tidal-drift", v2, &error));
+  ASSERT_EQ(v1.durationMs, v2.durationMs);
+}
+
 int main() {
   printf("=== Motion Engine Tests ===\n");
   RUN(loads_motion_case_insensitive);
@@ -340,6 +429,11 @@ int main() {
   RUN(past_start_catches_up_to_phase);
   RUN(implicit_final_hold_and_single_keyframe_track);
   RUN(prepared_start_arms_motion_and_servo_glide);
+  RUN(v2_loads_positional_keyframes);
+  RUN(v2_keyframe_values_match_v1);
+  RUN(v2_track_without_boardid_is_local);
+  RUN(v2_plays_back_identically_to_v1);
+  RUN(v1_and_v2_both_parse_on_one_firmware);
   printf("\n%d/%d passed, %d failed\n", _tests_passed, _tests_run, _tests_failed);
   return _tests_failed ? 1 : 0;
 }

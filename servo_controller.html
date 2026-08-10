@@ -3467,6 +3467,17 @@ const LIB_KEY = "servoCluster.library";
 const LIB_FILE_URL = "library.json";
 const LIB_SNAP_PREFIX = "servoCluster.lastBake.";
 const SCHEMA_VERSION = 1;
+/* The version stamped on a BOARD payload, which is not the authoring version
+   above (servo-zzo). library.json stays schemaVersion 1 — v2 changes only how
+   a slice is spelled on the wire between the compactor and the firmware, not
+   what the editor stores.
+
+   Keeping these separate matters for more than tidiness. A v2-keyed blob that
+   declared version 1 would be ACCEPTED by v1-only firmware, which would then
+   find none of its keys and boot an empty library — a silent failure on a
+   board that had been working. Declaring 2 makes that same board refuse the
+   blob with 400 and keep the bake it already has. */
+const DEVICE_SCHEMA_VERSION = 2;
 // Firmware motion limits (servo_runtime.h). MOTION_MAX_KEYFRAMES is the TOTAL
 // keyframe budget across all tracks of a motion (one shared counter in the
 // firmware's motionParseTrack), not per-track. MOTION_MAX_TRACKS is the total
@@ -3962,8 +3973,13 @@ function renderBakedPanel() {
       return `<div class="baked-board"><div class="bb-head">${escapeHtml(ip)}</div>`
         + `<div class="bb-empty">no bake recorded from this browser — Bake to Boards to populate</div></div>`;
     }
-    const motions = snap.motions || [];
-    const boardId = motions[0]?.tracks?.[0]?.boardId ?? null;
+    // Device snapshot: v2 short keys, with the v1 fallback for one cached by
+    // an older build.
+    const motions = snap[BAKE_V2_KEYS.root.motions] || snap.motions || [];
+    // Take the board id from /boardId discovery rather than from the payload.
+    // v2 drops boardId from tracks, and the old derivation also failed for a
+    // board with no motions at all — which the field legitimately is.
+    const boardId = boardIdByIp.get(ip) ?? null;
     // Staleness: does the current editor library still match what was baked?
     let staleNote = "";
     if (bakeLib && boardId != null) {
@@ -3978,11 +3994,14 @@ function renderBakedPanel() {
       return `<div class="baked-board">${head}<div class="bb-empty">bake recorded, but no motions target this board</div></div>`;
     }
     const rows = motions.map(mo => {
-      const trackCount = (mo.tracks || []).length;
+      // A device payload carries no human name — only the stable id, which is
+      // what MOTION dispatches on anyway.
+      const moId = mo[BAKE_V2_KEYS.motion.id] ?? mo.id;
+      const trackCount = (mo[BAKE_V2_KEYS.motion.tracks] || mo.tracks || []).length;
       return `<div class="baked-row">`
-        + `<span class="bn">${escapeHtml(mo.name || mo.id)}</span>`
-        + `<code class="bid">id: ${escapeHtml(mo.id)}</code>`
-        + `<button class="cmd compact baked" data-baked-play data-ip="${escapeHtml(ip)}" data-id="${escapeHtml(mo.id)}" title="Plays the BAKED motion ${escapeHtml(mo.id)} on ${escapeHtml(ip)} (on-device, full-rate).">▶ Play</button>`
+        + `<span class="bn">${escapeHtml(mo.name || moId)}</span>`
+        + `<code class="bid">id: ${escapeHtml(moId)}</code>`
+        + `<button class="cmd compact baked" data-baked-play data-ip="${escapeHtml(ip)}" data-id="${escapeHtml(moId)}" title="Plays the BAKED motion ${escapeHtml(moId)} on ${escapeHtml(ip)} (on-device, full-rate).">▶ Play</button>`
         + `<span class="bmeta">${trackCount} track${trackCount === 1 ? "" : "s"}</span>`
         + `</div>`;
     }).join("");
@@ -7968,75 +7987,114 @@ function deviceServoValue(boardId, value) {
   return SERVO_REVERSED_BOARD_IDS.has(Number(boardId)) ? (100 - v) : v;
 }
 
-// Emit only fields the schema-v1 firmware actually reads. The editor keeps the
-// full authoring model in library.json; EEPROM is a deploy artifact, so names,
-// tags, labels, hold/bridge flags, reserved v2 controls, and default values do
+/* Schema v2 wire keys (servo-zzo). The contract with bake_parse.h's callers,
+   which hard-code these same one-character strings.
+
+   Short keys are safe because bakeFindValue only matches a key at depth 0 of
+   the window it is scanning — a nested object cannot shadow an outer one. So
+   these need to be unique within an object LEVEL, not globally, which is why
+   `g` is free to mean gapMs in an entry and graceMs in schedulerConfig. That
+   per-level uniqueness is load-bearing and pinned by verify_bake_v2.mjs: a
+   duplicate inside one level makes the firmware's scanner take whichever it
+   reaches first, with no error anywhere.
+
+   schemaVersion deliberately keeps its full name. bake_validate.h searches for
+   that literal to decide whether to accept the blob at all, and it is how the
+   firmware tells a v1 payload from a v2 one. */
+const BAKE_V2_KEYS = {
+  root:            { motions:"m", sequences:"q", setlists:"l",
+                     activeSetlistId:"a", schedulerConfig:"g" },
+  motion:          { id:"i", durationMs:"d", tracks:"r" },
+  track:           { channel:"c", keyframes:"k" },
+  sequence:        { id:"i", steps:"s" },
+  step:            { cmd:"c", durationMs:"d", target:"t" },
+  setlist:         { id:"i", entries:"e", mode:"o", shuffleRules:"u" },
+  entry:           { seqId:"q", repeat:"p", gapMs:"g", weight:"w" },
+  shuffleRules:    { minGapEntries:"n", seed:"s" },
+  schedulerConfig: { leaderBoardId:"b", graceMs:"g" },
+};
+
+// Emit only fields the firmware actually reads. The editor keeps the full
+// authoring model in library.json; EEPROM is a deploy artifact, so names,
+// tags, labels, hold/bridge flags, reserved controls, and default values do
 // not belong in its operational payload.
+//
+// v2 drops two more fields because their value is implied by position rather
+// than carried: `kind`, since sliceForBoard emits servo tracks only (DC lanes
+// were flattened into step commands by servo-y29), and `boardId`, since the
+// slice a board receives contains that board's tracks and no others.
 function compactTrackForDevice(track) {
   const boardId = Number(track.boardId);
+  const K = BAKE_V2_KEYS.track;
   return {
-    kind: track.kind,
-    boardId,
-    channel: Number(track.channel),
-    keyframes: (track.keyframes || []).map(kf => ({
-      atMs: Math.max(0, parseInt(kf.atMs, 10) || 0),
-      value: track.kind === "servo"
+    [K.channel]: Number(track.channel),
+    // Positional keyframes. {"atMs":1000,"value":90} spends 24 bytes to carry
+    // two numbers; [1000,90] spends 8. With 79 keyframes across the three
+    // board slices that difference is most of a kilobyte, and it is the single
+    // largest reason a slice outgrew the rollback-safe tier.
+    [K.keyframes]: (track.keyframes || []).map(kf => ([
+      Math.max(0, parseInt(kf.atMs, 10) || 0),
+      track.kind === "servo"
         ? deviceServoValue(boardId, kf.value)
         : (Number(kf.value) || 0),
-    })),
+    ])),
   };
 }
 
 function compactMotionForDevice(motion, tracks = motion.tracks || []) {
+  const K = BAKE_V2_KEYS.motion;
   return {
-    id: String(motion.id || ""),
-    durationMs: Math.max(1, parseInt(motion.durationMs, 10) || 1),
-    tracks: tracks.map(compactTrackForDevice),
+    [K.id]: String(motion.id || ""),
+    [K.durationMs]: Math.max(1, parseInt(motion.durationMs, 10) || 1),
+    [K.tracks]: tracks.map(compactTrackForDevice),
   };
 }
 
 function compactStepForDevice(step) {
+  const K = BAKE_V2_KEYS.step;
   const out = {
-    cmd: String(step?.cmd || ""),
-    durationMs: Math.max(0, parseInt(step?.durationMs, 10) || 0),
+    [K.cmd]: String(step?.cmd || ""),
+    [K.durationMs]: Math.max(0, parseInt(step?.durationMs, 10) || 0),
   };
   // Emit target as a NUMBER. The firmware parses it with bakeParseInteger,
   // which fails on a quoted "2" and falls back to 255 ("no board") — so a
   // board-targeted step baked from the string the <select> produces never
   // fired anywhere. Schema §3 always specified `"all" | 1 | 2 | 3`.
   const target = step?.target;
-  if (target != null && target !== "all" && Number(target) !== 0) out.target = Number(target);
+  if (target != null && target !== "all" && Number(target) !== 0) out[K.target] = Number(target);
   return out;
 }
 
 function compactSequenceForDevice(sequence) {
+  const K = BAKE_V2_KEYS.sequence;
   return {
-    id: String(sequence.id || ""),
-    steps: (sequence.steps || []).map(compactStepForDevice),
+    [K.id]: String(sequence.id || ""),
+    [K.steps]: (sequence.steps || []).map(compactStepForDevice),
   };
 }
 
 function compactSetlistForDevice(setlist) {
+  const K = BAKE_V2_KEYS.setlist, E = BAKE_V2_KEYS.entry, S = BAKE_V2_KEYS.shuffleRules;
   const out = {
-    id: String(setlist.id || ""),
-    entries: (setlist.entries || []).map(entry => {
-      const item = { seqId:String(entry.seqId || "") };
+    [K.id]: String(setlist.id || ""),
+    [K.entries]: (setlist.entries || []).map(entry => {
+      const item = { [E.seqId]:String(entry.seqId || "") };
       const repeat = Math.max(1, parseInt(entry.repeat, 10) || 1);
       const gapMs = Math.max(0, parseInt(entry.gapMs, 10) || 0);
       const weight = Math.max(1, parseInt(entry.weight, 10) || 1);
-      if (repeat !== 1) item.repeat = repeat;
-      if (gapMs !== 0) item.gapMs = gapMs;
-      if (weight !== 1) item.weight = weight;
+      if (repeat !== 1) item[E.repeat] = repeat;
+      if (gapMs !== 0) item[E.gapMs] = gapMs;
+      if (weight !== 1) item[E.weight] = weight;
       return item;
     }),
   };
-  if (setlist.mode === "shuffle") out.mode = "shuffle";
+  if (setlist.mode === "shuffle") out[K.mode] = "shuffle";
   const minGapEntries = Math.max(0, parseInt(setlist.shuffleRules?.minGapEntries, 10) || 0);
   const seed = Math.max(0, parseInt(setlist.shuffleRules?.seed, 10) || 0);
   if (minGapEntries || seed) {
-    out.shuffleRules = {};
-    if (minGapEntries) out.shuffleRules.minGapEntries = minGapEntries;
-    if (seed) out.shuffleRules.seed = seed;
+    out[K.shuffleRules] = {};
+    if (minGapEntries) out[K.shuffleRules][S.minGapEntries] = minGapEntries;
+    if (seed) out[K.shuffleRules][S.seed] = seed;
   }
   return out;
 }
@@ -8044,8 +8102,79 @@ function compactSetlistForDevice(setlist) {
 // Reverse the deploy-only omissions when a board payload is pulled/imported as
 // an editor recovery source. Human labels cannot be reconstructed, so stable
 // ids become names and the normal editor defaults fill the rest.
-function hydrateDeviceLibraryForEditor(input) {
-  const lib = stripBridges(input);
+/* Turn a v2 device blob back into the named-field shape the editor and the
+   rest of the pull pipeline already understand (servo-zzo).
+
+   Doing it here, once, at the moment a board's payload arrives means nothing
+   downstream — reconcileBoardBlobs, the library assembly, hydrate's defaults —
+   has to learn the short keys. Two fields have to be reconstructed rather than
+   read, because v2 stops carrying them: `kind`, which is servo for every baked
+   track, and `boardId`, which the caller knows because it is the board it just
+   pulled from.
+
+   A v1 blob passes through untouched, so a board still running v1 firmware, or
+   an older exported file, keeps working. */
+function expandDeviceBlob(blob, boardId) {
+  if (!blob || blob.schemaVersion !== 2) return blob;
+  const R = BAKE_V2_KEYS.root, M = BAKE_V2_KEYS.motion, T = BAKE_V2_KEYS.track;
+  const Q = BAKE_V2_KEYS.sequence, P = BAKE_V2_KEYS.step;
+  const L = BAKE_V2_KEYS.setlist, E = BAKE_V2_KEYS.entry;
+  const S = BAKE_V2_KEYS.shuffleRules, G = BAKE_V2_KEYS.schedulerConfig;
+  const num = (v, d = 0) => (v == null ? d : (Number(v) || 0));
+  const cfg = blob[R.schedulerConfig] || {};
+  return {
+    schemaVersion: blob.schemaVersion,
+    ...(blob.bakedAtMs != null ? { bakedAtMs: blob.bakedAtMs } : {}),
+    motions: (blob[R.motions] || []).map(m => ({
+      id: String(m[M.id] || ""),
+      durationMs: num(m[M.durationMs], 1),
+      tracks: (m[M.tracks] || []).map(t => ({
+        kind: "servo",
+        boardId: Number(boardId),
+        channel: num(t[T.channel]),
+        keyframes: (t[T.keyframes] || []).map(kf =>
+          Array.isArray(kf) ? { atMs: num(kf[0]), value: num(kf[1]) }
+                            : { atMs: num(kf.atMs), value: num(kf.value) }),
+      })),
+    })),
+    sequences: (blob[R.sequences] || []).map(s => ({
+      id: String(s[Q.id] || ""),
+      steps: (s[Q.steps] || []).map(step => {
+        const out = { cmd: String(step[P.cmd] || ""), durationMs: num(step[P.durationMs]) };
+        if (step[P.target] != null) out.target = Number(step[P.target]);
+        return out;
+      }),
+    })),
+    setlists: (blob[R.setlists] || []).map(s => {
+      const out = {
+        id: String(s[L.id] || ""),
+        mode: s[L.mode] === "shuffle" ? "shuffle" : "ordered",
+        entries: (s[L.entries] || []).map(e => {
+          const item = { seqId: String(e[E.seqId] || "") };
+          if (e[E.repeat] != null) item.repeat = num(e[E.repeat], 1);
+          if (e[E.gapMs] != null) item.gapMs = num(e[E.gapMs]);
+          if (e[E.weight] != null) item.weight = num(e[E.weight], 1);
+          return item;
+        }),
+      };
+      const rules = s[L.shuffleRules];
+      if (rules) {
+        out.shuffleRules = {};
+        if (rules[S.minGapEntries] != null) out.shuffleRules.minGapEntries = num(rules[S.minGapEntries]);
+        if (rules[S.seed] != null) out.shuffleRules.seed = num(rules[S.seed]);
+      }
+      return out;
+    }),
+    activeSetlistId: blob[R.activeSetlistId] ?? null,
+    schedulerConfig: {
+      leaderBoardId: num(cfg[G.leaderBoardId], 1),
+      graceMs: cfg[G.graceMs] == null ? 10000 : num(cfg[G.graceMs]),
+    },
+  };
+}
+
+function hydrateDeviceLibraryForEditor(input, boardId = null) {
+  const lib = stripBridges(expandDeviceBlob(input, boardId));
   if (!lib) return lib;
   return {
     ...lib,
@@ -8133,16 +8262,20 @@ function sliceForBoard(lib, boardId) {
     const conformedTracks = tracks.map(t => conformTrackForBake(t, durationMs));
     motions.push(compactMotionForDevice(m, conformedTracks));
   }
+  const R = BAKE_V2_KEYS.root, G = BAKE_V2_KEYS.schedulerConfig;
   return {
-    schemaVersion: SCHEMA_VERSION,
+    // Full name, always. bake_validate.h searches for this literal to decide
+    // whether to accept the blob, and the firmware reads its value to pick a
+    // parser — so it is the one key that can never be abbreviated.
+    schemaVersion: DEVICE_SCHEMA_VERSION,
     bakedAtMs: Date.now(),
-    motions,
-    sequences: (lib.sequences || []).map(compactSequenceForDevice),
-    setlists: (lib.setlists || []).map(compactSetlistForDevice),
-    activeSetlistId: lib.activeSetlistId ?? null,
-    schedulerConfig: {
-      leaderBoardId: Math.max(1, Math.min(3, parseInt(lib.schedulerConfig?.leaderBoardId, 10) || 1)),
-      graceMs: lib.schedulerConfig?.graceMs == null
+    [R.motions]: motions,
+    [R.sequences]: (lib.sequences || []).map(compactSequenceForDevice),
+    [R.setlists]: (lib.setlists || []).map(compactSetlistForDevice),
+    [R.activeSetlistId]: lib.activeSetlistId ?? null,
+    [R.schedulerConfig]: {
+      [G.leaderBoardId]: Math.max(1, Math.min(3, parseInt(lib.schedulerConfig?.leaderBoardId, 10) || 1)),
+      [G.graceMs]: lib.schedulerConfig?.graceMs == null
         ? 10000 : Math.max(0, parseInt(lib.schedulerConfig.graceMs, 10) || 0),
     },
   };
@@ -8181,21 +8314,26 @@ function buildBakeLibrary(lib) {
     _bridgeErrors: errors,
   };
 }
-// === BAKE-PAYLOAD-CORE END ===
-
-// Diff one sliced blob against the last snapshot for the same board.
-// Returns counts across motions+sequences+setlists. We count an item as
-// "changed" if its id matches a snapshot id but its minified JSON differs.
+/* Both sides here are DEVICE payloads, so they carry v2 short keys (servo-zzo).
+   Reading them with the v1 names indexed nothing on either side and produced a
+   clean zero — the "edited since bake" warning would simply have stopped
+   appearing, with nothing to show it had. A snapshot cached by an older build
+   may still be v1, so accept either spelling; a v1 snapshot against a v2 slice
+   then reports everything as changed, which is exactly right, because it is. */
 function diffBlob(prev, next) {
+  const R = BAKE_V2_KEYS.root;
+  const listOf = (blob, v2Key, v1Key) => blob?.[v2Key] || blob?.[v1Key] || [];
   function indexById(arr) {
     const m = new Map();
-    for (const x of arr || []) m.set(x.id, JSON.stringify(x));
+    for (const x of arr || []) m.set(x[BAKE_V2_KEYS.motion.id] ?? x.id, JSON.stringify(x));
     return m;
   }
   const out = { added: 0, changed: 0, deleted: 0 };
-  for (const field of ["motions", "sequences", "setlists"]) {
-    const prevMap = indexById(prev?.[field]);
-    const nextMap = indexById(next?.[field]);
+  for (const [v2Key, v1Key] of [[R.motions, "motions"],
+                                [R.sequences, "sequences"],
+                                [R.setlists, "setlists"]]) {
+    const prevMap = indexById(listOf(prev, v2Key, v1Key));
+    const nextMap = indexById(listOf(next, v2Key, v1Key));
     for (const [id, json] of nextMap) {
       if (!prevMap.has(id)) out.added++;
       else if (prevMap.get(id) !== json) out.changed++;
@@ -8206,6 +8344,12 @@ function diffBlob(prev, next) {
   }
   return out;
 }
+
+// === BAKE-PAYLOAD-CORE END ===
+
+// Diff one sliced blob against the last snapshot for the same board.
+// Returns counts across motions+sequences+setlists. We count an item as
+// "changed" if its id matches a snapshot id but its minified JSON differs.
 
 async function fetchBoardId(ip) {
   const ctrl = new AbortController();
@@ -8619,11 +8763,14 @@ async function pullFromBoards() {
     for (const r of results) {
       if (r.boardId == null) continue;
       if (!r.blob) { bakeLog(`${r.ip} (board ${r.boardId}): no library baked`, "amber"); continue; }
-      if (r.blob.schemaVersion !== SCHEMA_VERSION) {
-        bakeLog(`${r.ip} (board ${r.boardId}): schemaVersion ${r.blob.schemaVersion} ≠ ${SCHEMA_VERSION} — skipped`, "alert");
+      if (r.blob.schemaVersion !== DEVICE_SCHEMA_VERSION) {
+        bakeLog(`${r.ip} (board ${r.boardId}): schemaVersion ${r.blob.schemaVersion} ≠ ${DEVICE_SCHEMA_VERSION} — skipped`, "alert");
         continue;
       }
-      entries.push(r);
+      // Convert the board's v2 wire format back to named fields here, once,
+      // so reconcile and everything after it never sees a short key. boardId
+      // is the field v2 stops carrying, and this is where we still know it.
+      entries.push({ ...r, blob: expandDeviceBlob(r.blob, r.boardId) });
     }
     if (!entries.length) { bakeLog("no board returned a usable baked library — nothing to hydrate", "alert"); return; }
 
@@ -10053,7 +10200,13 @@ async function playSetlistOnDevice() {
   // against the LEADER's snapshot — sequences bake identically to all boards.
   let snap = null;
   try { snap = JSON.parse(localStorage.getItem(LIB_SNAP_PREFIX + leaderIp) || "null"); } catch {}
-  const bakedSeqIds = snap ? (snap.sequences || []).map(sq => sq.id) : null;
+  // Device snapshot again: sequences live under the v2 key. Reading `.sequences`
+  // returned undefined, so every entry looked missing and RUN AUTO refused to
+  // start on a board that was baked correctly.
+  const bakedSeqIds = snap
+    ? (snap[BAKE_V2_KEYS.root.sequences] || snap.sequences || [])
+        .map(sq => sq[BAKE_V2_KEYS.sequence.id] ?? sq.id)
+    : null;
   let editedSinceBake = false;
   if (snap) {
     const d = diffBlob(snap, sliceForBoard(buildBakeLibrary(lib), leaderBoardId));

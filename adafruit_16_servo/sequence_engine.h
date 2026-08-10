@@ -41,11 +41,11 @@ void cancelMotionPlayback();
 // `target` is normalized to 0 (all) or 1/2/3. Missing target = 0.
 static bool seqParseStep(const uint8_t* data, int objStart, int objEnd, SequenceStep& out) {
   int valuePos = 0;
-  if (!bakeFindValue(data, objStart + 1, objEnd, "cmd", valuePos)) return false;
+  if (!bakeFindValueEither(data, objStart + 1, objEnd, "c", "cmd", valuePos)) return false;
   if (!bakeCopyString(data, valuePos, objEnd, out.cmd, sizeof(out.cmd))) return false;
 
   long parsed = 0;
-  if (!bakeFindValue(data, objStart + 1, objEnd, "durationMs", valuePos) ||
+  if (!bakeFindValueEither(data, objStart + 1, objEnd, "d", "durationMs", valuePos) ||
       !bakeParseInteger(data, valuePos, objEnd, parsed) ||
       parsed < 0) {
     return false;
@@ -53,7 +53,7 @@ static bool seqParseStep(const uint8_t* data, int objStart, int objEnd, Sequence
   out.durationMs = (uint32_t)parsed;
 
   out.target = 0;
-  if (bakeFindValue(data, objStart + 1, objEnd, "target", valuePos)) {
+  if (bakeFindValueEither(data, objStart + 1, objEnd, "t", "target", valuePos)) {
     if (bakeStringEqualsIgnoreCase(data, valuePos, objEnd, "all")) {
       out.target = 0;
     } else if (bakeParseInteger(data, valuePos, objEnd, parsed) &&
@@ -85,7 +85,7 @@ inline bool sequenceLoadFromBuffer(const uint8_t* data, int len,
   }
 
   int valuePos = 0;
-  if (!bakeFindValue(data, 1, len - 1, "sequences", valuePos)) {
+  if (!bakeFindValueEither(data, 1, len - 1, "q", "sequences", valuePos)) {
     if (error) *error = "missing-sequences";
     return false;
   }
@@ -100,7 +100,7 @@ inline bool sequenceLoadFromBuffer(const uint8_t* data, int len,
   int seqEnd = 0;
   while (bakeNextObjectInArray(data, valuePos, sequencesEnd, pos, seqStart, seqEnd)) {
     int idPos = 0;
-    if (!bakeFindValue(data, seqStart + 1, seqEnd, "id", idPos)) continue;
+    if (!bakeFindValueEither(data, seqStart + 1, seqEnd, "i", "id", idPos)) continue;
     if (!bakeStringEqualsIgnoreCase(data, idPos, seqEnd, sequenceId)) continue;
 
     if (!bakeCopyString(data, idPos, seqEnd, out.id, sizeof(out.id))) {
@@ -108,7 +108,7 @@ inline bool sequenceLoadFromBuffer(const uint8_t* data, int len,
       return false;
     }
 
-    if (!bakeFindValue(data, seqStart + 1, seqEnd, "steps", valuePos)) {
+    if (!bakeFindValueEither(data, seqStart + 1, seqEnd, "s", "steps", valuePos)) {
       if (error) *error = "missing-steps";
       return false;
     }
