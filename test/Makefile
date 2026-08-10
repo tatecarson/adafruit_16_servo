@@ -50,7 +50,7 @@ sim-verify:
 # removed in servo-voc along with the legacy PLAY/SPLAY/RUN-n engine it tested.
 test: storage motion sequence setlist gallery channelmap sim-verify
 
-run_storage_tests: test_storage.cpp mock/Arduino.h mock/EEPROM.h
+run_storage_tests: test_storage.cpp $(SKETCH_DIR)/storage.h $(SKETCH_DIR)/storage_crc.h $(SKETCH_DIR)/bake_validate.h mock/Arduino.h mock/EEPROM.h
 	$(CXX) $(CXXFLAGS) -o $@ $<
 
 storage: run_storage_tests

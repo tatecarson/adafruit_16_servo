@@ -235,10 +235,26 @@ static void test_validate_minimal_blob() {
     BakeValidateResult r = bakeValidate((const uint8_t*)blob, strlen(blob));
     ASSERT_TRUE(r.ok);
 }
+// v2 is the dense wire format (servo-zzo) and is accepted alongside v1, so the
+// firmware can be flashed before a board is re-baked. This test asserted the
+// opposite until then, and did not fail when the rule changed: the storage
+// target had no dependency on bake_validate.h, so the binary was never rebuilt.
+// That dependency is now declared in the Makefile.
+static void test_validate_accepts_both_supported_versions() {
+    const char* v1 = "{\"schemaVersion\":1,\"motions\":[],\"sequences\":[],\"setlists\":[]}";
+    const char* v2 = "{\"schemaVersion\":2,\"m\":[],\"q\":[],\"l\":[]}";
+    ASSERT_TRUE(bakeValidate((const uint8_t*)v1, strlen(v1)).ok);
+    ASSERT_TRUE(bakeValidate((const uint8_t*)v2, strlen(v2)).ok);
+}
 static void test_validate_rejects_wrong_version() {
-    const char* blob = "{\"schemaVersion\":2,\"motions\":[],\"sequences\":[],\"setlists\":[]}";
+    // A version the firmware does not know must still be refused outright —
+    // that refusal is what keeps a future format from being half-parsed by an
+    // old board instead of bounced with a 400.
+    const char* blob = "{\"schemaVersion\":3,\"motions\":[],\"sequences\":[],\"setlists\":[]}";
     BakeValidateResult r = bakeValidate((const uint8_t*)blob, strlen(blob));
     ASSERT_FALSE(r.ok);
+    const char* zero = "{\"schemaVersion\":0,\"motions\":[]}";
+    ASSERT_FALSE(bakeValidate((const uint8_t*)zero, strlen(zero)).ok);
 }
 static void test_validate_rejects_no_version() {
     const char* blob = "{\"motions\":[]}";
@@ -276,6 +292,7 @@ int main() {
     RUN(rollback_fails_when_no_previous);
     RUN(rollback_then_rollback_returns_to_newest);
     RUN(validate_minimal_blob);
+    RUN(validate_accepts_both_supported_versions);
     RUN(validate_rejects_wrong_version);
     RUN(validate_rejects_no_version);
     RUN(validate_rejects_unbalanced_braces);
