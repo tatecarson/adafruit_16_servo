@@ -244,6 +244,35 @@ static void test_re_entry_guard_lets_step_cmds_dispatch_safely() {
   ASSERT_FALSE(sequenceRunner.active);
 }
 
+
+// --- Schema v2 (servo-zzo) ----------------------------------------------
+// Same sequence, short keys. The firmware reads either spelling so a board
+// can be flashed before it is re-baked.
+static const char* kBlobV2Seq =
+  "{\"schemaVersion\":2,\"m\":[],"
+  "\"q\":[{\"i\":\"warmup\",\"s\":["
+    "{\"c\":\"ROTATE 30\",\"d\":100},"
+    "{\"c\":\"STOP\",\"d\":50,\"t\":2}"
+  "]}],"
+  "\"l\":[],\"a\":null,\"g\":{}}";
+
+static void test_v2_sequence_loads_with_short_keys() {
+  reset_state();
+  ASSERT_TRUE(storageWriteSlot((const uint8_t*)kBlobV2Seq, strlen(kBlobV2Seq)));
+  ASSERT_TRUE(startSequenceFromStorage("warmup", false, false));
+  ASSERT_EQ(sequenceRunner.stepCount, 2);
+  ASSERT_EQ(sequenceRunner.steps[0].durationMs, 100);
+}
+
+// target is the field that silently disabled DC chords when it arrived as a
+// quoted string, so pin that it still lands as a board number under `t`.
+static void test_v2_sequence_target_survives_the_rename() {
+  reset_state();
+  ASSERT_TRUE(storageWriteSlot((const uint8_t*)kBlobV2Seq, strlen(kBlobV2Seq)));
+  ASSERT_TRUE(startSequenceFromStorage("warmup", false, false));
+  ASSERT_EQ(sequenceRunner.steps[1].target, 2);
+}
+
 int main() {
   printf("=== Sequence Engine Tests ===\n");
   RUN(parser_loads_steps_in_order);
@@ -254,6 +283,8 @@ int main() {
   RUN(zero_duration_chord_resolves_same_tick);
   RUN(cancel_stops_runner);
   RUN(re_entry_guard_lets_step_cmds_dispatch_safely);
+  RUN(v2_sequence_loads_with_short_keys);
+  RUN(v2_sequence_target_survives_the_rename);
   printf("\n%d/%d passed, %d failed\n", _tests_passed, _tests_run, _tests_failed);
   return _tests_failed ? 1 : 0;
 }

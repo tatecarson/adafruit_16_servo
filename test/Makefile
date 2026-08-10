@@ -41,6 +41,7 @@ sim-verify:
 	  node verify_motor_test_safety.mjs && \
 	  node verify_seq_bridges.mjs && \
 	  node verify_bake_payload.mjs && \
+	  node verify_bake_v2.mjs && \
 	  node verify_baked_motion_preroll.mjs && \
 	  node verify_dc_lanes.mjs; \
 	fi
@@ -49,7 +50,7 @@ sim-verify:
 # removed in servo-voc along with the legacy PLAY/SPLAY/RUN-n engine it tested.
 test: storage motion sequence setlist gallery channelmap sim-verify
 
-run_storage_tests: test_storage.cpp mock/Arduino.h mock/EEPROM.h
+run_storage_tests: test_storage.cpp $(SKETCH_DIR)/storage.h $(SKETCH_DIR)/storage_crc.h $(SKETCH_DIR)/bake_validate.h mock/Arduino.h mock/EEPROM.h
 	$(CXX) $(CXXFLAGS) -o $@ $<
 
 storage: run_storage_tests
