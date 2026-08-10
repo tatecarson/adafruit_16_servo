@@ -1257,14 +1257,12 @@ errors.
 `Motion complete <id>`.
 
 **Result:**
-- [ ] Pass
+- [x] Pass — 2026-08-09, board 1, confirmed by the operator on the rig. A
+  motion from the v2 bake plays on-device. This was the last gap in v2
+  verification: everything else proved the payload was stored, sized and
+  parsed correctly, and this is the check that proves a v2 motion actually
+  drives a servo.
 - [ ] Fail - describe:
-
-> Not run as of 2026-08-09 — it moves the wands, and the bench session ended
-> before it was exercised. **This is the one remaining gap in v2 verification:
-> every check above proves the payload is stored, sized and read correctly, but
-> nothing has yet proved a v2 motion actually drives a servo.** Run it before
-> trusting a v2 bake in a show.
 
 ### 34f: boards 2 and 3
 
@@ -1287,7 +1285,8 @@ errors.
   664 bytes.
 - [x] Per-board slices against the real `library.json`: 5154→2846, 2967→2072,
   5361→2900. All three under the 4080 rollback-safe line.
-- [x] **Hardware** — Test 34a-d above, board 1. 34e (playback) not run.
+- [x] **Hardware** — Test 34a-e above, board 1, including playback from a
+  v2 bake. Board 2 and 3 untouched (34f).
 
 
 **2026-06-02 (servo-vna synchronized Motion start):**
