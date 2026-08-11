@@ -93,10 +93,22 @@ inline void applyCustomServoSetup(ServoConfig servoConfig[], ServoState servoSta
   }
 
   // How far 100 %down drives the mechanism, and which way round it runs.
-  // The winches are wound so a higher value RAISES the ring, hence the
-  // reversal; the wands are direct-driven and want 100 %down to mean down.
+  //
+  // Both machines run reversed, for unrelated reasons. The winches are wound
+  // so a higher value RAISES the ring. The wands are direct-driven, but the
+  // servo's increasing-pulse rotation carries the wand AWAY from the tubes,
+  // and which way a servo turns is not something the firmware gets to pick.
+  // The fix is where the horn is fitted: straight down at the TOP of the
+  // working range rather than the bottom, so the sweep runs back toward the
+  // tubes. That inverts the percentages, and reversing here puts them right
+  // way up again — 0 %down is the wand at rest, 100 %down is fully swept, on
+  // both machines.
+  //
+  // The horn placement and this flag are one change, not two. Fitting a horn
+  // at the bottom of the range with this set, or at the top with it clear,
+  // gives a wand that sweeps the wrong way and percentages that lie about it.
   const uint16_t downDegrees = isWinch ? CURTAIN_WINCH_DOWN_DEGREES : WAND_DOWN_DEGREES;
-  const bool reverseDir = isWinch;
+  const bool reverseDir = true;
 
   for (uint8_t ch = 0; ch < 3; ch++) {
     // Servos 0-2: goBILDA 2000 Series 5-Turn Dual Mode (25-2 Torque)
