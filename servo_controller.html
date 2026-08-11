@@ -1840,6 +1840,69 @@
   .mtest-btns button.cmd { min-width: 0; flex: 1 1 auto; padding: 8px 10px; }
   .mtest-stop-row { margin-bottom: 16px; }
   .mtest-stop-row button.cmd { width: 100%; }
+
+  /* Calibration block (servo-tjm). Same row grammar as .mtest-row, but each
+     row carries two persisted numbers instead of a set of one-shot buttons. */
+  .mtest-subhead {
+    display: flex; align-items: baseline; gap: 10px;
+    margin: 22px 0 2px; padding-top: 14px;
+    border-top: 1px solid var(--rule-hi);
+  }
+  .mtest-subhead .label {
+    font-family: var(--label); font-size: 10px; font-weight: 600;
+    text-transform: uppercase; letter-spacing: 0.22em; color: var(--ink);
+  }
+  .mtest-subhead .hint { font-size: 10px; color: var(--ink-mute); }
+  .mtest-cal-row {
+    display: grid; grid-template-columns: 70px 1fr;
+    align-items: center; gap: 14px; padding: 12px 0;
+  }
+  .mtest-cal-row + .mtest-cal-row { border-top: 1px dashed var(--rule); }
+  .mtest-cal-row .rname {
+    font-family: var(--label); font-size: 9px; text-transform: uppercase;
+    letter-spacing: 0.2em; color: var(--ink-dim); font-weight: 600;
+  }
+  .mtest-cal-row .rname .sub { display: block; color: var(--ink-mute); letter-spacing: 0.14em; }
+  .mtest-cal-ends { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .mtest-cal-end {
+    display: flex; align-items: center; gap: 4px;
+    border: 1px solid var(--rule); padding: 4px 6px;
+  }
+  /* The focused endpoint is the one the nudge buttons move, so it has to be
+     legible at a glance — you are looking at the wand, not the screen. */
+  .mtest-cal-end.sel { border-color: var(--amber); }
+  .mtest-cal-end .k {
+    font-family: var(--label); font-size: 9px; font-weight: 600;
+    text-transform: uppercase; letter-spacing: 0.18em; color: var(--ink-dim);
+    cursor: pointer;
+  }
+  .mtest-cal-end.sel .k { color: var(--amber); }
+  /* Bigger and unspun. These are four-digit numbers read at arm's length while
+     you are looking at the wand, not the screen, so they get the largest type
+     in the drawer. The native spinner arrows are dropped rather than styled:
+     they cost ~16px of a 62px field and duplicate the nudge buttons badly —
+     a spinner steps by 1us and moves nothing until you re-Test, where a nudge
+     steps by a useful amount and drives the servo with it. */
+  .mtest-cal-end input[type=number] {
+    appearance: textfield; -webkit-appearance: textfield;
+    background: var(--bg-deep); color: var(--ink);
+    border: 1px solid var(--rule-hi);
+    font: 600 15px/1 var(--mono);
+    letter-spacing: 0.04em;
+    padding: 7px 8px; width: 72px; text-align: right; outline: none;
+  }
+  .mtest-cal-end input[type=number]::-webkit-inner-spin-button,
+  .mtest-cal-end input[type=number]::-webkit-outer-spin-button {
+    -webkit-appearance: none; margin: 0;
+  }
+  .mtest-cal-end input:focus { border-color: var(--amber); }
+  .mtest-cal-end .us {
+    font-family: var(--mono); font-size: 10px; color: var(--ink-mute);
+  }
+  .mtest-cal-row .mtest-btns { margin-top: 8px; }
+  .mtest-cal-row button.cmd { padding: 7px 9px; font-size: 10px; }
+  .mtest-cal-row button.cmd.nudge { flex: 0 0 auto; min-width: 42px; }
+  .mtest-cal-dirty { color: var(--amber); }
 </style>
 </head>
 <body>
@@ -2395,6 +2458,15 @@
         </div>
       </div>
       <div class="mtest-note" id="motorTestMachine"></div>
+
+      <!-- Calibration (servo-tjm). CAL_PULSE to find each endpoint live,
+           CAL_SET to persist the pair to EEPROM. Separate from the quick
+           check above because it writes: everything above is one-shot. -->
+      <div class="mtest-subhead" id="motorTestCalHead">
+        <span class="label">Calibration</span>
+        <span class="hint">writes EEPROM</span>
+      </div>
+      <div id="motorTestCal"></div>
     </div>
   </aside>
 </div>
@@ -3079,6 +3151,11 @@ $("#freeCmd").addEventListener("keydown", e => { if (e.key === "Enter") $("#free
   const backdrop = $("#motorTestBackdrop");
   const targetEl = $("#motorTestTarget");
   const servosEl = $("#motorTestServos");
+  // Declared up here with the rest: refreshForBoard() runs during setup, below
+  // but before the calibration section's own code, and a const down there is
+  // still in its temporal dead zone when renderCalRows first reads it.
+  const calHead = $("#motorTestCalHead");
+  const calEl = $("#motorTestCal");
   if (!backdrop || !targetEl || !servosEl) return;
 
   /* One row per wired servo with bounded manual positions. There is deliberately
@@ -3123,10 +3200,197 @@ $("#freeCmd").addEventListener("keydown", e => { if (e.key === "Enter") $("#free
       ${m.servos ? `Servos are ${travelLabel(boardId)} end to end.` : ""}`;
   }
 
+  // ── Calibration rows (servo-tjm) ───────────────────────────────────────
+  // Find each channel's true pulse endpoints with CAL_PULSE, then persist the
+  // pair with CAL_SET. CAL_SET takes min and max together, so a row holds both
+  // numbers and one "focused" endpoint that the nudge buttons move.
+
+  // Firmware bounds, from CALIB_BOUND_MIN_US/MAX_US in servo_calibration.h.
+  // The board rejects anything outside these, so the UI refuses to send it.
+  const CAL_US_MIN = 400, CAL_US_MAX = 2600;
+
+  /* Prefill with the compiled defaults from applyCustomServoSetup — 110 and
+     480 ticks — not with CALIB_DEFAULT_MIN_US/MAX_US (1000/2000). Those two
+     disagree, and the compiled pair is what an uncalibrated board is actually
+     running, because calibrationApplyToServoConfig skips channels that were
+     never saved. Seeding the fields with 1000/2000 would show numbers the
+     servo is not using, and saving them unchanged would quietly cut the
+     usable window down from 537-2344us. */
+  const CAL_TICK_US = 1000000 / (50 * 4096);   // 50Hz, 12-bit: ~4.88us/tick
+  const calDefaults = () => ({
+    minUs: Math.round(110 * CAL_TICK_US),
+    maxUs: Math.round(480 * CAL_TICK_US),
+    sel: "min",
+  });
+
+  /* Keyed by board id so switching the picker to compare two machines and
+     coming back does not silently discard half-entered endpoints. Nothing
+     here is persisted: the board holds the truth once you Save, and this
+     cannot read it back (sendCommandNow is mode:no-cors). */
+  const calState = new Map();
+  function calFor(boardId, ch) {
+    const key = `${boardId}:${ch}`;
+    if (!calState.has(key)) calState.set(key, calDefaults());
+    return calState.get(key);
+  }
+
+  function renderCalRows(boardId) {
+    if (!calEl) return;
+    const m = machineOf(boardId);
+    /* Hide only on positive knowledge that the machine has no servos — board
+       2, whose rake and cut width are build parameters. An unresolved id is a
+       different thing: machineOf returns null for a board that is merely
+       offline or hasn't answered /boardId yet, and that is exactly when you
+       are most likely to be calibrating one on the bench. Same fallback as
+       renderServoRows above: unknown board still gets rows, generically
+       named. */
+    const none = !!m && m.servos === null;
+    if (calHead) calHead.hidden = none;
+    if (none) { calEl.innerHTML = ""; return; }
+
+    calEl.innerHTML = Array.from({ length: VISIBLE_SERVO_CHANNELS }, (_, n) => {
+      const c = calFor(boardId, n);
+      const end = (which, label) => `
+        <div class="mtest-cal-end ${c.sel === which ? "sel" : ""}" data-cal-end="${which}" data-cal-ch="${n}">
+          <span class="k">${label}</span>
+          <input type="number" data-cal-input="${which}" data-cal-ch="${n}"
+                 min="${CAL_US_MIN}" max="${CAL_US_MAX}" step="1"
+                 value="${which === "min" ? c.minUs : c.maxUs}" title="microseconds">
+          <span class="us">µs</span>
+        </div>`;
+      return `
+        <div class="mtest-cal-row">
+          <span class="rname">${m && m.servos ? m.servos[n].split(" ")[0] : "Servo"}<span class="sub">ch ${pad2(n)}</span></span>
+          <div>
+            <div class="mtest-cal-ends">
+              ${end("min", "min")}
+              ${end("max", "max")}
+              <span class="hint" data-cal-hint="${n}"></span>
+            </div>
+            <div class="mtest-btns">
+              <button class="cmd nudge" data-cal-nudge="-50" data-cal-ch="${n}">−50</button>
+              <button class="cmd nudge" data-cal-nudge="-10" data-cal-ch="${n}">−10</button>
+              <button class="cmd nudge" data-cal-nudge="10" data-cal-ch="${n}">+10</button>
+              <button class="cmd nudge" data-cal-nudge="50" data-cal-ch="${n}">+50</button>
+              <button class="cmd" data-cal-go="${n}"
+                      title="Jumps straight to this pulse — absolute, not a step">▸ Test ${calValue(c)}</button>
+              <button class="cmd" data-cal-save="${n}" title="CAL_SET — persists to EEPROM">Save</button>
+              <button class="cmd" data-cal-reset="${n}" title="CAL_RESET — back to compiled defaults">Reset</button>
+            </div>
+          </div>
+        </div>`;
+    }).join("");
+
+    wireCalRows(boardId);
+  }
+
+  function calValue(c) { return c.sel === "min" ? c.minUs : c.maxUs; }
+  function calSetValue(c, us) { if (c.sel === "min") c.minUs = us; else c.maxUs = us; }
+
+  /* The Test button names the pulse it will drive, because it is an absolute
+     jump: from the far end of the window that is most of five turns in one
+     move, and the amber outline marking the focused endpoint is easy to miss
+     when you are watching the wand rather than the screen. Nudging and typing
+     both change that target without re-rendering the row, so the label is
+     re-stamped here rather than only at render. */
+  function syncGoLabel(boardId, ch) {
+    const btn = calEl.querySelector(`[data-cal-go="${ch}"]`);
+    if (btn) btn.textContent = `▸ Test ${calValue(calFor(boardId, ch))}`;
+  }
+
+  function wireCalRows(boardId) {
+    const chOf = el => Number(el.dataset.calCh);
+
+    // Clicking either endpoint box focuses it for the nudge buttons.
+    calEl.querySelectorAll("[data-cal-end]").forEach(box => {
+      box.addEventListener("click", e => {
+        if (e.target.tagName === "INPUT") return;   // typing shouldn't re-render
+        calFor(boardId, chOf(box)).sel = box.dataset.calEnd;
+        renderCalRows(boardId);
+      });
+    });
+
+    calEl.querySelectorAll("[data-cal-input]").forEach(inp => {
+      inp.addEventListener("change", () => {
+        const c = calFor(boardId, chOf(inp));
+        const us = Math.round(Number(inp.value));
+        if (!Number.isFinite(us)) { inp.value = calValue(c); return; }
+        const clamped = Math.min(CAL_US_MAX, Math.max(CAL_US_MIN, us));
+        if (inp.dataset.calInput === "min") c.minUs = clamped; else c.maxUs = clamped;
+        inp.value = clamped;
+        syncGoLabel(boardId, chOf(inp));
+      });
+    });
+
+    // A nudge moves the focused endpoint AND drives it, so the number and the
+    // wand stay in step — the whole point is to watch the mechanism, not the
+    // field. Clamped to the firmware's bounds so a held button cannot walk
+    // the value into a range the board will reject.
+    calEl.querySelectorAll("[data-cal-nudge]").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const ch = chOf(btn);
+        const c = calFor(boardId, ch);
+        const next = Math.min(CAL_US_MAX, Math.max(CAL_US_MIN,
+          calValue(c) + Number(btn.dataset.calNudge)));
+        calSetValue(c, next);
+        const inp = calEl.querySelector(`[data-cal-input="${c.sel}"][data-cal-ch="${ch}"]`);
+        if (inp) inp.value = next;
+        syncGoLabel(boardId, ch);
+        runTest(btn, ip => sendCommand(ip, `CAL_PULSE ${ch} ${next}`));
+      });
+    });
+
+    calEl.querySelectorAll("[data-cal-go]").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const ch = Number(btn.dataset.calGo);
+        runTest(btn, ip => sendCommand(ip, `CAL_PULSE ${ch} ${calValue(calFor(boardId, ch))}`));
+      });
+    });
+
+    calEl.querySelectorAll("[data-cal-save]").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const ch = Number(btn.dataset.calSave);
+        const c = calFor(boardId, ch);
+        const hint = calEl.querySelector(`[data-cal-hint="${ch}"]`);
+        /* The firmware validates this too, but it answers over a connection
+           we cannot read, so a rejected CAL_SET would look exactly like a
+           successful one. Catch it here, where there is somewhere to say so. */
+        if (c.minUs >= c.maxUs) {
+          if (hint) {
+            hint.textContent = "min must be below max";
+            hint.classList.add("mtest-cal-dirty");
+          }
+          btn.classList.add("alert");
+          setTimeout(() => btn.classList.remove("alert"), 600);
+          return;
+        }
+        if (hint) { hint.textContent = ""; hint.classList.remove("mtest-cal-dirty"); }
+        runTest(btn, ip => sendCommand(ip, `CAL_SET ${ch} ${c.minUs} ${c.maxUs}`));
+      });
+    });
+
+    calEl.querySelectorAll("[data-cal-reset]").forEach(btn => {
+      btn.addEventListener("click", async () => {
+        const ch = Number(btn.dataset.calReset);
+        /* Re-render only after runTest has finished with the button: it
+           re-reads btn to clear .disabled and flash the result, and this
+           handler replaces every row — including that button — so resetting
+           mid-flight would leave it styling a detached node. On failure we
+           skip the re-render entirely, which also lets the red flash stand. */
+        let ok = false;
+        await runTest(btn, async ip => (ok = await sendCommand(ip, `CAL_RESET ${ch}`)));
+        if (!ok) return;
+        calState.set(`${boardId}:${ch}`, calDefaults());
+        renderCalRows(boardId);
+      });
+    });
+  }
+
   function refreshForBoard() {
     const id = boardIdByIp.get(targetEl.value);
     renderServoRows(id);
     renderMachineNote(id);
+    renderCalRows(id);
     /* The All row is a sibling of #motorTestServos, not a child, so
        renderServoRows returning early for a machine with no servos never
        reached it — the buttons stayed live and fired three UP commands at a
@@ -3191,6 +3455,7 @@ $("#freeCmd").addEventListener("keydown", e => { if (e.key === "Enter") $("#free
       return allOk;
     }));
   });
+
 })();
 
 $("#saveBoards").addEventListener("click", () => {
